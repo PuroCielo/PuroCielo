@@ -10,14 +10,21 @@ const ERR = {
   'auth/unauthorized-domain': 'Этот адрес сайта не добавлен в Firebase (Authentication → Settings → Authorized domains).', 'auth/operation-not-allowed': 'Этот способ входа не включён в Firebase.',
   'auth/network-request-failed': 'Нет соединения с интернетом.',
 };
-const human = e => ERR[e && e.code] || 'Не получилось. Попробуйте ещё раз.';
+const RESERVED = new Set(['admin', 'administrator', 'support', 'help', 'root', 'system', 'purocielo', 'puro', 'cielo', 'moderator', 'staff', 'official', 'null', 'undefined']);
+const cleanUser = v => String(v || '').trim().replace(/^@+/, '').toLowerCase();
+function checkUser(n) {
+  if (!/^[a-z0-9_.]{3,24}$/.test(n)) return 'Ник: 3–24 символа, только латинские буквы, цифры, точка и _.';
+  if (RESERVED.has(n)) return 'Этот ник зарезервирован.';
+  return '';
+}
+const human = e => ERR[e && e.code] || (e && e.message === 'taken' ? 'Этот ник уже занят. Выберите другой.' : 'Не получилось. Попробуйте ещё раз.');
 
 (async () => {
   if (!firebaseConfig.apiKey) { $('#auth-off').hidden = false; $('#auth-on').hidden = true; return; }
-  let A;
+  let A, F;
   try {
-    const [{ initializeApp }, auth] = await Promise.all([import(`${G}/firebase-app.js`), import(`${G}/firebase-auth.js`)]);
-    A = auth; var a = auth.getAuth(initializeApp(firebaseConfig));
+    const [{ initializeApp }, auth, fs] = await Promise.all([import(`${G}/firebase-app.js`), import(`${G}/firebase-auth.js`), import(`${G}/firebase-firestore.js`)]);
+    A = auth; F = fs; var app = initializeApp(firebaseConfig); var a = auth.getAuth(app); var db = fs.getFirestore(app);
   } catch { $('#auth-off').hidden = false; $('#auth-off p').textContent = 'Не удалось загрузить службу входа. Проверьте соединение.'; return; }
   let mode = 'in';
   const setMode = m => {
@@ -27,13 +34,26 @@ const human = e => ERR[e && e.code] || 'Не получилось. Попроб�
   };
   $('#tab-in').onclick = () => setMode('in'); $('#tab-up').onclick = () => setMode('up'); setMode('in');
 
+  // Ник занимается один раз: документ usernames/<ник> создаётся транзакцией и правилами Firestore нельзя перезаписать.
+  const available = async n => !(await F.getDoc(F.doc(db, 'usernames', n))).exists();
+  async function claim(uid, n) {
+    await F.runTransaction(db, async tx => {
+      const ref = F.doc(db, 'usernames', n);
+      if ((await tx.get(ref)).exists()) throw new Error('taken');
+      tx.set(ref, { uid, at: Date.now() });
+      tx.set(F.doc(db, 'users', uid), { username: n, at: Date.now() }, { merge: true });
+    });
+  }
   const busy = on => document.querySelectorAll('#auth-on button').forEach(b => { b.disabled = on; });
   $('#auth-form').addEventListener('submit', async e => {
     e.preventDefault(); const email = $('#auth-email').value.trim(), pass = $('#auth-pass').value; busy(true); msg('');
     try {
       if (mode === 'up') {
+        const nick = cleanUser($('#auth-user').value), bad = checkUser(nick); if (bad) { msg(bad); return; }
+        if (!(await available(nick))) { msg('Этот ник уже занят. Выберите другой.'); return; }
         const c = await A.createUserWithEmailAndPassword(a, email, pass);
-        const name = $('#auth-name').value.trim(); if (name) await A.updateProfile(c.user, { displayName: name });
+        const name = $('#auth-name').value.trim(); await A.updateProfile(c.user, { displayName: name || nick });
+        try { await claim(c.user.uid, nick); } catch { /* ник заняли секунду назад: попросим выбрать другой ниже */ }
         try { await A.sendEmailVerification(c.user); msg('Аккаунт создан. Мы отправили письмо для подтверждения почты.', true); } catch { /* ignore */ }
       } else await A.signInWithEmailAndPassword(a, email, pass);
     } catch (err) { msg(human(err)); } finally { busy(false); }
@@ -48,8 +68,18 @@ const human = e => ERR[e && e.code] || 'Не получилось. Попроб�
     try { await A.sendPasswordResetEmail(a, email); msg('Письмо для сброса пароля отправлено.', true); } catch (err) { msg(human(err)); }
   });
   $('#auth-out').addEventListener('click', () => A.signOut(a));
+  $('#claim-form').addEventListener('submit', async e => {
+    e.preventDefault(); const n = cleanUser($('#claim-user').value), bad = checkUser(n), u = a.currentUser; if (!u) return;
+    if (bad) { $('#claim-msg').textContent = bad; return; }
+    try { await claim(u.uid, n); $('#claim-msg').textContent = ''; refreshMe(u); } catch (err) { $('#claim-msg').textContent = human(err); }
+  });
+  async function refreshMe(u) {
+    let nick = '';
+    try { const d = await F.getDoc(F.doc(db, 'users', u.uid)); nick = d.exists() ? d.data().username : ''; } catch { /* ignore */ }
+    $('#me-nick').textContent = nick ? '@' + nick : ''; $('#claim-box').hidden = !!nick;
+  }
   A.onAuthStateChanged(a, u => {
     $('#auth-form-box').hidden = !!u; $('#auth-me').hidden = !u; $('#nav-login').textContent = u ? (u.displayName || u.email || 'Профиль') : 'Войти';
-    if (u) { $('#me-name').textContent = u.displayName || 'Слушатель'; $('#me-mail').textContent = u.email || ''; const ph = $('#me-photo'); if (u.photoURL) { ph.src = u.photoURL; ph.hidden = false; } else ph.hidden = true; }
+    if (u) { refreshMe(u); $('#me-name').textContent = u.displayName || 'Слушатель'; $('#me-mail').textContent = u.email || ''; const ph = $('#me-photo'); if (u.photoURL) { ph.src = u.photoURL; ph.hidden = false; } else ph.hidden = true; }
   });
 })();

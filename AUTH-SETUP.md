@@ -1,15 +1,50 @@
-# Вход через Google, почту и другие способы
+# Вход через Google, почту и другие способы (Firebase)
 
-Сайт использует бесплатную службу Firebase Authentication. Это нужно сделать один раз (10 минут):
+Всё это бесплатно и делается один раз. Нужен только аккаунт Google.
 
-1. Откройте https://console.firebase.google.com → **Add project** (название любое, аналитику можно выключить).
-2. Слева **Build → Authentication → Get started**. Во вкладке **Sign-in method** включите:
-   - **Email/Password**;
-   - **Google** (укажите почту поддержки);
-   - **GitHub** (нужно создать OAuth App на github.com/settings/developers; Firebase покажет ссылку обратного вызова, а Client ID и Secret вставьте в Firebase);
-   - **Microsoft** (по желанию, нужно приложение в Azure).
-3. **Authentication → Settings → Authorized domains → Add domain**: добавьте `artemriligin-ops.github.io` и свой домен, когда он появится.
-4. **Project settings (шестерёнка) → General → Your apps → Web (</>)** → зарегистрируйте приложение и скопируйте объект `firebaseConfig`.
-5. Вставьте значения `apiKey`, `authDomain`, `projectId`, `appId` в файл `firebase-config.js` и сохраните (Commit).
+## 1. Создайте проект
+1. Откройте https://console.firebase.google.com и нажмите **Create a project** (название: `purocielo`, Google Analytics можно выключить).
 
-После этого блок «Аккаунт» на сайте начнёт работать. Ключ `apiKey` не секретный, его можно хранить в репозитории.
+## 2. Включите способы входа
+1. Слева **Build → Authentication → Get started → Sign-in method**.
+2. Включите **Email/Password** (первый переключатель, «Email link» не нужен) и **Google** (выберите почту поддержки).
+3. **GitHub** (по желанию): в Firebase откройте GitHub → скопируйте «callback URL». На github.com → Settings → Developer settings → OAuth Apps → New OAuth App: Homepage — адрес вашего сайта, Callback — тот URL. Полученные Client ID и Client secret вставьте обратно в Firebase.
+4. **Microsoft** (по желанию): аналогично через Azure App registrations.
+
+## 3. Разрешите адрес сайта
+**Authentication → Settings → Authorized domains → Add domain**: добавьте `artemriligin-ops.github.io` (адрес вашего GitHub Pages без `https://` и без пути; смотрите в Settings → Pages) и свой домен, если он есть.
+
+## 4. Включите базу данных для ников
+1. **Build → Firestore Database → Create database** → режим **Production** → регион на ваш выбор.
+2. Вкладка **Rules**, замените всё этим и нажмите **Publish**:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Ник можно только занять один раз и нельзя отнять или изменить.
+    match /usernames/{name} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && name.matches('^[a-z0-9_.]{3,24}$');
+      allow update, delete: if false;
+    }
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
+      allow update, delete: if false;
+    }
+  }
+}
+```
+
+Так два человека не смогут занять одинаковый ник даже одновременно.
+
+## 5. Скопируйте ключи в сайт
+1. **Project settings (шестерёнка) → General → Your apps → значок Web `</>`** → введите название → Register app.
+2. Скопируйте блок `firebaseConfig`.
+3. На GitHub откройте файл `firebase-config.js` → карандаш → вставьте значения `apiKey`, `authDomain`, `projectId`, `appId` → Commit.
+
+Через минуту блок «Аккаунт» на сайте заработает. Ключ `apiKey` не секретный, его можно хранить в репозитории.

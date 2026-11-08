@@ -645,3 +645,17 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .ly-empty .btn { margin-top: 8px; }
 .sc-link { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 14px 18px; border-radius: 16px; background: var(--card); font-weight: 600; transition: background .2s; }
 .sc-link:hover { background: var(--card-2); } .sc-link .ic { width: 18px; height: 18px; color: var(--accent-fg); } .sc-link span { margin-left: auto; color: var(--text-3); font-size: 12.5px; font-weight: 500; }
+
+/* v1.5 */
+.settings-page { margin-inline: auto; }
+.np-top { display: grid; grid-template-columns: 1fr auto 1fr; } .np-top-sp { justify-self: end; } .np-top #np-close { justify-self: start; }
+.pe-edit { width: 30px; height: 30px; margin-left: 8px; vertical-align: middle; color: var(--text-2); background: var(--hover); } .pe-edit .ic { width: 15px; height: 15px; } .profile-id h1 .pe-edit { width: 34px; height: 34px; } .handle .pe-edit { width: 26px; height: 26px; } .handle .pe-edit .ic { width: 13px; height: 13px; }
+.ly-actions { position: sticky; bottom: 8px; z-index: 2; display: flex; justify-content: center; padding: 18px 0 6px; pointer-events: none; }
+.ly-actions .btn { pointer-events: auto; background: rgba(30, 30, 34, .78); color: #fff; backdrop-filter: blur(14px); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, .6); border: 1px solid rgba(255, 255, 255, .14); }
+:root[data-theme="light"] .ly-actions .btn { background: rgba(255, 255, 255, .85); color: #1D1D1F; border-color: rgba(0, 0, 0, .12); }
+.ly-actions .btn:hover { background: rgba(60, 60, 66, .9); } :root[data-theme="light"] .ly-actions .btn:hover { background: #fff; }
+.ly-edit { display: none; }
+
+.ly-fab { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 3; background: rgba(34, 34, 38, .82); color: #fff; backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, .7); }
+.ly-fab:hover { background: rgba(70, 70, 76, .92); } :root[data-theme="light"] .ly-fab { background: rgba(255, 255, 255, .9); color: #1D1D1F; border-color: rgba(0, 0, 0, .12); }
+.np[data-pane="queue"] .ly-fab { display: none; }

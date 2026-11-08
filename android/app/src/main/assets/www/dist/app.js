@@ -330,6 +330,15 @@ function doAction(el, e) {
         case 'edit-profile':
             editProfile();
             break;
+        case 'edit-name':
+            quickEdit('name');
+            break;
+        case 'edit-user':
+            quickEdit('username');
+            break;
+        case 'lyrics-proxy':
+            quickEdit('lyricsProxy');
+            break;
         case 'set-theme':
             (0, theme_js_1.applyTheme)(d.v);
             break;
@@ -649,6 +658,23 @@ function cropImage(file, w, h) {
         img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
         img.src = url;
     });
+}
+const QUICK = {
+    name: { title: 'Изменить имя', label: 'Отображаемое имя', max: 40, get: () => state_js_1.state.profile.name, set: v => { state_js_1.state.profile.name = v.trim() || 'Слушатель'; (0, state_js_1.save)(); (0, state_js_1.emit)('profile'); } },
+    username: { title: 'Изменить ник', label: 'Имя пользователя', max: 30, pre: '@', get: () => state_js_1.state.profile.username,
+        set: v => { state_js_1.state.profile.username = (v.trim().replace(/^@+/, '').replace(/[^\w.]/g, '') || 'listener').toLowerCase(); (0, state_js_1.save)(); (0, state_js_1.emit)('profile'); } },
+    lyricsProxy: { title: 'Свой сервер текстов', label: 'Адрес Cloudflare Worker (https://…workers.dev)', max: 200, get: () => state_js_1.state.settings.lyricsProxy || '',
+        set: v => { v = v.trim().replace(/\/+$/, ''); if (v && !/^https:\/\//i.test(v)) {
+            (0, ui_js_1.toast)('Адрес должен начинаться с https://', 'warn');
+            return false;
+        } (0, state_js_1.setSetting)('lyricsProxy', v); } },
+};
+function quickEdit(kind) {
+    const q = QUICK[kind];
+    (0, ui_js_1.openModal)({ title: q.title, html: `<label class="field"><span>${q.label}</span>${q.pre ? `<div class="input-pre"><i>${q.pre}</i><input class="input" id="qe" maxlength="${q.max}" value="${(0, util_js_1.esc)(q.get())}"></div>` : `<input class="input" id="qe" maxlength="${q.max}" value="${(0, util_js_1.esc)(q.get())}">`}</label>`,
+        actions: [{ label: 'Отмена' }, { label: 'Сохранить', primary: true, onClick: () => q.set(document.getElementById('qe').value) }],
+        onMount: () => { const i = document.getElementById('qe'); i.focus(); i.select(); i.addEventListener('keydown', e => { if (e.key === 'Enter')
+            document.querySelector('.modal-foot [data-act="1"]').click(); }); } });
 }
 function editProfile() {
     const draft = { ...state_js_1.state.profile };
@@ -1652,6 +1678,34 @@ async function lookup(t) {
         return best;
     return null;
 }
+// Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
+async function extraSources(t) {
+    const artist = primaryArtist(t), title = cleanTitle(t.title), proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
+    if (proxy) {
+        try {
+            const r = await getJSON(`${proxy}/lyrics?${new URLSearchParams({ artist, title, duration: String(Math.round(t.duration || 0)) })}`, 12000);
+            const d = r.data;
+            if (d) {
+                if (d.synced) {
+                    const p = (0, lrc_js_1.parseLrc)(d.synced);
+                    if (p.synced)
+                        return { type: 'synced', lines: p.lines, source: d.source || 'online' };
+                }
+                if (d.plain && String(d.plain).trim())
+                    return { type: 'plain', text: String(d.plain).trim(), source: d.source || 'online' };
+            }
+        }
+        catch { /* сервер недоступен */ }
+    }
+    try {
+        const r = await getJSON(`https://lyrist.vercel.app/api/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, 8000);
+        const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
+        if (txt)
+            return { type: 'plain', text: txt, source: 'online' };
+    }
+    catch { /* источник недоступен */ }
+    return null;
+}
 const running = new Map();
 // Возвращает true, если у трека появился текст. t._ly: 'loading' | 'none' | undefined
 // ---- свои тексты: вставленные или загруженные из файла вручную ----
@@ -1741,6 +1795,16 @@ function ensureLyrics(t) {
                     }
                 }
                 catch { /* источник недоступен */ }
+            }
+            if (!ly) { // ещё источники: свой сервер (NetEase, Genius) и lyrist
+                const more = await extraSources(t);
+                if (more) {
+                    t.lyrics = more;
+                    t._ly = undefined;
+                    (0, db_js_1.lySet)(key, { ly: more, at: Date.now() });
+                    (0, state_js_1.emit)('lyrics', t);
+                    return true;
+                }
             }
             (0, db_js_1.lySet)(key, { miss: true, instrumental: !!(d && d.instrumental), at: Date.now() });
             t._ly = 'none';
@@ -2003,8 +2067,36 @@ function renderTrack(t) {
     syncPlay();
     document.title = `${t.title} — ${(0, views_js_1.artistsOf)(t).join(', ') || 'Puro Cielo'}`;
 }
-function syncMeta() { const d = player_js_1.audio.duration; if (isFinite(d))
-    (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(d); }
+// Примерное время строк для обычного текста: делим трек пропорционально длине строк
+function fakeSync(text, dur) {
+    const raw = String(text).split(/\r?\n/).map(l => l.trim()), items = [];
+    for (const l of raw) {
+        if (l)
+            items.push({ text: l, w: Math.max(14, l.length) });
+        else if (items.length && items[items.length - 1].text)
+            items[items.length - 1].gap = true;
+    }
+    const start = Math.min(14, dur * 0.06), end = dur - Math.min(10, dur * 0.05), span = Math.max(10, end - start);
+    const tot = items.reduce((s, x) => s + x.w + (x.gap ? 10 : 0), 0) || 1;
+    let t = start;
+    const out = [];
+    for (const x of items) {
+        out.push({ t, text: x.text });
+        t += span * (x.w + (x.gap ? 10 : 0)) / tot;
+    }
+    return out;
+}
+let lastPlainDur = 0;
+function syncMeta() {
+    const t0 = (0, player_js_1.current)();
+    if (t0?.lyrics?.type === 'plain' && isFinite(player_js_1.audio.duration) && Math.abs(player_js_1.audio.duration - lastPlainDur) > 1) {
+        lastPlainDur = player_js_1.audio.duration;
+        renderLyrics(t0);
+    }
+    const d = player_js_1.audio.duration;
+    if (isFinite(d))
+        (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(d);
+}
 // ---------- Караоке ----------
 let lines = [], lyEls = [], lastIdx = -2, lastWords = -1, userScrollUntil = 0, lyType = null;
 function renderLyrics(t) {
@@ -2013,8 +2105,19 @@ function renderLyrics(t) {
     lastIdx = -2;
     lastWords = -1;
     lyType = null;
-    const ly = t?.lyrics;
+    let ly = t?.lyrics;
     lyBox.scrollTop = 0;
+    {
+        const fab = (0, util_js_1.$)('#ly-fab');
+        fab.hidden = !ly;
+        fab.innerHTML = `${(0, icons_js_1.icon)('edit')}Изменить текст`;
+    }
+    if (ly && ly.type === 'plain' && state_js_1.state.settings.autoKaraoke !== false) {
+        const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
+        if (dur > 20) {
+            ly = { type: 'synced', lines: fakeSync(ly.text, dur), source: ly.source, approx: true };
+        }
+    }
     if (!ly) {
         const loading = t && t._ly === 'loading';
         lyBox.innerHTML = loading
@@ -2022,14 +2125,14 @@ function renderLyrics(t) {
             : `<div class="ly-empty">${(0, icons_js_1.icon)('lyrics')}<h3>Текста нет</h3><button class="btn btn-soft sm" data-ly="edit">${(0, icons_js_1.icon)('edit')}Добавить текст</button></div>`;
         return;
     }
-    const src = { lrc: 'файл .lrc', sylt: 'встроенный SYLT', uslt: 'встроенный USLT', online: 'найден онлайн', manual: 'ваш текст' }[ly.source] || 'текст';
+    const src = { lrc: 'файл .lrc', sylt: 'встроенный SYLT', uslt: 'встроенный USLT', online: 'найден онлайн', manual: 'ваш текст', netease: 'NetEase', genius: 'Genius' }[ly.source] || 'текст';
     lyType = ly.type;
     if (ly.type === 'plain') {
-        lyBox.innerHTML = `<div class="ly-src">Текст · ${src}<button class="ly-edit" data-ly="edit">${(0, icons_js_1.icon)('edit')}Изменить</button></div><div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `<div class="ly-src">Текст · ${src}</div><div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `<div class="ly-src">Синхронизировано · ${src}<button class="ly-edit" data-ly="edit">${(0, icons_js_1.icon)('edit')}Изменить</button></div><div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `<div class="ly-src">${ly.approx ? 'Примерное караоке' : 'Синхронизировано'} · ${src}</div><div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -2084,6 +2187,7 @@ function updateLyrics(t, force) {
     }
 }
 ['wheel', 'touchmove'].forEach(ev => lyBox.addEventListener(ev, () => { userScrollUntil = Date.now() + 3500; }, { passive: true }));
+(0, util_js_1.$)('#ly-fab').addEventListener('click', () => editLyrics());
 lyBox.addEventListener('click', e => {
     if (e.target.closest('[data-ly="edit"]')) {
         editLyrics();
@@ -2734,6 +2838,8 @@ exports.DEFAULT_SETTINGS = {
     density: 'cozy', // cozy | compact — плотность списков
     anim: true, // анимации интерфейса
     seekStep: 5, // шаг перемотки стрелками, сек
+    autoKaraoke: true, // примерное караоке для текстов без меток времени
+    lyricsProxy: '', // адрес Cloudflare Worker для NetEase / Genius
     homeRecents: true, // блок «Недавно прослушанное»
     keepAwake: false, // не гасить экран во время музыки
 };
@@ -3634,7 +3740,7 @@ exports.toggleTheme = toggleTheme;
 // Пользовательские настройки → атрибуты <html> (цвет акцента, размеры, фон)
 function applySettings() {
     const r = document.documentElement, s = state_js_1.state.settings;
-    r.dataset.accent = s.accent;
+    r.dataset.accent = 'white';
     r.dataset.card = s.cardSize;
     r.dataset.lysize = s.lyricsSize;
     r.dataset.corners = s.corners;
@@ -4224,7 +4330,7 @@ function profileView() {
     <div class="profile-banner ${p.banner ? '' : 'default'}">${banner}<button class="btn btn-glass sm" data-action="edit-profile">${(0, icons_js_1.icon)('edit')}Изменить</button></div>
     <div class="profile-body">
       <div class="profile-avatar">${(0, exports.avatarHTML)('xl')}</div>
-      <div class="profile-id"><h1>${(0, util_js_1.esc)(p.name)}</h1><p class="handle">@${(0, util_js_1.esc)(p.username)}</p></div>
+      <div class="profile-id"><h1>${(0, util_js_1.esc)(p.name)}<button class="icon-btn sm pe-edit" data-action="edit-name" aria-label="Изменить имя" title="Изменить имя">${(0, icons_js_1.icon)('edit')}</button></h1><p class="handle">@${(0, util_js_1.esc)(p.username)}<button class="icon-btn sm pe-edit" data-action="edit-user" aria-label="Изменить ник" title="Изменить ник">${(0, icons_js_1.icon)('edit')}</button></p></div>
       <div class="stats">
         <div><b>${d.all.length}</b><span>песен</span></div><div><b>${d.albums.length + d.singles.length}</b><span>релизов</span></div>
         <div><b>${d.artistList.length}</b><span>артистов</span></div><div><b>${state_js_1.state.likes.size}</b><span>нравится</span></div><div><b>${state_js_1.state.playlists.length}</b><span>плейлистов</span></div>
@@ -4237,11 +4343,10 @@ function settingsView() {
     const s = state_js_1.state.settings;
     const sleepOpts = [[0, 'Выкл'], [15, '15'], [30, '30'], [45, '45'], [60, '60'], ['track', 'Трек']];
     const sleepCur = player_js_1.sleepState.endOfTrack ? 'track' : player_js_1.sleepState.until ? Math.round((player_js_1.sleepState.until - Date.now()) / 60000 / 15) * 15 : 0;
-    return `<header class="page-head"><div><h1>Настройки</h1><p class="page-sub">Подстройте плеер под себя</p></div></header><div class="settings-page">
+    return `<div class="settings-page"><header class="page-head"><div><h1>Настройки</h1><p class="page-sub">Подстройте плеер под себя</p></div></header>
       <h2 class="sg-title">Внешний вид</h2>
       <div class="settings">
         ${srow('Тема оформления', 'Тёмная по умолчанию, светлая — для яркого дня.', `<div class="seg"><button class="${state_js_1.state.theme === 'dark' ? 'on' : ''}" data-action="set-theme" data-v="dark">${(0, icons_js_1.icon)('moon')}Тёмная</button><button class="${state_js_1.state.theme === 'light' ? 'on' : ''}" data-action="set-theme" data-v="light">${(0, icons_js_1.icon)('sun')}Светлая</button></div>`)}
-        ${srow('Цвет акцента', 'Кнопки, ползунки и подсветка текущей строки.', `<div class="swatches">${exports.ACCENTS.map(([k, n, c]) => `<button class="swatch ${s.accent === k ? 'on' : ''}" style="--c:${c}" title="${n}" aria-label="${n}" data-action="set-setting" data-k="accent" data-v="${k}"></button>`).join('')}</div>`)}
         ${srow('Главный экран', 'Как показывать альбомы, синглы, плейлисты и артистов.', (0, exports.viewSwitch)(s.homeView))}
         ${srow('Скругление обложек', 'Мягкие или строгие углы.', seg('corners', [['round', 'Мягкие'], ['sharp', 'Острые']], s.corners))}
         ${srow('Плотность списков', 'Компактный режим вмещает больше строк.', seg('density', [['cozy', 'Свободно'], ['compact', 'Компактно']], s.density))}
@@ -4263,6 +4368,8 @@ function settingsView() {
       <div class="settings">
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».', sw('autoLyrics', s.autoLyrics))}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».', `<button class="btn btn-soft sm" data-action="find-lyrics">${(0, icons_js_1.icon)('lyrics')}Найти</button>`)}
+        ${srow('Караоке для обычных текстов', 'Если у песни нет меток времени, строки подсвечиваются примерно по ходу трека.', sw('autoKaraoke', s.autoKaraoke !== false))}
+        ${srow('Свой сервер текстов', s.lyricsProxy ? (0, util_js_1.esc)(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${(0, icons_js_1.icon)('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}
         ${srow('Скорость', 'Тон голоса не меняется.', seg('speed', [[0.75, '0.75×'], [1, '1×'], [1.25, '1.25×'], [1.5, '1.5×'], [2, '2×']], s.speed))}
         ${srow('Таймер сна', `Музыка плавно затихнет и остановится. Сейчас: ${sleepLabel()}.`, `<div class="seg">${sleepOpts.map(([v, n]) => `<button class="${String(sleepCur) === String(v) ? 'on' : ''}" data-action="sleep" data-v="${v}">${n}</button>`).join('')}</div>`)}
