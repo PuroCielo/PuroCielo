@@ -2475,7 +2475,16 @@ async function lookup(t) {
 }
 // Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
 async function extraSources(t) {
-    const artist = primaryArtist(t), title = cleanTitle(t.title), proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
+    const artist = primaryArtist(t), title = cleanTitle(t.title);
+    if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.genius) { // приложение для Windows: Genius напрямую
+        try {
+            const txt = await window.PuroDesktop.genius(artist, title);
+            if (txt)
+                return { type: 'plain', text: txt, source: 'genius' };
+        }
+        catch { /* дальше */ }
+    }
+    const proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
     if (proxy) {
         try {
             const r = await getJSON(`${proxy}/lyrics?${new URLSearchParams({ artist, title, duration: String(Math.round(t.duration || 0)) })}`, 12000);

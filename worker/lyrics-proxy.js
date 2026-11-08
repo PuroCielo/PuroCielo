@@ -1,9 +1,38 @@
-// Cloudflare Worker: тексты из NetEase (с метками времени, без ключа) и Genius (нужен токен GENIUS_TOKEN).
+// Cloudflare Worker: тексты из NetEase (с метками времени, без ключа) и Genius (без ключа).
 // Деплой: dash.cloudflare.com → Workers & Pages → Create → Hello World → Edit code → вставить этот файл → Deploy.
-// Для Genius: Settings → Variables → добавьте секрет GENIUS_TOKEN (токен с genius.com/api-clients).
+// Genius работает без токена и ключей.
 // Адрес вида https://имя.ваш-аккаунт.workers.dev вставьте в плеер: Настройки → Свой сервер текстов.
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' };
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: CORS });
+// Разбор страницы Genius без DOM: собираем содержимое всех блоков data-lyrics-container с учётом вложенных div.
+function extractGenius(html) {
+  const out = []; const re = /<div[^>]*data-lyrics-container="true"[^>]*>/g; let m;
+  while ((m = re.exec(html))) {
+    let i = re.lastIndex, depth = 1; const tag = /<(\/?)div\b[^>]*>/g; tag.lastIndex = i; let t;
+    while (depth > 0 && (t = tag.exec(html))) depth += t[1] ? -1 : 1;
+    out.push(html.slice(i, t ? t.index : html.length));
+  }
+  if (!out.length) return '';
+  return out.join('\n').replace(/<div[^>]*data-exclude-from-selection="true"[\s\S]*?<\/div>/g, '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&#x27;|&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n').trim();
+}
+async function geniusLyrics(artist, title, fetchFn = fetch) {
+  const H = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept-Language': 'en' };
+  const r = await fetchFn('https://genius.com/api/search/multi?per_page=5&q=' + encodeURIComponent(`${artist} ${title}`), { headers: H });
+  if (!r.ok) return null;
+  const j = await r.json();
+  const hits = [].concat(...((j.response && j.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
+  const norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const want = norm(title), who = norm(artist);
+  const best = hits.find(h => norm(h.result.title).includes(want) || want.includes(norm(h.result.title))) && hits.find(h => (norm(h.result.title).includes(want) || want.includes(norm(h.result.title))) && (!who || norm(h.result.primary_artist && h.result.primary_artist.name).includes(who) || who.includes(norm(h.result.primary_artist && h.result.primary_artist.name))));
+  if (!best) return null;
+  const p = await fetchFn(best.result.url, { headers: H });
+  if (!p.ok) return null;
+  const text = extractGenius(await p.text());
+  return text.length > 40 ? text : null;
+}
+
+
 const UA = { 'User-Agent': 'Mozilla/5.0', Referer: 'https://music.163.com/' };
 
 async function netease(artist, title, dur) {
@@ -19,17 +48,6 @@ async function netease(artist, title, dur) {
   }
   return null;
 }
-async function genius(artist, title, token) {
-  if (!token) return null;
-  const r = await (await fetch(`https://api.genius.com/search?q=${encodeURIComponent(artist + ' ' + title)}`, { headers: { Authorization: 'Bearer ' + token } })).json();
-  const hit = r.response && r.response.hits && r.response.hits[0] && r.response.hits[0].result;
-  if (!hit) return null;
-  const html = await (await fetch(hit.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
-  const parts = [...html.matchAll(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/g)].map(m => m[1]);
-  if (!parts.length) return null;
-  const text = parts.join('\n').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').trim();
-  return text ? { plain: text, source: 'genius' } : null;
-}
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: { ...CORS, 'Access-Control-Allow-Headers': '*' } });
@@ -38,7 +56,7 @@ export default {
     const artist = u.searchParams.get('artist') || '', title = u.searchParams.get('title') || '', dur = +u.searchParams.get('duration') || 0;
     if (!title) return json({ error: 'title' }, 400);
     try { const n = await netease(artist, title, dur); if (n) return json(n); } catch (e) { /* дальше */ }
-    try { const g = await genius(artist, title, env.GENIUS_TOKEN); if (g) return json(g); } catch (e) { /* дальше */ }
+    try { const g0 = await geniusLyrics(artist, title); const g = g0 ? { plain: g0, source: 'genius' } : null; if (g) return json(g); } catch (e) { /* дальше */ }
     return json({ notFound: true }, 404);
   },
 };
