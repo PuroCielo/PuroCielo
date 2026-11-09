@@ -2497,16 +2497,14 @@ function updateLyrics(t, force) {
     const ws = el.querySelectorAll('.w');
     if (!wTimes)
         wTimes = wordTimes(idx);
-    for (let k = 0; k < ws.length; k++) {
-        const w = wTimes[k];
-        if (!w)
-            break;
-        const p = (0, util_js_1.clamp)((t - w.a) / Math.max(0.08, w.b - w.a), 0, 1), q = Math.round(p * 20) / 20; // шаг 5% — меньше записей в стили
-        if (wLast[k] !== q) {
-            wLast[k] = q;
-            ws[k].style.setProperty('--wp', q);
-            ws[k].classList.toggle('on', q > 0);
-        }
+    // подсвечивается только слово, которое поётся сейчас; спетые чуть светлее, будущие приглушены
+    let cur = -1;
+    for (let k = 0; k < ws.length && wTimes[k]; k++)
+        if (t >= wTimes[k].a)
+            cur = k;
+    if (cur !== wLast[0]) {
+        wLast[0] = cur;
+        ws.forEach((w, k) => { w.classList.toggle('cur', k === cur); w.classList.toggle('sung', k < cur); });
     }
 }
 // ---------- сдвиг синхронизации ----------

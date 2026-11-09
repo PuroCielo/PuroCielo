@@ -674,8 +674,9 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .np[data-pane="queue"] .ly-fab { display: none; }
 
 /* ===== v1.6: пословное караоке, сдвиг, обложка по ширине ===== */
-.ly.active .w { --wp: 0; display: inline; color: transparent; -webkit-text-fill-color: transparent; background-image: linear-gradient(90deg, var(--accent-fg) 0, var(--accent-fg) calc(var(--wp) * 112% - 12%), var(--text-2) calc(var(--wp) * 112%), var(--text-2) 100%); -webkit-background-clip: text; background-clip: text; transition: none; }
-.ly.active .w.on { text-shadow: none; filter: drop-shadow(0 0 14px var(--accent-soft)); }
+.ly.active .w { display: inline-block; color: var(--text-3); transition: color .18s, transform .18s, text-shadow .18s; transform-origin: 50% 80%; }
+.ly.active .w.sung { color: var(--text-2); }
+.ly.active .w.cur { color: var(--accent-fg); transform: scale(1.08); text-shadow: 0 0 22px var(--accent-soft), 0 0 2px var(--accent-soft); }
 .ly-off { position: absolute; left: 50%; bottom: 54px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 2px; padding: 3px 6px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: rgba(34, 34, 38, .78); color: #fff; backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, .14); white-space: nowrap; }
 .ly-off[hidden] { display: none; } .ly-off span { padding: 0 8px; opacity: .85; } .ly-off b { font-variant-numeric: tabular-nums; } .ly-off .icon-btn { color: #fff; width: 28px; height: 28px; font-size: 18px; line-height: 1; }
 :root[data-theme="light"] .ly-off { background: rgba(255, 255, 255, .9); color: #1D1D1F; border-color: rgba(0, 0, 0, .12); } :root[data-theme="light"] .ly-off .icon-btn { color: #1D1D1F; }
@@ -3306,16 +3307,14 @@ function updateLyrics(t, force) {
     const ws = el.querySelectorAll('.w');
     if (!wTimes)
         wTimes = wordTimes(idx);
-    for (let k = 0; k < ws.length; k++) {
-        const w = wTimes[k];
-        if (!w)
-            break;
-        const p = (0, util_js_1.clamp)((t - w.a) / Math.max(0.08, w.b - w.a), 0, 1), q = Math.round(p * 20) / 20; // шаг 5% — меньше записей в стили
-        if (wLast[k] !== q) {
-            wLast[k] = q;
-            ws[k].style.setProperty('--wp', q);
-            ws[k].classList.toggle('on', q > 0);
-        }
+    // подсвечивается только слово, которое поётся сейчас; спетые чуть светлее, будущие приглушены
+    let cur = -1;
+    for (let k = 0; k < ws.length && wTimes[k]; k++)
+        if (t >= wTimes[k].a)
+            cur = k;
+    if (cur !== wLast[0]) {
+        wLast[0] = cur;
+        ws.forEach((w, k) => { w.classList.toggle('cur', k === cur); w.classList.toggle('sung', k < cur); });
     }
 }
 // ---------- сдвиг синхронизации ----------
