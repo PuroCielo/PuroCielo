@@ -10,7 +10,7 @@ const ERR = {
   'auth/unauthorized-domain': 'Этот адрес сайта не добавлен в Firebase (Authentication → Settings → Authorized domains).', 'auth/operation-not-allowed': 'Этот способ входа не включён в Firebase.',
   'auth/network-request-failed': 'Нет соединения с интернетом.',
 };
-const RESERVED = new Set(['admin', 'administrator', 'support', 'help', 'root', 'system', 'purocielo', 'puro', 'cielo', 'moderator', 'staff', 'official', 'null', 'undefined']);
+const RESERVED = new Set(['admin', 'administrator', 'support', 'help', 'root', 'system', 'puro', 'cielo', 'moderator', 'staff', 'official', 'null', 'undefined']);
 const cleanUser = v => String(v || '').trim().replace(/^@+/, '').toLowerCase();
 function checkUser(n) {
   if (!/^[a-z0-9_.]{3,24}$/.test(n)) return 'Ник: 3–24 символа, только латинские буквы, цифры, точка и _.';

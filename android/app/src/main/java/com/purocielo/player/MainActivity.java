@@ -33,12 +33,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import android.util.Base64;
+import android.provider.OpenableColumns;
 import java.util.Map;
 
 /** Оболочка: WebView с сайтом из assets/www + доступ к одной выбранной папке с музыкой (SAF). */
 public class MainActivity extends Activity {
     static final String HOST = "puro.local";
-    static final int REQ_TREE = 41, REQ_NOTIF = 42;
+    static final int REQ_TREE = 41, REQ_NOTIF = 42, REQ_FILES = 43;
     static MainActivity instance;
 
     WebView web;
@@ -99,15 +103,36 @@ public class MainActivity extends Activity {
         return r;
     }
 
+    // ---------- отдельные файлы, добавленные по одному ----------
+    Set<String> singles() {
+        Set<String> out = new LinkedHashSet<>();
+        try { JSONArray a = new JSONArray(prefs.getString("files", "[]")); for (int i = 0; i < a.length(); i++) out.add(a.getString(i)); } catch (Exception ignored) { }
+        return out;
+    }
+    void saveSingles(Set<String> s) { prefs.edit().putString("files", new JSONArray(s).toString()).apply(); }
+    String docNameOf(Uri u) {
+        try (Cursor c = getContentResolver().query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst() && c.getString(0) != null) return c.getString(0);
+        } catch (Exception ignored) { }
+        return "track";
+    }
+    static String singleId(String uri) { try { return "uri:" + Base64.encodeToString(uri.getBytes("UTF-8"), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING); } catch (Exception e) { return "uri:"; } }
+
     Uri treeUri() { String s = prefs.getString("tree", null); return s == null ? null : Uri.parse(s); }
 
     WebResourceResponse serveDoc(String docId, Map<String, String> headers) throws IOException {
-        Uri tree = treeUri(); if (tree == null) return err(404, "No folder");
-        Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, docId);
+        Uri doc; String nameHint = docId;
+        if (docId.startsWith("uri:")) {
+            try { doc = Uri.parse(new String(Base64.decode(docId.substring(4), Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8")); } catch (Exception e) { return err(404, "Bad id"); }
+            nameHint = docNameOf(doc);
+        } else {
+            Uri tree = treeUri(); if (tree == null) return err(404, "No folder");
+            doc = DocumentsContract.buildDocumentUriUsingTree(tree, docId);
+        }
         ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(doc, "r");
         if (pfd == null) return err(404, "Not found");
         long size = pfd.getStatSize();
-        String name = docId.substring(docId.lastIndexOf('/') + 1);
+        String name = nameHint.substring(nameHint.lastIndexOf('/') + 1);
         String ext = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1).toLowerCase() : "";
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
         if (mime == null) mime = ext.equals("flac") ? "audio/flac" : ext.equals("lrc") || ext.startsWith("m3u") ? "text/plain" : "application/octet-stream";
@@ -147,8 +172,19 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             JSONObject res = new JSONObject();
             try {
-                if (tree == null) throw new IOException("Папка не выбрана");
+                Set<String> one = singles();
+                if (tree == null && one.isEmpty()) throw new IOException("Ничего не выбрано");
                 JSONArray files = new JSONArray();
+                for (String us : one) {
+                    Uri u = Uri.parse(us);
+                    try (Cursor c = getContentResolver().query(u, new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}, null, null, null)) {
+                        if (c == null || !c.moveToFirst()) continue;
+                        JSONObject f = new JSONObject();
+                        f.put("id", singleId(us)); f.put("name", c.getString(0) == null ? "track" : c.getString(0)); f.put("size", c.getLong(1));
+                        f.put("mtime", 0); files.put(f);
+                    } catch (Exception ignored) { }
+                }
+                if (tree != null) {
                 ArrayDeque<String> dirs = new ArrayDeque<>();
                 dirs.add(DocumentsContract.getTreeDocumentId(tree));
                 String[] cols = {DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -166,6 +202,7 @@ public class MainActivity extends Activity {
                             files.put(f);
                         }
                     }
+                }
                 }
                 res.put("ok", true); res.put("folder", folderName()); res.put("files", files);
             } catch (Exception e) {
@@ -191,7 +228,26 @@ public class MainActivity extends Activity {
                 startActivityForResult(i, REQ_TREE);
             });
         }
+        @JavascriptInterface public void pickFiles() {
+            ui.post(() -> {
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("*/*");
+                i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/*", "application/ogg", "application/octet-stream"});
+                i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+                startActivityForResult(i, REQ_FILES);
+            });
+        }
+        @JavascriptInterface public void forget(String docId) {
+            if (docId == null || !docId.startsWith("uri:")) return;
+            try {
+                String uri = new String(Base64.decode(docId.substring(4), Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
+                Set<String> s = singles(); if (s.remove(uri)) saveSingles(s);
+            } catch (Exception ignored) { }
+        }
         @JavascriptInterface public void sync() { scan(); }
+        @JavascriptInterface public void fetchText(String id, String url) { fetchAsync(id, url); }
         @JavascriptInterface public String folderName() { return MainActivity.this.folderName(); }
         @JavascriptInterface public void setPlayback(boolean playing, String title, String artist) {
             Intent i = new Intent(MainActivity.this, MusicService.class);
@@ -204,12 +260,50 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_FILES && res == RESULT_OK && data != null) {
+            Set<String> s = singles(); java.util.List<Uri> picked = new java.util.ArrayList<>();
+            if (data.getClipData() != null) for (int i = 0; i < data.getClipData().getItemCount(); i++) picked.add(data.getClipData().getItemAt(i).getUri());
+            else if (data.getData() != null) picked.add(data.getData());
+            for (Uri u : picked) {
+                try { getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) { }
+                s.add(u.toString());
+            }
+            saveSingles(s); scan();
+            return;
+        }
         if (req == REQ_TREE && res == RESULT_OK && data != null && data.getData() != null) {
             Uri u = data.getData();
             getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             prefs.edit().putString("tree", u.toString()).apply();
             scan();
         }
+    }
+
+    /** Загрузка страницы для поиска текстов на сайтах (в WebView это запрещено CORS). Только известные хосты. */
+    static final String[] HOSTS = {"genius.com", "www.azlyrics.com", "www.lyrics.com", "text-pesni.com", "vse-pesni.com", "www.text-pesni.com", "www.vse-pesni.com", "search.azlyrics.com", "lyrics.com"};
+    void fetchAsync(final String id, final String url) {
+        new Thread(() -> {
+            String out = "";
+            try {
+                Uri u = Uri.parse(url);
+                boolean ok = "https".equals(u.getScheme()) && u.getHost() != null;
+                if (ok) { ok = false; for (String h : HOSTS) if (h.equals(u.getHost())) ok = true; }
+                if (ok) {
+                    java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                    c.setConnectTimeout(9000); c.setReadTimeout(12000); c.setInstanceFollowRedirects(true);
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36");
+                    c.setRequestProperty("Accept-Language", "ru,en;q=0.8");
+                    if (c.getResponseCode() == 200) {
+                        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream(); byte[] buf = new byte[16384]; int n;
+                        try (InputStream in = c.getInputStream()) { while ((n = in.read(buf)) > 0 && bo.size() < 4_000_000) bo.write(buf, 0, n); }
+                        String ct = c.getContentType() == null ? "" : c.getContentType().toLowerCase();
+                        out = bo.toString(ct.contains("1251") ? "windows-1251" : "UTF-8");
+                    }
+                }
+            } catch (Exception ignored) { }
+            final String js = "window.__puroNative&&window.__puroNative.onFetch(" + JSONObject.quote(id) + "," + JSONObject.quote(out) + ")";
+            ui.post(() -> web.evaluateJavascript(js, null));
+        }).start();
     }
 
     /** Команды из уведомления / наушников → JS */

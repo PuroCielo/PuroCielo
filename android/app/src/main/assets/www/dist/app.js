@@ -309,7 +309,7 @@ function doAction(el, e) {
                 location.hash = '#/playlist/' + p.id; });
             break;
         case 'add-files':
-            (0, util_js_1.$)('#file-input').click();
+            native_js_1.isNative ? (0, native_js_1.pickFiles)() : (0, util_js_1.$)('#file-input').click();
             break;
         case 'add-folder':
             native_js_1.isNative ? (0, native_js_1.pickFolder)() : (0, util_js_1.$)('#dir-input').click();
@@ -740,6 +740,8 @@ async function clearLibrary() {
         actions: [{ label: 'Отмена' }, { label: 'Очистить', primary: true, danger: true, onClick: async () => {
                     (0, player_js_1.stop)();
                     await (0, db_js_1.clearFiles)();
+                    for (const id of state_js_1.state.tracks.keys())
+                        (0, native_js_1.forgetFile)(id);
                     for (const t of state_js_1.state.tracks.values()) {
                         if (!t.url.startsWith('/f/'))
                             URL.revokeObjectURL(t.url);
@@ -938,7 +940,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
         (0, native_js_1.rescan)();
 })();
 // Android: оболочка присылает список файлов выбранной папки; «назад» и фоновое воспроизведение
-window.__puroNative = { onScan: scan => (0, importer_js_1.syncNativeLibrary)(scan).then(() => { if (['profile', 'settings'].includes(route().name))
+window.__puroNative = { onFetch: native_js_1.onNativeFetch, onScan: scan => (0, importer_js_1.syncNativeLibrary)(scan).then(() => { if (['profile', 'settings'].includes(route().name))
         render({ keepScroll: true }); }) };
 window.__puroBack = () => goBack();
 // команды из уведомления / наушников (Android)
@@ -956,7 +958,7 @@ if (native_js_1.isNative) {
 // PWA: офлайн-кэш оболочки (только при открытии по http/https, не внутри приложения)
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !native_js_1.isNative)
     navigator.serviceWorker.register('sw.js').catch(() => { });
-window.__puro = { state: state_js_1.state, P: player_js_1.P, importFiles: importer_js_1.importFiles, derived: state_js_1.derived };
+window.__puro = { state: state_js_1.state, P: player_js_1.P, audio: player_js_1.audio, importFiles: importer_js_1.importFiles, derived: state_js_1.derived };
 
 };
 defs["artists.js"]=function(module,exports,require){"use strict";
@@ -1581,8 +1583,15 @@ function parseLrc(text) {
         }
         if (stamps.length) {
             const t = line.replace(/<\d+:\d+(?:[.:]\d+)?>/g, '').replace(/\s+/g, ' ').trim();
+            let words = null; // enhanced LRC: <мм:сс.хх>слово — метки отдельных слов
+            if (/<\d+:\d+/.test(line)) {
+                const parts = [...line.matchAll(/<(\d+):(\d+)(?:[.:](\d+))?>\s*([^<]*)/g)].map(m => ({ t: +m[1] * 60 + +m[2] + (m[3] ? parseInt(m[3].padEnd(3, '0').slice(0, 3), 10) / 1000 : 0), text: m[4].trim() })).filter(x => x.text);
+                const joined = parts.map(x => x.text).join(' ');
+                if (parts.length && joined === t)
+                    words = parts;
+            }
             for (const s of stamps)
-                lines.push({ t: s, text: t });
+                lines.push(words ? { t: s, text: t, words: words.map(w => ({ ...w, t: w.t - (stamps[0] - s) })) } : { t: s, text: t });
             continue;
         }
         const tag = /^\[([a-zA-Z#]+):(.*)\]$/.exec(line);
@@ -1593,8 +1602,12 @@ function parseLrc(text) {
                 meta[tag[1].toLowerCase()] = tag[2].trim();
         }
     }
-    for (const l of lines)
+    for (const l of lines) {
         l.t = Math.max(0, l.t - offset);
+        if (l.words)
+            for (const w of l.words)
+                w.t = Math.max(0, w.t - offset);
+    }
     lines.sort((a, b) => a.t - b.t);
     return { lines, meta, synced: lines.length > 1 };
 }
@@ -1616,6 +1629,8 @@ function activeLine(lines, t) {
 };
 defs["lyrics-auto.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getOffset = getOffset;
+exports.setOffset = setOffset;
 exports.rawLyrics = rawLyrics;
 exports.setManualLyrics = setManualLyrics;
 exports.ensureLyrics = ensureLyrics;
@@ -1627,11 +1642,13 @@ const lrc_js_1 = require("./lrc.js");
 const db_js_1 = require("./db.js");
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
+const lyrics_web_js_1 = require("./lyrics-web.js");
+const native_js_1 = require("./native.js");
 const API = 'https://lrclib.net/api';
 const MISS_TTL = 14 * 24 * 3600 * 1000; // «не найдено» помним две недели
 const cleanTitle = s => String(s || '').replace(/\s*[(\[][^)\]]*[)\]]/g, '').replace(/\s+[-–—]\s+(?:remaster(?:ed)?|live|radio edit|single version).*$/i, '').trim() || String(s || '').trim();
 const primaryArtist = t => (t._artists && t._artists[0]) || (0, artists_js_1.splitArtists)(t.artist)[0] || t.artist || '';
-const keyOf = t => `${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v2|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -1659,6 +1676,14 @@ async function getJSON(url, ms = 9000) {
         clearTimeout(timer);
     }
 }
+// Это та же песня? LRCLIB ищет нечётко и может вернуть другой трек — тогда текст «идёт» не по песне.
+const sameTrack = (x, title, artist) => {
+    const a = (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName || x.name)), b = (0, lyrics_web_js_1.norm)(title);
+    if (a && b && !(a.includes(b) || b.includes(a)))
+        return false;
+    const who = (0, lyrics_web_js_1.norm)(artist), got = (0, lyrics_web_js_1.norm)(x.artistName);
+    return !who || !got || got.includes(who) || who.includes(got) || (0, lyrics_web_js_1.norm)(x.artistName).includes((0, lyrics_web_js_1.norm)((0, artists_js_1.splitArtists)(x.artistName)[0] || ''));
+};
 async function lookup(t) {
     const artist = primaryArtist(t), title = cleanTitle(t.title), dur = Math.round(t.duration || 0);
     const q = new URLSearchParams({ track_name: title, artist_name: artist });
@@ -1667,15 +1692,19 @@ async function lookup(t) {
     if (dur)
         q.set('duration', String(dur));
     let r = await getJSON(`${API}/get?${q}`);
-    if (r.data && (r.data.syncedLyrics || r.data.plainLyrics || r.data.instrumental))
-        return r.data;
+    const exact = r.data && (r.data.syncedLyrics || r.data.plainLyrics || r.data.instrumental) ? r.data : null;
+    if (exact && (!dur || !exact.duration || Math.abs(exact.duration - dur) <= 3))
+        return exact; // версия совпадает по длине
     const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: title, artist_name: artist })}`);
     const list = Array.isArray(s.data) ? s.data : [];
-    const ok = list.filter(x => x && (x.syncedLyrics || x.plainLyrics));
+    const ok = list.filter(x => x && (x.syncedLyrics || x.plainLyrics) && sameTrack(x, title, artist));
+    // ближайшая по длительности версия; при равенстве — с метками времени
     ok.sort((a, b) => (Math.abs((a.duration || 0) - dur) - Math.abs((b.duration || 0) - dur)) || ((b.syncedLyrics ? 1 : 0) - (a.syncedLyrics ? 1 : 0)));
     const best = ok[0];
     if (best && (!dur || !best.duration || Math.abs(best.duration - dur) <= 6))
         return best;
+    if (exact && (!dur || !exact.duration || Math.abs(exact.duration - dur) <= 6))
+        return exact;
     return null;
 }
 // Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
@@ -1690,6 +1719,17 @@ async function extraSources(t) {
         catch { /* дальше */ }
     }
     const proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
+    const desktop = typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText;
+    const fetchText = desktop ? u => window.PuroDesktop.fetchText(u)
+        : native_js_1.isNative ? u => (0, native_js_1.nativeFetchText)(u)
+            : proxy ? async (u) => { try {
+                const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
+                return r.ok ? await r.text() : '';
+            }
+            catch {
+                return '';
+            } }
+                : null;
     if (proxy) {
         try {
             const r = await getJSON(`${proxy}/lyrics?${new URLSearchParams({ artist, title, duration: String(Math.round(t.duration || 0)) })}`, 12000);
@@ -1706,6 +1746,14 @@ async function extraSources(t) {
         }
         catch { /* сервер недоступен */ }
     }
+    if (fetchText) { // Genius, Lyrics.com, AZLyrics, Text-pesni, Vse-pesni
+        try {
+            const w = await (0, lyrics_web_js_1.webLyrics)(artist, title, fetchText, { skip: desktop && window.PuroDesktop.genius ? ['genius'] : [] });
+            if (w)
+                return { type: 'plain', text: w.text, source: w.source };
+        }
+        catch { /* дальше */ }
+    }
     try {
         const r = await getJSON(`https://lyrist.vercel.app/api/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, 8000);
         const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
@@ -1715,6 +1763,15 @@ async function extraSources(t) {
     catch { /* источник недоступен */ }
     return null;
 }
+// ---- сдвиг синхронизации для конкретного трека (секунды) ----
+async function getOffset(t) { try {
+    const r = await (0, db_js_1.lyGet)('off:' + t.id);
+    return r && typeof r.off === 'number' ? r.off : 0;
+}
+catch {
+    return 0;
+} }
+async function setOffset(t, off) { off = Math.round(off * 10) / 10; t._off = off; await (0, db_js_1.lySet)('off:' + t.id, { off, at: Date.now() }); }
 const running = new Map();
 // Возвращает true, если у трека появился текст. t._ly: 'loading' | 'none' | undefined
 // ---- свои тексты: вставленные или загруженные из файла вручную ----
@@ -1833,6 +1890,184 @@ function ensureLyrics(t) {
 }
 
 };
+defs["lyrics-web.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.looksLikeLyrics = exports.azUrl = exports.htmlToText = exports.decodeEntities = exports.norm = void 0;
+exports.extractGenius = extractGenius;
+exports.pickGeniusHit = pickGeniusHit;
+exports.pickLyricsCom = pickLyricsCom;
+exports.extractLyricsCom = extractLyricsCom;
+exports.extractAz = extractAz;
+exports.linksByText = linksByText;
+exports.bestTextBlock = bestTextBlock;
+exports.webLyrics = webLyrics;
+// Тексты с сайтов: Genius, Lyrics.com, AZLyrics, Text-pesni, Vse-pesni.
+// Браузер не может читать эти сайты напрямую (CORS), поэтому страницу скачивает «посредник»:
+//  • приложение для Windows — главный процесс Electron;  • APK — нативный мост;  • сайт/PWA — свой Cloudflare Worker (/fetch).
+// Здесь только разбор HTML и выбор нужной песни; функции чистые, их можно проверять без сети.
+const norm = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, '');
+exports.norm = norm;
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", '#x27': "'" };
+const decodeEntities = s => String(s).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+        const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return n ? String.fromCodePoint(n) : m;
+    }
+    return ENT[e.toLowerCase()] ?? m;
+});
+exports.decodeEntities = decodeEntities;
+const htmlToText = h => (0, exports.decodeEntities)(String(h).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->/gi, '')
+    .replace(/<br\s*\/?>[ \t]*\r?\n?/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+exports.htmlToText = htmlToText;
+// ---- Genius ----
+function extractGenius(html) {
+    const out = [];
+    const re = /<div[^>]*data-lyrics-container="true"[^>]*>/g;
+    let m;
+    while ((m = re.exec(html))) {
+        let i = re.lastIndex, depth = 1;
+        const tag = /<(\/?)div\b[^>]*>/g;
+        tag.lastIndex = i;
+        let t;
+        while (depth > 0 && (t = tag.exec(html)))
+            depth += t[1] ? -1 : 1;
+        out.push(html.slice(i, t ? t.index : html.length));
+    }
+    if (!out.length)
+        return '';
+    return (0, exports.htmlToText)(out.join('\n').replace(/<div[^>]*data-exclude-from-selection="true"[\s\S]*?<\/div>/g, ''));
+}
+const sameSong = (a, b) => { a = (0, exports.norm)(a); b = (0, exports.norm)(b); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+function pickGeniusHit(json, artist, title) {
+    const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameSong(h.result.primary_artist && h.result.primary_artist.name, artist)));
+    return h ? h.result.url : '';
+}
+// ---- Lyrics.com ----
+function pickLyricsCom(html, artist, title) {
+    const re = /href="(\/lyric\/\d+\/[^"]+)"[^>]*>([^<]*)</g;
+    let m;
+    const want = (0, exports.norm)(title);
+    while ((m = re.exec(html))) {
+        const slug = decodeURIComponent(m[1]).toLowerCase();
+        if ((0, exports.norm)(m[2]).includes(want) || (0, exports.norm)(slug).includes(want)) {
+            if (!artist || (0, exports.norm)(slug).includes((0, exports.norm)(artist).slice(0, 5)))
+                return 'https://www.lyrics.com' + m[1];
+        }
+    }
+    return '';
+}
+function extractLyricsCom(html) { const m = /<pre[^>]*id="lyric-body-text"[^>]*>([\s\S]*?)<\/pre>/i.exec(html); return m ? (0, exports.htmlToText)(m[1]) : ''; }
+// ---- AZLyrics (адрес собирается из имён, только латиница) ----
+const azUrl = (artist, title) => {
+    const f = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const a = f(artist), t = f(title);
+    return a && t ? `https://www.azlyrics.com/lyrics/${a}/${t}.html` : '';
+};
+exports.azUrl = azUrl;
+function extractAz(html) { const m = /Sorry about that\.\s*-->([\s\S]*?)<\/div>/i.exec(html); return m ? (0, exports.htmlToText)(m[1]) : ''; }
+// ---- общий разбор для русскоязычных сайтов: ссылка по тексту → страница → самый «похожий на стихи» блок ----
+function linksByText(html, origin, title, artist) {
+    const want = (0, exports.norm)(title), who = (0, exports.norm)(artist);
+    const out = [];
+    const re = /<a\b[^>]*href="([^"#]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = re.exec(html))) {
+        const text = (0, exports.norm)((0, exports.htmlToText)(m[2]));
+        if (!text || !text.includes(want))
+            continue;
+        let href = m[1];
+        if (href.startsWith('//'))
+            href = 'https:' + href;
+        else if (href.startsWith('/'))
+            href = origin + href;
+        else if (!/^https?:/.test(href))
+            continue;
+        if (!href.startsWith(origin))
+            continue;
+        out.push({ href, score: (who && text.includes(who) ? 2 : 0) + (text === want ? 1 : 0) });
+    }
+    return out.sort((a, b) => b.score - a.score).map(x => x.href);
+}
+function bestTextBlock(html) {
+    const cleaned = String(html).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->|<nav[\s\S]*?<\/nav>|<header[\s\S]*?<\/header>|<footer[\s\S]*?<\/footer>|<form[\s\S]*?<\/form>/gi, '');
+    let best = '', bestScore = 0;
+    const re = /<(div|article|pre|section|p|td)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let m;
+    while ((m = re.exec(cleaned))) {
+        const inner = m[2];
+        if (/<(div|article|section|table)\b/i.test(inner))
+            continue; // только самые вложенные блоки
+        const links = (inner.match(/<a\b/gi) || []).length;
+        const text = (0, exports.htmlToText)(inner), lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 6 || lines.length > 220)
+            continue;
+        const avg = text.length / lines.length;
+        if (avg > 90 || avg < 8)
+            continue;
+        const score = lines.length * 2 - links * 3 - Math.max(0, avg - 50);
+        if (score > bestScore) {
+            bestScore = score;
+            best = text;
+        }
+    }
+    return best;
+}
+const BAD = /cookie|javascript|реклама|все права защищены|войти|регистрац/i;
+const looksLikeLyrics = t => !!t && t.split('\n').filter(l => l.trim()).length >= 6 && !BAD.test(t.slice(0, 400));
+exports.looksLikeLyrics = looksLikeLyrics;
+const SITES = [
+    { id: 'text-pesni', origin: 'https://text-pesni.com', search: q => [`https://text-pesni.com/search/?q=${q}`, `https://text-pesni.com/?s=${q}`] },
+    { id: 'vse-pesni', origin: 'https://vse-pesni.com', search: q => [`https://vse-pesni.com/?s=${q}`, `https://vse-pesni.com/search/?q=${q}`] },
+];
+// fetchText(url) → строка HTML/JSON или '' при ошибке. Возвращает { text, source } или null.
+async function webLyrics(artist, title, fetchText, { skip = [] } = {}) {
+    const tryRun = async (id, fn) => { if (skip.includes(id))
+        return null; try {
+        const text = await fn();
+        return text && text.length > 40 ? { text, source: id } : null;
+    }
+    catch {
+        return null;
+    } };
+    const q = encodeURIComponent(`${artist} ${title}`.trim()), cyr = /[а-яё]/i.test(artist + title);
+    const jobs = [
+        ['genius', async () => {
+                const j = JSON.parse(await fetchText('https://genius.com/api/search/multi?per_page=5&q=' + q) || 'null');
+                const url = pickGeniusHit(j, artist, title);
+                return url ? extractGenius(await fetchText(url)) : '';
+            }],
+        ['lyricscom', async () => {
+                if (cyr)
+                    return '';
+                const url = pickLyricsCom(await fetchText(`https://www.lyrics.com/serp.php?st=${q}&qtype=2`), artist, title);
+                return url ? extractLyricsCom(await fetchText(url)) : '';
+            }],
+        ['azlyrics', async () => { const url = cyr ? '' : (0, exports.azUrl)(artist, title); return url ? extractAz(await fetchText(url)) : ''; }],
+        ...SITES.map(s => [s.id, async () => {
+                for (const su of s.search(q)) {
+                    const links = linksByText(await fetchText(su), s.origin, title, artist).slice(0, 2);
+                    for (const l of links) {
+                        const t = bestTextBlock(await fetchText(l));
+                        if ((0, exports.looksLikeLyrics)(t))
+                            return t;
+                    }
+                }
+                return '';
+            }]),
+    ];
+    // русские песни — сначала русскоязычные сайты, остальные — как есть
+    if (cyr)
+        jobs.sort((a, b) => (['text-pesni', 'vse-pesni'].includes(b[0]) ? 1 : 0) - (['text-pesni', 'vse-pesni'].includes(a[0]) ? 1 : 0));
+    for (const [id, fn] of jobs) {
+        const r = await tryRun(id, fn);
+        if (r)
+            return r;
+    }
+    return null;
+}
+
+};
 defs["m3u.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseM3U = parseM3U;
@@ -1874,7 +2109,7 @@ function buildM3U(name, tracks) {
 };
 defs["native.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.setPlayback = exports.folderName = exports.rescan = exports.pickFolder = exports.RemoteFile = exports.isNativeId = exports.nativeId = exports.nativeUrl = exports.isNative = exports.bridge = void 0;
+exports.onNativeFetch = exports.nativeFetchText = exports.forgetFile = exports.pickFiles = exports.setPlayback = exports.folderName = exports.rescan = exports.pickFolder = exports.RemoteFile = exports.isNativeId = exports.nativeId = exports.nativeUrl = exports.isNative = exports.bridge = void 0;
 // Мост к Android-оболочке (WebView). В браузере и в Electron window.PuroNative нет — тогда всё работает как раньше.
 exports.bridge = typeof window !== 'undefined' ? window.PuroNative || null : null;
 exports.isNative = !!exports.bridge;
@@ -1925,6 +2160,40 @@ const setPlayback = (playing, title, artist) => { try {
 }
 catch { /* ignore */ } };
 exports.setPlayback = setPlayback;
+const pickFiles = () => { try {
+    exports.bridge?.pickFiles();
+}
+catch { /* ignore */ } };
+exports.pickFiles = pickFiles;
+// Трек, добавленный по одному, забываем и в оболочке (иначе при следующем сканировании он вернётся)
+const forgetFile = id => { try {
+    if (typeof id === 'string' && id.startsWith('n:uri:'))
+        exports.bridge?.forget(id.slice(2));
+}
+catch { /* ignore */ } };
+exports.forgetFile = forgetFile;
+// Загрузка страницы сайта через оболочку (WebView сам не может из-за CORS)
+const pend = new Map();
+let seq = 0;
+const nativeFetchText = (url, ms = 14000) => new Promise(res => {
+    const id = 'f' + (++seq);
+    const timer = setTimeout(() => { pend.delete(id); res(''); }, ms);
+    pend.set(id, txt => { clearTimeout(timer); res(txt || ''); });
+    try {
+        exports.bridge.fetchText(id, url);
+    }
+    catch {
+        clearTimeout(timer);
+        pend.delete(id);
+        res('');
+    }
+});
+exports.nativeFetchText = nativeFetchText;
+const onNativeFetch = (id, txt) => { const f = pend.get(id); if (f) {
+    pend.delete(id);
+    f(txt);
+} };
+exports.onNativeFetch = onNativeFetch;
 
 };
 defs["nowplaying.js"]=function(module,exports,require){"use strict";
@@ -1939,6 +2208,7 @@ exports.initPlayerUI = initPlayerUI;
 const player_js_1 = require("./player.js");
 const state_js_1 = require("./state.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
+const vocal_js_1 = require("./vocal.js");
 const ui_js_1 = require("./ui.js");
 const icons_js_1 = require("./icons.js");
 const lrc_js_1 = require("./lrc.js");
@@ -2076,8 +2346,9 @@ function renderTrack(t) {
     syncPlay();
     document.title = `${t.title} — ${(0, views_js_1.artistsOf)(t).join(', ') || 'Puro Cielo'}`;
 }
-// Примерное время строк для обычного текста: делим трек пропорционально длине строк
-function fakeSync(text, dur) {
+// Примерное время строк для обычного текста. Если известна карта «где поют» (vocal.js), строки раскладываются по ней,
+// иначе трек делится пропорционально длине строк.
+function fakeSync(text, dur, act) {
     const raw = String(text).split(/\r?\n/).map(l => l.trim()), items = [];
     for (const l of raw) {
         if (l)
@@ -2085,14 +2356,15 @@ function fakeSync(text, dur) {
         else if (items.length && items[items.length - 1].text)
             items[items.length - 1].gap = true;
     }
+    const weights = items.map(x => x.w + (x.gap ? 10 : 0));
+    const on = act && (0, vocal_js_1.layoutOnActivity)(weights, dur, act);
+    if (on)
+        return items.map((x, i) => ({ t: on[i], text: x.text }));
     const start = Math.min(14, dur * 0.06), end = dur - Math.min(10, dur * 0.05), span = Math.max(10, end - start);
-    const tot = items.reduce((s, x) => s + x.w + (x.gap ? 10 : 0), 0) || 1;
+    const tot = weights.reduce((s, w) => s + w, 0) || 1;
     let t = start;
     const out = [];
-    for (const x of items) {
-        out.push({ t, text: x.text });
-        t += span * (x.w + (x.gap ? 10 : 0)) / tot;
-    }
+    items.forEach((x, i) => { out.push({ t, text: x.text }); t += span * weights[i] / tot; });
     return out;
 }
 let lastPlainDur = 0;
@@ -2107,13 +2379,15 @@ function syncMeta() {
         (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(d);
 }
 // ---------- Караоке ----------
-let lines = [], lyEls = [], lastIdx = -2, lastWords = -1, userScrollUntil = 0, lyType = null;
+let lines = [], lyEls = [], lastIdx = -2, lastWords = -1, userScrollUntil = 0, lyType = null, curOff = 0, wTimes = null, wLast = [];
 function renderLyrics(t) {
     lines = [];
     lyEls = [];
     lastIdx = -2;
     lastWords = -1;
     lyType = null;
+    wTimes = null;
+    wLast = [];
     let ly = t?.lyrics;
     lyBox.scrollTop = 0;
     {
@@ -2124,9 +2398,28 @@ function renderLyrics(t) {
     if (ly && ly.type === 'plain' && state_js_1.state.settings.autoKaraoke !== false) {
         const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
         if (dur > 20) {
-            ly = { type: 'synced', lines: fakeSync(ly.text, dur), source: ly.source, approx: true };
+            if (!t._actTried) {
+                t._actTried = true;
+                (0, vocal_js_1.vocalActivity)(t).then(a => { if (a) {
+                    t._act = a;
+                    if ((0, player_js_1.current)() === t && t.lyrics?.type === 'plain') {
+                        renderLyrics(t);
+                        updateLyrics(player_js_1.audio.currentTime, true);
+                    }
+                } });
+            }
+            ly = { type: 'synced', lines: fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
         }
     }
+    syncOffUI(!!ly && ly.type === 'synced');
+    if (t && t._off === undefined)
+        (0, lyrics_auto_js_1.getOffset)(t).then(v => { t._off = v; if ((0, player_js_1.current)() === t) {
+            curOff = v;
+            syncOffUI(lyType === 'synced');
+            updateLyrics(player_js_1.audio.currentTime, true);
+        } });
+    else
+        curOff = t?._off || 0;
     if (!ly) {
         const loading = t && t._ly === 'loading';
         lyBox.innerHTML = loading
@@ -2134,14 +2427,14 @@ function renderLyrics(t) {
             : `<div class="ly-empty">${(0, icons_js_1.icon)('lyrics')}<h3>Текста нет</h3><button class="btn btn-soft sm" data-ly="edit">${(0, icons_js_1.icon)('edit')}Добавить текст</button></div>`;
         return;
     }
-    const src = { lrc: 'файл .lrc', sylt: 'встроенный SYLT', uslt: 'встроенный USLT', online: 'найден онлайн', manual: 'ваш текст', netease: 'NetEase', genius: 'Genius' }[ly.source] || 'текст';
+    const src = { lrc: 'файл .lrc', sylt: 'встроенный SYLT', uslt: 'встроенный USLT', online: 'найден онлайн', manual: 'ваш текст', netease: 'NetEase', genius: 'Genius', lyricscom: 'Lyrics.com', azlyrics: 'AZLyrics', 'text-pesni': 'Text-pesni', 'vse-pesni': 'Vse-pesni' }[ly.source] || 'текст';
     lyType = ly.type;
     if (ly.type === 'plain') {
         lyBox.innerHTML = `<div class="ly-src">Текст · ${src}</div><div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `<div class="ly-src">${ly.approx ? 'Примерное караоке' : 'Синхронизировано'} · ${src}</div><div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `<div class="ly-src">${ly.approx ? (ly.byAudio ? 'Примерное караоке по звуку' : 'Примерное караоке') : 'Синхронизировано'} · ${src}</div><div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -2166,18 +2459,33 @@ function editLyrics() {
                 d.onclick = async () => { await (0, lyrics_auto_js_1.setManualLyrics)(t, ''); (0, ui_js_1.toast)('Текст удалён', 'info'); api.close?.(); };
         } });
 }
+// Времена слов внутри строки: если в .lrc есть метки слов — берём их, иначе делим строку пропорционально длине слов
+function wordTimes(i) {
+    const l = lines[i], next = lines[i + 1], ws = l.text.split(' ');
+    const gap = next ? next.t - l.t : 6;
+    if (l.words && l.words.length === ws.length)
+        return l.words.map((w, k) => ({ a: w.t, b: l.words[k + 1] ? l.words[k + 1].t : l.t + Math.min(gap, 4) }));
+    const sing = (0, util_js_1.clamp)(l.text.length * 0.07 + 0.5, 1.2, 9), dur = Math.max(0.6, Math.min(sing, gap * 0.94));
+    const wt = ws.map(w => Math.max(2, w.length)), sum = wt.reduce((x, y) => x + y, 0);
+    let acc = 0;
+    return wt.map(w => { const a = l.t + dur * acc / sum; acc += w; return { a, b: l.t + dur * acc / sum }; });
+}
 function updateLyrics(t, force) {
     if (lyType !== 'synced' || !lines.length)
         return;
+    t -= curOff;
     const idx = (0, lrc_js_1.activeLine)(lines, t + 0.12);
     if (idx !== lastIdx || force) {
         lastIdx = idx;
         lastWords = -1;
+        wTimes = null;
+        wLast = [];
         lyEls.forEach((el, i) => {
             el.classList.toggle('active', i === idx);
             el.classList.toggle('past', i < idx);
             el.dataset.d = Math.min(Math.abs(i - idx), 5);
-            el.querySelectorAll('.w.on').forEach(w => w.classList.remove('on'));
+            if (i !== idx)
+                el.querySelectorAll('.w').forEach(w => w.style.removeProperty('--wp'));
         });
         const el = lyEls[idx];
         if (el && npOpen && Date.now() > userScrollUntil)
@@ -2186,15 +2494,40 @@ function updateLyrics(t, force) {
     const el = lyEls[idx];
     if (!el || el.classList.contains('gap'))
         return;
-    const start = lines[idx].t, end = lines[idx + 1] ? lines[idx + 1].t : start + 5;
-    const f = (0, util_js_1.clamp)((t - start) / Math.max(0.5, Math.min(end - start, 8) * 0.92), 0, 1);
     const ws = el.querySelectorAll('.w');
-    const n = Math.min(ws.length, Math.floor(f * ws.length) + 1);
-    if (n !== lastWords) {
-        lastWords = n;
-        ws.forEach((w, i) => w.classList.toggle('on', i < n));
+    if (!wTimes)
+        wTimes = wordTimes(idx);
+    for (let k = 0; k < ws.length; k++) {
+        const w = wTimes[k];
+        if (!w)
+            break;
+        const p = (0, util_js_1.clamp)((t - w.a) / Math.max(0.08, w.b - w.a), 0, 1), q = Math.round(p * 20) / 20; // шаг 5% — меньше записей в стили
+        if (wLast[k] !== q) {
+            wLast[k] = q;
+            ws[k].style.setProperty('--wp', q);
+            ws[k].classList.toggle('on', q > 0);
+        }
     }
 }
+// ---------- сдвиг синхронизации ----------
+function syncOffUI(show) {
+    const box = (0, util_js_1.$)('#ly-off');
+    if (!box)
+        return;
+    box.hidden = !show;
+    const v = curOff || 0;
+    box.querySelector('b').textContent = (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + ' с';
+}
+(0, util_js_1.$)('#ly-off')?.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-off]');
+    const t = (0, player_js_1.current)();
+    if (!b || !t)
+        return;
+    curOff = b.dataset.off === '0' ? 0 : Math.round(((curOff || 0) + parseFloat(b.dataset.off)) * 10) / 10;
+    await (0, lyrics_auto_js_1.setOffset)(t, curOff);
+    syncOffUI(true);
+    updateLyrics(player_js_1.audio.currentTime, true);
+});
 ['wheel', 'touchmove'].forEach(ev => lyBox.addEventListener(ev, () => { userScrollUntil = Date.now() + 3500; }, { passive: true }));
 (0, util_js_1.$)('#ly-fab').addEventListener('click', () => editLyrics());
 lyBox.addEventListener('click', e => {
@@ -4091,7 +4424,7 @@ function emptyState(compact) {
     <div class="empty-icon">${(0, icons_js_1.icon)('tower')}</div>
     <h2>${compact ? 'Здесь пока пусто' : 'Добавьте свою музыку'}</h2>
     <p>${native_js_1.isNative ? 'Выберите одну папку с музыкой — вся медиатека загрузится из неё, как в Poweramp.' : 'Перетащите файлы или целую папку прямо в окно. Поддерживаются MP3, FLAC, AAC / M4A, OGG, WAV, тексты <b>.lrc</b> и плейлисты <b>.m3u / .m3u8</b>.'}</p>
-    <div class="empty-actions">${native_js_1.isNative ? `<button class="btn btn-primary" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Выбрать папку с музыкой</button>` : `<button class="btn btn-primary" data-action="add-files">${(0, icons_js_1.icon)('upload')}Выбрать файлы</button><button class="btn btn-soft" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Выбрать папку</button>`}</div>
+    <div class="empty-actions">${native_js_1.isNative ? `<button class="btn btn-primary" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Выбрать папку с музыкой</button><button class="btn btn-soft" data-action="add-files">${(0, icons_js_1.icon)('upload')}Добавить треки</button>` : `<button class="btn btn-primary" data-action="add-files">${(0, icons_js_1.icon)('upload')}Выбрать файлы</button><button class="btn btn-soft" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Выбрать папку</button>`}</div>
   </div>`;
 }
 const themeBtn = () => `<button class="icon-btn lg theme-btn" data-action="toggle-theme" aria-label="Сменить тему" title="Сменить тему (D)">${(0, icons_js_1.icon)(state_js_1.state.theme === 'dark' ? 'sun' : 'moon')}</button>`;
@@ -4151,7 +4484,7 @@ exports.setSongSort = setSongSort;
 function libraryView(tab = 'albums') {
     const d = (0, state_js_1.derived)();
     const tabs = `<nav class="seg-tabs" role="tablist">${TABS.map(([k, n]) => `<a role="tab" aria-selected="${k === tab}" class="${k === tab ? 'active' : ''}" href="#/library/${k}">${n}</a>`).join('')}</nav>`;
-    const actions = native_js_1.isNative ? `<button class="btn btn-soft sm" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Папка</button>` : `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Добавить</button>`;
+    const actions = native_js_1.isNative ? `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Треки</button><button class="btn btn-soft sm" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Папка</button>` : `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Добавить</button>`;
     let h = pageHead('Библиотека', `${(0, util_js_1.plural)(d.all.length, ['песня', 'песни', 'песен'])}`, actions) + tabs;
     let body = '';
     if (tab === 'albums')
@@ -4395,7 +4728,7 @@ function settingsView() {
         ${srow('Недавно прослушанное', 'Очистить историю на главной.', `<button class="btn btn-soft sm" data-action="clear-recents">${(0, icons_js_1.icon)('trash')}Очистить</button>`)}
         ${srow('Сбросить настройки', 'Вернуть всё по умолчанию (музыка и плейлисты останутся).', `<button class="btn btn-soft sm btn-danger" data-action="reset-settings">${(0, icons_js_1.icon)('refresh')}Сбросить</button>`)}
         ${srow('Горячие клавиши', 'Пробел, стрелки, N / P, S, R, L, M, D, F, Q…', `<button class="btn btn-soft sm" data-action="shortcuts">${(0, icons_js_1.icon)('keyboard')}Показать</button>`)}
-        ${srow('Библиотека', native_js_1.isNative ? 'Теги и обложки кэшируются, сами файлы остаются в вашей папке.' : 'Файлы хранятся только в вашем браузере (IndexedDB).', `<div class="row-btns">${native_js_1.isNative ? '' : `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Добавить</button>`}<button class="btn btn-soft sm btn-danger" data-action="clear-library">${(0, icons_js_1.icon)('trash')}Очистить</button></div>`)}
+        ${srow('Библиотека', native_js_1.isNative ? 'Можно выбрать папку целиком или добавлять треки по одному. Сами файлы остаются на устройстве.' : 'Файлы хранятся только в вашем браузере (IndexedDB).', `<div class="row-btns"><button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Добавить</button><button class="btn btn-soft sm btn-danger" data-action="clear-library">${(0, icons_js_1.icon)('trash')}Очистить</button></div>`)}
       </div>
   </div>`;
 }
@@ -4404,6 +4737,126 @@ function sidebarPlaylists() {
     for (const p of state_js_1.state.playlists)
         items.push(`<a class="side-link sub" href="#/playlist/${p.id}" data-route="playlist/${p.id}">${(0, exports.mosaic)((0, state_js_1.playlistTracks)(p).slice(0, 4), p.id, 'mini-cov')}<span>${(0, util_js_1.esc)(p.name)}</span></a>`);
     return items.join('');
+}
+
+};
+defs["vocal.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.vocalActivity = vocalActivity;
+exports.activityFromSamples = activityFromSamples;
+exports.layoutOnActivity = layoutOnActivity;
+// Где в треке «поют»: грубая карта активности по громкости в диапазоне голоса (≈250–3500 Гц).
+// Нужна только для обычного текста без меток времени: строки раскладываются по участкам, где есть звук,
+// а вступление, проигрыши и тишина в конце пропускаются. Это приближение, а не распознавание слов.
+const STEP = 0.5; // секунд на ячейку
+const cache = new Map();
+async function vocalActivity(t) {
+    if (!t || !t.url)
+        return null;
+    if (cache.has(t.id))
+        return cache.get(t.id);
+    const job = (async () => {
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!OAC)
+            return null;
+        const res = await fetch(t.url);
+        if (!res.ok)
+            return null;
+        const len = +res.headers.get('content-length') || 0;
+        if (len > 70 * 1024 * 1024)
+            return null; // очень большие файлы не разбираем
+        const raw = await res.arrayBuffer();
+        const sr = 16000, dur = Math.max(1, t.duration || 180);
+        const ctx = new OAC(1, Math.ceil(sr * dur), sr);
+        const buf = await new Promise((ok, no) => ctx.decodeAudioData(raw, ok, no));
+        const off = new OAC(1, buf.length, sr), src = off.createBufferSource();
+        src.buffer = buf;
+        const hp = off.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 250;
+        const lp = off.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 3500;
+        src.connect(hp);
+        hp.connect(lp);
+        lp.connect(off.destination);
+        src.start();
+        const data = (await off.startRendering()).getChannelData(0);
+        return activityFromSamples(data, sr);
+    })().catch(() => null);
+    cache.set(t.id, job);
+    return job;
+}
+// Массив 0/1 по ячейкам STEP секунд: true — есть заметный звук
+function activityFromSamples(data, sr) {
+    const n = Math.max(1, Math.floor(data.length / (sr * STEP))), e = new Float32Array(n), per = Math.floor(sr * STEP);
+    for (let i = 0; i < n; i++) {
+        let s = 0;
+        for (let k = i * per, end = Math.min(data.length, k + per); k < end; k++)
+            s += data[k] * data[k];
+        e[i] = Math.sqrt(s / per);
+    }
+    const sorted = Array.from(e).sort((a, b) => a - b), p90 = sorted[Math.floor(n * 0.9)] || 0;
+    if (p90 < 1e-4)
+        return null;
+    const thr = p90 * 0.22;
+    const act = Array.from(e, v => v > thr);
+    // короткие провалы (дыхание, паузы между словами) считаем частью пения, длинные (≥ 3 с) — проигрышем
+    const GAP = Math.round(3 / STEP);
+    for (let i = 0; i < n;) {
+        if (act[i]) {
+            i++;
+            continue;
+        }
+        let j = i;
+        while (j < n && !act[j])
+            j++;
+        if (i > 0 && j < n && j - i < GAP)
+            for (let k = i; k < j; k++)
+                act[k] = true;
+        i = j;
+    }
+    // одиночные всплески (< 1.5 с) вне пения не считаем
+    const MIN = Math.round(1.5 / STEP);
+    for (let i = 0; i < n;) {
+        if (!act[i]) {
+            i++;
+            continue;
+        }
+        let j = i;
+        while (j < n && act[j])
+            j++;
+        if (j - i < MIN)
+            for (let k = i; k < j; k++)
+                act[k] = false;
+        i = j;
+    }
+    return { step: STEP, act };
+}
+// Времена строк: «время пения» делится пропорционально весам, а затем переводится в реальное время трека (пропуская проигрыши)
+function layoutOnActivity(weights, dur, a) {
+    const { step, act } = a, n = act.length, cum = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++)
+        cum[i + 1] = cum[i] + (act[i] ? step : 0);
+    const total = cum[n];
+    if (total < dur * 0.2)
+        return null;
+    const sum = weights.reduce((s, w) => s + w, 0) || 1, out = [];
+    let acc = 0;
+    for (const w of weights) {
+        const T = acc / sum * total;
+        let lo = 0, hi = n - 1;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) >> 1;
+            if (cum[mid] <= T)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+        out.push(Math.min(dur - 1, lo * step + (T - cum[lo])));
+        acc += w;
+    }
+    return out;
 }
 
 };
