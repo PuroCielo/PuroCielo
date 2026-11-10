@@ -732,6 +732,17 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .hero-art .mix-label b { font-size: 22px; }
 .mix-art .cov.ph .ic { opacity: 0; }
 .ly-empty .btn .ic { width: 16px; height: 16px; color: inherit; }
+
+/* ===== v1.8.1: контент без пустого места слева, кнопки у лайка, обычный текст без обрезки ===== */
+.view { max-width: none; margin: 0; }
+@media (min-width: 900px) { .rail { margin-right: -44px; padding-right: 44px; } }
+.np-meta .icon-btn { flex: none; }
+#np-edit .ic, #np-lyr-toggle .ic { width: 22px; height: 22px; }
+#np-pane-toggle.on { color: var(--accent-fg); background: var(--accent-soft); }
+/* обычный текст (без меток времени): сверху не гаснет, видна первая строка целиком */
+.pane-lyrics.plain { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); }
+.pane-lyrics.plain .ly-plain { padding: 8px 0 90px; }
+.hero-actions .icon-btn.lg { width: 48px; height: 48px; background: var(--hover); }
 </style>
 </head>
 <body>
@@ -806,7 +817,7 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
     <header class="np-top">
       <button class="icon-btn lg" id="np-close" aria-label="Свернуть"></button>
       <span class="np-top-mid"></span>
-      <span class="np-top-sp"><button class="icon-btn lg" id="np-lyr-toggle" aria-label="Скрыть текст" title="Показать или скрыть текст"></button><button class="icon-btn lg only-mobile" id="np-q-toggle" data-act="open-queue" aria-label="Очередь" title="Очередь"></button></span>
+      <span class="np-top-sp"><button class="icon-btn lg only-mobile" id="np-pane-toggle" aria-label="Текст" title="Текст"></button></span>
     </header>
     <div class="np-body">
       <div class="np-player">
@@ -814,6 +825,8 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
         <canvas id="np-viz" class="np-viz" aria-hidden="true"></canvas>
         <div class="np-meta">
           <div class="np-titles"><h2 id="np-title"></h2><p id="np-artist"></p><p class="np-album" id="np-album"></p></div>
+          <button class="icon-btn lg only-desktop" id="np-lyr-toggle" aria-label="Скрыть текст" title="Показать или скрыть текст"></button>
+          <button class="icon-btn lg" id="np-edit" aria-label="Текст и обложка" title="Текст и обложка"></button>
           <button class="icon-btn lg" id="np-like" data-act="like" aria-label="Нравится"></button>
           <button class="icon-btn lg" id="np-more" data-action="np-menu" aria-label="Ещё"></button>
         </div>
@@ -829,12 +842,11 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
           <button class="icon-btn xl" id="n-next" data-act="next" aria-label="Следующий"></button>
           <button class="icon-btn" id="n-repeat" data-act="repeat" aria-label="Повтор"></button>
         </div>
-        <div class="np-vol"><button class="icon-btn" id="n-mute" data-act="mute" aria-label="Звук"></button><input type="range" class="range" id="np-vol" min="0" max="100" value="85" aria-label="Громкость"><span class="vol-ic" id="n-vol-hi"></span><button class="icon-btn only-desktop" id="n-queue" data-act="open-queue" aria-label="Очередь"></button></div>
+        <div class="np-vol"><button class="icon-btn" id="n-mute" data-act="mute" aria-label="Звук"></button><input type="range" class="range" id="np-vol" min="0" max="100" value="85" aria-label="Громкость"><span class="vol-ic" id="n-vol-hi"></span></div>
       </div>
       <div class="np-side">
         <div class="pane pane-lyrics" id="np-lyrics"></div>
         <div class="pane pane-queue" id="np-queue"></div>
-        <button class="btn btn-soft sm ly-fab" id="ly-fab" hidden></button>
       </div>
     </div>
   </section>
@@ -897,12 +909,13 @@ function speedMenu(anchor) {
     const cur = state_js_1.state.settings.speed || 1;
     (0, ui_js_1.openMenu)(anchor, SPEEDS.map(v => ({ icon: v === cur ? 'check' : '', label: fmtSpeed(v), onClick: () => (0, state_js_1.setSetting)('speed', v) })));
 }
-function trackMenu(anchor, id, { pid, np } = {}) {
+function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
     const t = (0, state_js_1.getTrack)(id);
     if (!t)
         return;
     const liked = state_js_1.state.likes.has(id);
     const items = [
+        ...extra,
         ...(np ? [{ icon: 'speed', label: `Скорость: ${fmtSpeed(state_js_1.state.settings.speed || 1)}`, keep: true, onClick: () => speedMenu(anchor) }, { sep: true }] : []),
         { icon: 'next2', label: 'Играть следующим', onClick: () => { (0, player_js_1.addNext)(id); (0, ui_js_1.toast)('Добавлено: следующим'); } },
         { icon: 'queue', label: 'В конец очереди', onClick: () => { (0, player_js_1.addToQueue)(id); (0, ui_js_1.toast)('Добавлено в очередь'); } },
@@ -978,12 +991,14 @@ function route() {
     const h = location.hash.replace(/^#\/?/, '');
     const [path] = h.split('?');
     const p = path.split('/');
-    const dec = s => { try {
-        return decodeURIComponent(s || '');
-    }
-    catch {
-        return s || '';
-    } };
+    const dec = s => {
+        try {
+            return decodeURIComponent(s || '');
+        }
+        catch {
+            return s || '';
+        }
+    };
     return { name: p[0] || 'home', arg: dec(p.slice(1).join('/')) };
 }
 function routeKey(r) {
@@ -1066,8 +1081,11 @@ function renderChrome() {
     renderSideProfile();
     syncThemeBtn();
 }
-function syncThemeBtn() { const b = (0, util_js_1.$)('#side-theme'); if (b)
-    b.innerHTML = (0, icons_js_1.icon)(state_js_1.state.theme === 'dark' ? 'sun' : 'moon'); }
+function syncThemeBtn() {
+    const b = (0, util_js_1.$)('#side-theme');
+    if (b)
+        b.innerHTML = (0, icons_js_1.icon)(state_js_1.state.theme === 'dark' ? 'sun' : 'moon');
+}
 function renderSidePlaylists() { (0, util_js_1.$)('#side-playlists').innerHTML = (0, views_js_1.sidebarPlaylists)(); const key = routeKey(route()); (0, util_js_1.$$)('#side-playlists [data-route]').forEach(a => a.classList.toggle('active', a.dataset.route === key)); }
 function renderSideProfile() { (0, util_js_1.$)('#side-profile').innerHTML = `${(0, views_js_1.avatarHTML)()}<span class="sp-text"><b>${(0, util_js_1.esc)(state_js_1.state.profile.name)}</b><small>@${(0, util_js_1.esc)(state_js_1.state.profile.username)}</small></span>`; }
 // ================= синхронизация текущего трека / лайков в списках =================
@@ -1091,8 +1109,11 @@ function playFrom(el) {
     (0, player_js_1.playList)(list.map(t => t.id), i, { shuffle: false });
 }
 const ids = ts => ts.map(t => t.id);
-const playIds = (list, shuffle) => { if (!list.length)
-    return (0, ui_js_1.toast)('Здесь пока нет песен', 'info'); (0, player_js_1.playList)(ids(list), shuffle ? Math.floor(Math.random() * list.length) : 0, { shuffle }); };
+const playIds = (list, shuffle) => {
+    if (!list.length)
+        return (0, ui_js_1.toast)('Здесь пока нет песен', 'info');
+    (0, player_js_1.playList)(ids(list), shuffle ? Math.floor(Math.random() * list.length) : 0, { shuffle });
+};
 const artistTracks = a => a.tracks;
 const artistsOfTrack = t => (t._artists || [t.artist]).filter(Boolean).join(', ');
 function playlistMenu(anchor, id) {
@@ -1100,11 +1121,35 @@ function playlistMenu(anchor, id) {
     if (!p)
         return;
     (0, ui_js_1.openMenu)(anchor, [
-        { icon: 'edit', label: 'Переименовать', onClick: async () => { const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js'))); const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' }); if (n)
-                (0, state_js_1.renamePlaylist)(id, n); } },
+        { icon: 'edit', label: 'Переименовать', onClick: async () => {
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
+                const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
+                if (n)
+                    (0, state_js_1.renamePlaylist)(id, n);
+            } },
         { icon: 'download', label: 'Экспорт в .m3u8', onClick: () => exportM3U(p) },
         { sep: true },
         { icon: 'trash', label: 'Удалить плейлист', danger: true, onClick: () => { (0, state_js_1.deletePlaylist)(id); (0, ui_js_1.toast)(`Плейлист «${p.name}» удалён`); location.hash = '#/library/playlists'; } },
+    ]);
+}
+// «⋯» на странице альбома: своя обложка сразу для всех песен альбома
+function albumMenu(anchor, key) {
+    const g = (0, state_js_1.derived)().groups.get(key);
+    if (!g)
+        return;
+    const what = g.tracks.length > 1 ? 'альбома' : 'сингла';
+    (0, ui_js_1.openMenu)(anchor, [
+        { icon: 'upload', label: `Обложка ${what}…`, onClick: async () => {
+                const url = await (0, ui_js_1.pickImage)();
+                if (url) {
+                    (0, state_js_1.setAlbumCover)(key, url);
+                    (0, ui_js_1.toast)(`Обложка ${what} обновлена`);
+                }
+            } },
+        ...((0, state_js_1.hasAlbumCover)(key) ? [{ icon: 'refresh', label: 'Вернуть обложку из файла', onClick: () => (0, state_js_1.setAlbumCover)(key, null) }] : []),
+        { sep: true },
+        { icon: 'next2', label: 'Играть следующим', onClick: () => { (0, player_js_1.addNext)(g.tracks.map(t => t.id)); (0, ui_js_1.toast)('Добавлено: следующим'); } },
+        { icon: 'queue', label: 'В конец очереди', onClick: () => { (0, player_js_1.addToQueue)(g.tracks.map(t => t.id)); (0, ui_js_1.toast)('Добавлено в очередь'); } },
     ]);
 }
 function exportM3U(p) {
@@ -1175,10 +1220,16 @@ function doAction(el, e) {
             e.stopPropagation();
             playlistMenu(el, d.id);
             break;
+        case 'album-menu':
+            e.stopPropagation();
+            albumMenu(el, d.key);
+            break;
         case 'new-playlist':
             e.stopPropagation();
-            (0, actions_js_1.newPlaylistFlow)().then(p => { if (p)
-                location.hash = '#/playlist/' + p.id; });
+            (0, actions_js_1.newPlaylistFlow)().then(p => {
+                if (p)
+                    location.hash = '#/playlist/' + p.id;
+            });
             break;
         case 'add-files':
             native_js_1.isNative ? (0, native_js_1.pickFiles)() : (0, util_js_1.$)('#file-input').click();
@@ -1390,10 +1441,14 @@ document.addEventListener('keydown', e => {
         default: return;
     }
 });
-document.addEventListener('keyup', e => { if (e.code === 'Space' && e.target.matches?.('button,[role=button]'))
-    e.preventDefault(); });
-document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target.matches?.('button,[role=button],a'))
-    e.preventDefault(); }, true);
+document.addEventListener('keyup', e => {
+    if (e.code === 'Space' && e.target.matches?.('button,[role=button]'))
+        e.preventDefault();
+});
+document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && e.target.matches?.('button,[role=button],a'))
+        e.preventDefault();
+}, true);
 function focusSearch() {
     if (matchMedia('(min-width: 900px)').matches)
         (0, util_js_1.$)('#search-side').focus();
@@ -1423,8 +1478,10 @@ document.addEventListener('input', e => {
     if (!e.target.matches?.('.search-input'))
         return;
     query = e.target.value;
-    (0, util_js_1.$$)('.search-input').forEach(i => { if (i !== e.target)
-        i.value = query; });
+    (0, util_js_1.$$)('.search-input').forEach(i => {
+        if (i !== e.target)
+            i.value = query;
+    });
     doSearch();
 });
 // ================= настройки: тексты, резервная копия, сброс =================
@@ -1438,11 +1495,13 @@ async function findAllLyrics() {
     lyBusy = true;
     let found = 0, i = 0;
     const t0 = (0, ui_js_1.toast)(`Ищу тексты: ${list.length} песен…`, 'info', 3000);
-    const worker = async () => { while (i < list.length) {
-        const t = list[i++];
-        if (await (0, lyrics_auto_js_1.ensureLyrics)(t))
-            found++;
-    } };
+    const worker = async () => {
+        while (i < list.length) {
+            const t = list[i++];
+            if (await (0, lyrics_auto_js_1.ensureLyrics)(t))
+                found++;
+        }
+    };
     await Promise.all([worker(), worker(), worker()]);
     lyBusy = false;
     (0, ui_js_1.toast)(`Готово: найдено ${found} из ${list.length}. Остальные — «Текста нет».`, 'ok', 5000);
@@ -1537,17 +1596,28 @@ const QUICK = {
     username: { title: 'Изменить ник', label: 'Имя пользователя', max: 30, pre: '@', get: () => state_js_1.state.profile.username,
         set: v => { state_js_1.state.profile.username = (v.trim().replace(/^@+/, '').replace(/[^\w.]/g, '') || 'listener').toLowerCase(); (0, state_js_1.save)(); (0, state_js_1.emit)('profile'); } },
     lyricsProxy: { title: 'Свой сервер текстов', label: 'Адрес Cloudflare Worker (https://…workers.dev)', max: 200, get: () => state_js_1.state.settings.lyricsProxy || '',
-        set: v => { v = v.trim().replace(/\/+$/, ''); if (v && !/^https:\/\//i.test(v)) {
-            (0, ui_js_1.toast)('Адрес должен начинаться с https://', 'warn');
-            return false;
-        } (0, state_js_1.setSetting)('lyricsProxy', v); } },
+        set: v => {
+            v = v.trim().replace(/\/+$/, '');
+            if (v && !/^https:\/\//i.test(v)) {
+                (0, ui_js_1.toast)('Адрес должен начинаться с https://', 'warn');
+                return false;
+            }
+            (0, state_js_1.setSetting)('lyricsProxy', v);
+        } },
 };
 function quickEdit(kind) {
     const q = QUICK[kind];
     (0, ui_js_1.openModal)({ title: q.title, html: `<label class="field"><span>${q.label}</span>${q.pre ? `<div class="input-pre"><i>${q.pre}</i><input class="input" id="qe" maxlength="${q.max}" value="${(0, util_js_1.esc)(q.get())}"></div>` : `<input class="input" id="qe" maxlength="${q.max}" value="${(0, util_js_1.esc)(q.get())}">`}</label>`,
         actions: [{ label: 'Отмена' }, { label: 'Сохранить', primary: true, onClick: () => q.set(document.getElementById('qe').value) }],
-        onMount: () => { const i = document.getElementById('qe'); i.focus(); i.select(); i.addEventListener('keydown', e => { if (e.key === 'Enter')
-            document.querySelector('.modal-foot [data-act="1"]').click(); }); } });
+        onMount: () => {
+            const i = document.getElementById('qe');
+            i.focus();
+            i.select();
+            i.addEventListener('keydown', e => {
+                if (e.key === 'Enter')
+                    document.querySelector('.modal-foot [data-act="1"]').click();
+            });
+        } });
 }
 function editProfile() {
     const draft = { ...state_js_1.state.profile };
@@ -1587,8 +1657,10 @@ function editProfile() {
                     paint();
                 }
             });
-            (0, util_js_1.$)('#pe-name').addEventListener('input', () => { if (!draft.avatar)
-                paint(); });
+            (0, util_js_1.$)('#pe-name').addEventListener('input', () => {
+                if (!draft.avatar)
+                    paint();
+            });
             (0, util_js_1.$)('#pe-file').addEventListener('change', async (ev) => {
                 const f = ev.target.files[0];
                 if (!f)
@@ -1635,14 +1707,21 @@ for (const inp of [fileInput, dirInput, m3uInput])
     inp.addEventListener('change', async () => { const fs = [...inp.files]; inp.value = ''; await (0, importer_js_1.importFiles)(fs); });
 let dragDepth = 0;
 const drop = (0, util_js_1.$)('#drop');
-addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) {
-    dragDepth++;
-    drop.classList.add('show');
-} });
-addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth)
-    drop.classList.remove('show'); });
-addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files'))
-    e.preventDefault(); });
+addEventListener('dragenter', e => {
+    if (e.dataTransfer?.types?.includes('Files')) {
+        dragDepth++;
+        drop.classList.add('show');
+    }
+});
+addEventListener('dragleave', () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth)
+        drop.classList.remove('show');
+});
+addEventListener('dragover', e => {
+    if (e.dataTransfer?.types?.includes('Files'))
+        e.preventDefault();
+});
 addEventListener('drop', async (e) => {
     e.preventDefault();
     dragDepth = 0;
@@ -1671,8 +1750,10 @@ addEventListener('drop', async (e) => {
     if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed'].includes(k))
         render({ keepScroll: true });
 });
-(0, state_js_1.on)('sleep', () => { if (['profile', 'settings'].includes(route().name))
-    render({ keepScroll: true }); });
+(0, state_js_1.on)('sleep', () => {
+    if (['profile', 'settings'].includes(route().name))
+        render({ keepScroll: true });
+});
 (0, state_js_1.on)('error', t => (0, ui_js_1.toast)(`Не удалось воспроизвести «${t?.title || 'трек'}». Возможно, формат не поддерживается.`, 'warn', 4500));
 // ================= «назад»: Esc, Alt+←, кнопка мыши «назад», свайп от левого края =================
 const navStack = [location.hash || '#/home'], scrollMem = new Map();
@@ -1708,9 +1789,14 @@ addEventListener('hashchange', () => {
 });
 let swX = null, swY = 0;
 addEventListener('touchstart', e => { const t = e.touches[0]; swX = t.clientX < 28 ? t.clientX : null; swY = t.clientY; }, { passive: true });
-addEventListener('touchend', e => { if (swX == null)
-    return; const t = e.changedTouches[0]; if (t.clientX - swX > 70 && Math.abs(t.clientY - swY) < 70)
-    goBack(); swX = null; }, { passive: true });
+addEventListener('touchend', e => {
+    if (swX == null)
+        return;
+    const t = e.changedTouches[0];
+    if (t.clientX - swX > 70 && Math.abs(t.clientY - swY) < 70)
+        goBack();
+    swX = null;
+}, { passive: true });
 // ================= горизонтальные ряды: стрелки, колесо, перетаскивание =================
 function syncRails() {
     (0, util_js_1.$$)('.section').forEach(sec => {
@@ -1744,15 +1830,22 @@ addEventListener('pointermove', e => {
     if (drag.moved)
         drag.r.scrollLeft = drag.left - dx;
 });
-addEventListener('pointerup', () => { if (!drag)
-    return; if (drag.moved) {
-    noClick = true;
-    setTimeout(() => { noClick = false; }, 0);
-} drag.r.classList.remove('dragging'); drag = null; });
-document.addEventListener('click', e => { if (noClick) {
-    e.stopPropagation();
-    e.preventDefault();
-} }, true);
+addEventListener('pointerup', () => {
+    if (!drag)
+        return;
+    if (drag.moved) {
+        noClick = true;
+        setTimeout(() => { noClick = false; }, 0);
+    }
+    drag.r.classList.remove('dragging');
+    drag = null;
+});
+document.addEventListener('click', e => {
+    if (noClick) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+}, true);
 // колесо мыши над рядом листает его по горизонтали (на краях ряда — снова прокручивает страницу)
 const wheelAnim = new WeakMap();
 view.addEventListener('wheel', e => {
@@ -1799,8 +1892,10 @@ view.addEventListener('wheel', e => {
 // сохранение при закрытии окна
 addEventListener('pagehide', state_js_1.flushSave);
 addEventListener('beforeunload', state_js_1.flushSave);
-document.addEventListener('visibilitychange', () => { if (document.hidden)
-    (0, state_js_1.flushSave)(); });
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden)
+        (0, state_js_1.flushSave)();
+});
 // ================= старт =================
 (async () => {
     await (0, state_js_1.load)();
@@ -1821,16 +1916,20 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
         (0, native_js_1.rescan)();
 })();
 // Android: оболочка присылает список файлов выбранной папки; «назад» и фоновое воспроизведение
-window.__puroNative = { onFetch: native_js_1.onNativeFetch, onScan: scan => (0, importer_js_1.syncNativeLibrary)(scan).then(() => { if (['profile', 'settings'].includes(route().name))
-        render({ keepScroll: true }); }) };
+window.__puroNative = { onFetch: native_js_1.onNativeFetch, onScan: scan => (0, importer_js_1.syncNativeLibrary)(scan).then(() => {
+        if (['profile', 'settings'].includes(route().name))
+            render({ keepScroll: true });
+    }) };
 window.__puroBack = () => goBack();
 // команды из уведомления / наушников (Android)
-window.__puroCmd = c => { if (c === 'toggle')
-    (0, player_js_1.toggle)();
-else if (c === 'next')
-    (0, player_js_1.next)();
-else if (c === 'prev')
-    (0, player_js_1.prev)(); };
+window.__puroCmd = c => {
+    if (c === 'toggle')
+        (0, player_js_1.toggle)();
+    else if (c === 'next')
+        (0, player_js_1.next)();
+    else if (c === 'prev')
+        (0, player_js_1.prev)();
+};
 if (native_js_1.isNative) {
     const pushPlayback = () => { const t = (0, player_js_1.current)(); (0, native_js_1.setPlayback)(!!t && !player_js_1.audio.paused, t?.title, t ? artistsOfTrack(t) : ''); };
     (0, state_js_1.on)('track', pushPlayback);
@@ -1848,8 +1947,8 @@ exports.artistKey = exports.UNKNOWN = void 0;
 exports.splitArtists = splitArtists;
 exports.titleFeatured = titleFeatured;
 exports.trackArtists = trackArtists;
-// Разбор строки артистов: «A & B», «A; B», «A feat. B», «A (ft. B)», «A, B» → ['A', 'B']
 const util_js_1 = require("./util.js");
+// Разбор строки артистов: «A & B», «A; B», «A feat. B», «A (ft. B)», «A, B» → ['A', 'B']
 // Названия, которые нельзя резать (содержат «&», «,» и т.п. внутри имени)
 const KEEP = ['Tyler, The Creator', 'Florence & the Machine', 'Earth, Wind & Fire', 'Hall & Oates', 'Simon & Garfunkel', 'Crosby, Stills, Nash & Young',
     'Mumford & Sons', 'Kool & the Gang', 'Sonny & Cher', 'Echo & the Bunnymen', 'Siouxsie & the Banshees', 'Of Monsters and Men', 'Years & Years',
@@ -1913,11 +2012,11 @@ defs["bgfx.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.initBgFx = initBgFx;
 exports.runSplash = runSplash;
-// Дополнительные эффекты фона: пластинка (крутится, пока играет), поднимающиеся частицы,
-// мягкое свечение от обложки текущего трека, и заставка при запуске.
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const icons_js_1 = require("./icons.js");
+// Дополнительные эффекты фона: пластинка (крутится, пока играет), поднимающиеся частицы,
+// мягкое свечение от обложки текущего трека, и заставка при запуске.
 const $ = s => document.querySelector(s);
 function initBgFx() {
     const vinyl = $('#bg-vinyl'), parts = $('#bg-parts'), cover = $('#bg-cover');
@@ -1934,10 +2033,14 @@ function initBgFx() {
     const sync = () => document.documentElement.classList.toggle('is-playing', !player_js_1.audio.paused && !player_js_1.audio.ended && !!(0, player_js_1.current)());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         player_js_1.audio.addEventListener(e, sync);
-    const paintCover = () => { const t = (0, player_js_1.current)(); if (cover) {
-        cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
-        cover.classList.toggle('on', !!t?.cover);
-    } sync(); };
+    const paintCover = () => {
+        const t = (0, player_js_1.current)();
+        if (cover) {
+            cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
+            cover.classList.toggle('on', !!t?.cover);
+        }
+        sync();
+    };
     (0, state_js_1.on)('track', paintCover);
     (0, state_js_1.on)('state', sync);
 }
@@ -1996,13 +2099,15 @@ async function tx(store, mode, fn) {
         t.onerror = t.onabort = () => rej(t.error);
     });
 }
-const safe = f => async (...a) => { try {
-    return await f(...a);
-}
-catch (e) {
-    console.warn('IndexedDB:', e);
-    return undefined;
-} };
+const safe = f => async (...a) => {
+    try {
+        return await f(...a);
+    }
+    catch (e) {
+        console.warn('IndexedDB:', e);
+        return undefined;
+    }
+};
 exports.putFile = safe(rec => tx('files', 'readwrite', s => s.put(rec)));
 exports.allFiles = safe(async () => (await tx('files', 'readonly', s => s.getAll())) || []);
 exports.delFile = safe(id => tx('files', 'readwrite', s => s.delete(id)));
@@ -2015,11 +2120,15 @@ exports.lySet = safe((k, v) => tx('lyrics', 'readwrite', s => s.put(v, k)));
 };
 defs["i18n.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lang = exports.isEn = exports.tr = exports.setLang = exports.initI18n = exports.EN_PLURAL = void 0;
+exports.EN_PLURAL = exports.isEn = exports.getLang = void 0;
+exports.tr = tr;
+exports.initI18n = initI18n;
+exports.setLang = setLang;
 // Язык интерфейса. Плеер написан по-русски; для English готовые строки на странице переводятся по словарю
 // (тексты кнопок, подсказки, всплывающие сообщения). Названия песен, артистов и тексты песен не трогаются.
 let lang = 'ru';
-exports.lang = () => lang;
+const getLang = () => lang;
+exports.getLang = getLang;
 const isEn = () => lang === 'en';
 exports.isEn = isEn;
 const D = {
@@ -2112,6 +2221,9 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
+    'Скрыть очередь': 'Hide queue', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
+    'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
 };
 // Строки с подставленными значениями
 const R = [
@@ -2167,7 +2279,6 @@ function tr(s) {
         }
     return out === undefined ? s : m[1] + out + m[3];
 }
-exports.tr = tr;
 // ---------- перевод страницы ----------
 const SKIP = '.ly,.ly-plain,#np-title,#mini-title,.row-title,.trow-title,.q-text b,textarea,script,style,[data-notr]';
 const ATTRS = ['aria-label', 'title', 'placeholder'];
@@ -2254,7 +2365,6 @@ function initI18n(l) {
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
     setLang(l);
 }
-exports.initI18n = initI18n;
 function setLang(l) {
     const next = l === 'en' ? 'en' : 'ru';
     const was = lang;
@@ -2265,7 +2375,6 @@ function setLang(l) {
     else if (was === 'en')
         restore(document.body);
 }
-exports.setLang = setLang;
 
 };
 defs["icons.js"]=function(module,exports,require){"use strict";
@@ -2355,8 +2464,14 @@ function getDuration(url) {
         const a = new Audio();
         a.preload = 'metadata';
         let done = false;
-        const fin = v => { if (done)
-            return; done = true; a.removeAttribute('src'); a.load(); res(v); };
+        const fin = v => {
+            if (done)
+                return;
+            done = true;
+            a.removeAttribute('src');
+            a.load();
+            res(v);
+        };
         a.onloadedmetadata = () => fin(isFinite(a.duration) ? a.duration : 0);
         a.onerror = () => fin(0);
         setTimeout(() => fin(0), 8000);
@@ -2773,9 +2888,6 @@ exports.setOffset = setOffset;
 exports.rawLyrics = rawLyrics;
 exports.setManualLyrics = setManualLyrics;
 exports.ensureLyrics = ensureLyrics;
-// Автоматический поиск текста песни.
-// Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
-// Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
 const state_js_1 = require("./state.js");
 const lrc_js_1 = require("./lrc.js");
 const db_js_1 = require("./db.js");
@@ -2783,6 +2895,9 @@ const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
 const native_js_1 = require("./native.js");
+// Автоматический поиск текста песни.
+// Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
+// Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
 const API = 'https://lrclib.net/api';
 const MISS_TTL = 14 * 24 * 3600 * 1000; // «не найдено» помним две недели
 const cleanTitle = s => String(s || '').replace(/\s*[(\[][^)\]]*[)\]]/g, '').replace(/\s+[-–—]\s+(?:remaster(?:ed)?|live|radio edit|single version).*$/i, '').trim() || String(s || '').trim();
@@ -2861,13 +2976,15 @@ async function extraSources(t) {
     const desktop = typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText;
     const fetchText = desktop ? u => window.PuroDesktop.fetchText(u)
         : native_js_1.isNative ? u => (0, native_js_1.nativeFetchText)(u)
-            : proxy ? async (u) => { try {
-                const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
-                return r.ok ? await r.text() : '';
+            : proxy ? async (u) => {
+                try {
+                    const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
+                    return r.ok ? await r.text() : '';
+                }
+                catch {
+                    return '';
+                }
             }
-            catch {
-                return '';
-            } }
                 : null;
     if (proxy) {
         try {
@@ -2903,13 +3020,15 @@ async function extraSources(t) {
     return null;
 }
 // ---- сдвиг синхронизации для конкретного трека (секунды) ----
-async function getOffset(t) { try {
-    const r = await (0, db_js_1.lyGet)('off:' + t.id);
-    return r && typeof r.off === 'number' ? r.off : 0;
+async function getOffset(t) {
+    try {
+        const r = await (0, db_js_1.lyGet)('off:' + t.id);
+        return r && typeof r.off === 'number' ? r.off : 0;
+    }
+    catch {
+        return 0;
+    }
 }
-catch {
-    return 0;
-} }
 async function setOffset(t, off) { off = Math.round(off * 10) / 10; t._off = off; await (0, db_js_1.lySet)('off:' + t.id, { off, at: Date.now() }); }
 const running = new Map();
 // Возвращает true, если у трека появился текст. t._ly: 'loading' | 'none' | undefined
@@ -3161,14 +3280,17 @@ const SITES = [
 ];
 // fetchText(url) → строка HTML/JSON или '' при ошибке. Возвращает { text, source } или null.
 async function webLyrics(artist, title, fetchText, { skip = [] } = {}) {
-    const tryRun = async (id, fn) => { if (skip.includes(id))
-        return null; try {
-        const text = await fn();
-        return text && text.length > 40 ? { text, source: id } : null;
-    }
-    catch {
-        return null;
-    } };
+    const tryRun = async (id, fn) => {
+        if (skip.includes(id))
+            return null;
+        try {
+            const text = await fn();
+            return text && text.length > 40 ? { text, source: id } : null;
+        }
+        catch {
+            return null;
+        }
+    };
     const q = encodeURIComponent(`${artist} ${title}`.trim()), cyr = /[а-яё]/i.test(artist + title);
     const jobs = [
         ['genius', async () => {
@@ -3277,39 +3399,51 @@ class RemoteFile {
     async arrayBuffer() { return (await fetch(this.url)).arrayBuffer(); }
 }
 exports.RemoteFile = RemoteFile;
-const pickFolder = () => { try {
-    exports.bridge?.pickFolder();
-}
-catch { /* ignore */ } };
+const pickFolder = () => {
+    try {
+        exports.bridge?.pickFolder();
+    }
+    catch { /* ignore */ }
+};
 exports.pickFolder = pickFolder;
-const rescan = () => { try {
-    exports.bridge?.sync();
-}
-catch { /* ignore */ } };
+const rescan = () => {
+    try {
+        exports.bridge?.sync();
+    }
+    catch { /* ignore */ }
+};
 exports.rescan = rescan;
-const folderName = () => { try {
-    return exports.bridge?.folderName() || '';
-}
-catch {
-    return '';
-} };
+const folderName = () => {
+    try {
+        return exports.bridge?.folderName() || '';
+    }
+    catch {
+        return '';
+    }
+};
 exports.folderName = folderName;
-const setPlayback = (playing, title, artist) => { try {
-    exports.bridge?.setPlayback(!!playing, title || '', artist || '');
-}
-catch { /* ignore */ } };
+const setPlayback = (playing, title, artist) => {
+    try {
+        exports.bridge?.setPlayback(!!playing, title || '', artist || '');
+    }
+    catch { /* ignore */ }
+};
 exports.setPlayback = setPlayback;
-const pickFiles = () => { try {
-    exports.bridge?.pickFiles();
-}
-catch { /* ignore */ } };
+const pickFiles = () => {
+    try {
+        exports.bridge?.pickFiles();
+    }
+    catch { /* ignore */ }
+};
 exports.pickFiles = pickFiles;
 // Трек, добавленный по одному, забываем и в оболочке (иначе при следующем сканировании он вернётся)
-const forgetFile = id => { try {
-    if (typeof id === 'string' && id.startsWith('n:uri:'))
-        exports.bridge?.forget(id.slice(2));
-}
-catch { /* ignore */ } };
+const forgetFile = id => {
+    try {
+        if (typeof id === 'string' && id.startsWith('n:uri:'))
+            exports.bridge?.forget(id.slice(2));
+    }
+    catch { /* ignore */ }
+};
 exports.forgetFile = forgetFile;
 // Загрузка страницы сайта через оболочку (WebView сам не может из-за CORS)
 const pend = new Map();
@@ -3328,10 +3462,13 @@ const nativeFetchText = (url, ms = 14000) => new Promise(res => {
     }
 });
 exports.nativeFetchText = nativeFetchText;
-const onNativeFetch = (id, txt) => { const f = pend.get(id); if (f) {
-    pend.delete(id);
-    f(txt);
-} };
+const onNativeFetch = (id, txt) => {
+    const f = pend.get(id);
+    if (f) {
+        pend.delete(id);
+        f(txt);
+    }
+};
 exports.onNativeFetch = onNativeFetch;
 
 };
@@ -3375,12 +3512,15 @@ function techParts(t) {
     return p;
 }
 // ---------- иконки в статических кнопках ----------
-const setIc = (id, name) => { const el = document.getElementById(id); if (el)
-    el.innerHTML = (0, icons_js_1.icon)(name); };
+const setIc = (id, name) => {
+    const el = document.getElementById(id);
+    if (el)
+        el.innerHTML = (0, icons_js_1.icon)(name);
+};
 function initIcons() {
     [['m-shuffle', 'shuffle'], ['m-prev', 'prev'], ['m-next', 'next'], ['m-repeat', 'repeat'], ['m-like', 'heart'], ['m-lyrics', 'lyrics'], ['m-queue', 'queue'], ['m-expand', 'chev-up'],
         ['mm-next', 'next'], ['np-close', 'chev-down'], ['np-more', 'more'], ['np-like', 'heart'], ['n-shuffle', 'shuffle'], ['n-prev', 'prev'], ['n-next', 'next'], ['n-repeat', 'repeat'],
-        ['n-vol-hi', 'vol-high'], ['np-q-toggle', 'queue']].forEach(([a, b]) => setIc(a, b));
+        ['n-vol-hi', 'vol-high'], ['np-edit', 'edit'], ['np-pane-toggle', 'lyrics']].forEach(([a, b]) => setIc(a, b));
     ['m-play', 'mm-play', 'n-play'].forEach(id => setIc(id, 'play'));
     syncVolume();
     syncTheme();
@@ -3390,8 +3530,10 @@ const syncTheme = () => setIc('np-theme', state_js_1.state.theme === 'dark' ? 's
 const paint = el => el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min)) * 100 + '%');
 function bindSeek(el) {
     el.addEventListener('pointerdown', () => { dragging++; });
-    const end = () => { if (dragging)
-        dragging = Math.max(0, dragging - 1); };
+    const end = () => {
+        if (dragging)
+            dragging = Math.max(0, dragging - 1);
+    };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
     el.addEventListener('input', () => {
@@ -3501,11 +3643,7 @@ function renderLyrics(t) {
     wLast = [];
     let ly = t?.lyrics;
     lyBox.scrollTop = 0;
-    {
-        const fab = (0, util_js_1.$)('#ly-fab');
-        fab.hidden = !ly;
-        fab.innerHTML = `${(0, icons_js_1.icon)('edit')}Изменить текст`;
-    }
+    lyBox.classList.remove('plain');
     curOff = 0;
     if (!ly) {
         const loading = t && t._ly === 'loading';
@@ -3516,6 +3654,7 @@ function renderLyrics(t) {
     }
     lyType = ly.type;
     if (ly.type === 'plain') {
+        lyBox.classList.add('plain');
         lyBox.innerHTML = `<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
         return;
     }
@@ -3538,8 +3677,11 @@ function editLyrics() {
         onMount: api => {
             const area = document.getElementById('ly-area'), file = document.getElementById('ly-file');
             document.getElementById('ly-pick').onclick = () => file.click();
-            file.onchange = async () => { const f = file.files[0]; if (f)
-                area.value = await f.text(); };
+            file.onchange = async () => {
+                const f = file.files[0];
+                if (f)
+                    area.value = await f.text();
+            };
             const d = document.getElementById('ly-del');
             if (d)
                 d.onclick = async () => { await (0, lyrics_auto_js_1.setManualLyrics)(t, ''); (0, ui_js_1.toast)('Текст удалён', 'info'); api.close?.(); };
@@ -3596,7 +3738,6 @@ function updateLyrics(t, force) {
     }
 }
 ['wheel', 'touchmove'].forEach(ev => lyBox.addEventListener(ev, () => { userScrollUntil = Date.now() + 3500; }, { passive: true }));
-(0, util_js_1.$)('#ly-fab').addEventListener('click', () => editLyrics());
 lyBox.addEventListener('click', e => {
     if (e.target.closest('[data-ly="edit"]')) {
         editLyrics();
@@ -3654,8 +3795,10 @@ qBox.addEventListener('click', e => {
     if (row)
         (0, player_js_1.playTrackInQueue)(+row.dataset.qi);
 });
-qBox.addEventListener('keydown', e => { if (e.key === 'Enter')
-    e.target.closest?.('[data-qi]')?.click(); });
+qBox.addEventListener('keydown', e => {
+    if (e.key === 'Enter')
+        e.target.closest?.('[data-qi]')?.click();
+});
 // ---------- Визуализатор ----------
 const cv = (0, util_js_1.$)('#np-viz'), g = cv.getContext('2d');
 const BARS = 56;
@@ -3721,17 +3864,19 @@ function frame() {
     }
     return false;
 }
-function startLoop() { if (raf)
-    return; const loop = () => { const more = frame(); raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0; }; raf = requestAnimationFrame(loop); }
+function startLoop() {
+    if (raf)
+        return;
+    const loop = () => { const more = frame(); raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0; };
+    raf = requestAnimationFrame(loop);
+}
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
 function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
     np.dataset.pane = p;
-    (0, util_js_1.$)('#np-q-toggle')?.classList.toggle('on', p === 'queue');
-    if (!isDesktop())
-        (0, util_js_1.$)('#np-lyr-toggle')?.classList.toggle('on', p === 'lyrics');
+    (0, util_js_1.$)('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
 }
 // Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр
 function centerShift() {
@@ -3765,7 +3910,7 @@ function openNP(pane) {
     if (pane)
         setPane(pane);
     else
-        setPane(np.dataset.pane);
+        setPane(isDesktop() ? np.dataset.pane : 'player'); // на телефоне плеер открывается с обложки
     npOpen = true;
     np.classList.add('open');
     np.setAttribute('aria-hidden', 'false');
@@ -3847,33 +3992,77 @@ function initPlayerUI() {
             default: break;
         }
     });
-    (0, util_js_1.$)('#mini-open').addEventListener('click', e => { if (e.target.closest('input,a'))
-        return; openNP(); });
-    (0, util_js_1.$)('#mini-open').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === e.currentTarget)
-        openNP(); });
+    (0, util_js_1.$)('#mini-open').addEventListener('click', e => {
+        if (e.target.closest('input,a'))
+            return;
+        openNP();
+    });
+    (0, util_js_1.$)('#mini-open').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.target === e.currentTarget)
+            openNP();
+    });
     (0, util_js_1.$)('#np-close').addEventListener('click', closeNP);
+    // на телефоне: кнопка вверху справа переключает плеер ↔ текст (из очереди — обратно к плееру)
+    (0, util_js_1.$)('#np-pane-toggle').addEventListener('click', () => {
+        setPane(np.dataset.pane === 'player' ? 'lyrics' : 'player');
+        if (np.dataset.pane === 'lyrics')
+            updateLyrics(player_js_1.audio.currentTime, true);
+    });
+    // текст и обложка трека (карандаш рядом с лайком)
+    (0, util_js_1.$)('#np-edit').addEventListener('click', e => {
+        const t = (0, player_js_1.current)();
+        if (!t)
+            return;
+        (0, ui_js_1.openMenu)(e.currentTarget, [
+            { icon: 'lyrics', label: t.lyrics ? 'Изменить текст' : 'Добавить текст', onClick: () => editLyrics() },
+            { icon: 'upload', label: 'Обложка трека…', onClick: async () => {
+                    const url = await (0, ui_js_1.pickImage)();
+                    if (url) {
+                        (0, state_js_1.setTrackCover)(t.id, url);
+                        (0, ui_js_1.toast)('Обложка трека обновлена');
+                    }
+                } },
+            ...((0, state_js_1.hasOwnCover)(t.id) ? [{ icon: 'refresh', label: 'Вернуть обложку из файла', onClick: () => (0, state_js_1.setTrackCover)(t.id, null) }] : []),
+        ]);
+    });
     (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', () => {
-        if (!isDesktop()) { // на телефоне кнопка просто переключает плеер ↔ текст
-            setPane(np.dataset.pane === 'lyrics' ? 'player' : 'lyrics');
-            if (np.dataset.pane === 'lyrics')
-                updateLyrics(player_js_1.audio.currentTime, true);
+        if (!isDesktop()) { // на телефоне — к тексту
+            setPane('lyrics');
+            updateLyrics(player_js_1.audio.currentTime, true);
             return;
         }
         state_js_1.state.settings.showLyrics = !lyricsOn();
         (0, state_js_1.save)();
         (0, state_js_1.emit)('settings', 'showLyrics');
     });
-    (0, state_js_1.on)('settings', k => { if (k === 'showLyrics' || k === 'all')
-        applyLyricsMode(true); });
+    (0, state_js_1.on)('settings', k => {
+        if (k === 'showLyrics' || k === 'all')
+            applyLyricsMode(true);
+    });
     applyLyricsMode(false);
-    (0, util_js_1.$)('#np-more').addEventListener('click', e => { const t = (0, player_js_1.current)(); if (t)
-        (0, actions_js_1.trackMenu)(e.currentTarget, t.id, { np: true }); });
+    (0, util_js_1.$)('#np-more').addEventListener('click', e => {
+        const t = (0, player_js_1.current)();
+        if (!t)
+            return;
+        const qOpen = np.dataset.pane === 'queue';
+        (0, actions_js_1.trackMenu)(e.currentTarget, t.id, { np: true, extra: [{ icon: 'queue', label: qOpen ? 'Скрыть очередь' : 'Очередь', onClick: () => setPane(qOpen ? (isDesktop() && lyricsOn() ? 'lyrics' : 'player') : 'queue') }] });
+    });
     // свайп вниз по Now Playing на мобильных
     let y0 = null;
     np.addEventListener('touchstart', e => { y0 = e.target.closest('.pane') ? null : e.touches[0].clientY; }, { passive: true });
-    np.addEventListener('touchend', e => { if (y0 != null && e.changedTouches[0].clientY - y0 > 110)
-        closeNP(); y0 = null; }, { passive: true });
+    np.addEventListener('touchend', e => {
+        if (y0 != null && e.changedTouches[0].clientY - y0 > 110)
+            closeNP();
+        y0 = null;
+    }, { passive: true });
     (0, state_js_1.on)('track', renderTrack);
+    // своя обложка поменялась — обновляем плеер, фон и мини-плеер
+    (0, state_js_1.on)('covers', () => {
+        (0, state_js_1.derived)();
+        const t = (0, player_js_1.current)();
+        if (t)
+            (0, state_js_1.emit)('track', t);
+    });
     (0, state_js_1.on)('state', syncPlay);
     (0, state_js_1.on)('modes', syncModes);
     (0, state_js_1.on)('queue', renderQueue);
@@ -3882,11 +4071,15 @@ function initPlayerUI() {
     (0, state_js_1.on)('seeked', () => { frame(); updateLyrics(player_js_1.audio.currentTime, true); });
     (0, state_js_1.on)('likes', syncLikeBtns);
     (0, state_js_1.on)('theme', () => { syncTheme(); readAccent(); });
-    (0, state_js_1.on)('lyrics', t => { if ((0, player_js_1.current)()?.id === t.id) {
-        renderTrack(t);
-    } });
-    (0, state_js_1.on)('lyrics-state', t => { if ((0, player_js_1.current)()?.id === t.id && !t.lyrics)
-        renderLyrics(t); });
+    (0, state_js_1.on)('lyrics', t => {
+        if ((0, player_js_1.current)()?.id === t.id) {
+            renderTrack(t);
+        }
+    });
+    (0, state_js_1.on)('lyrics-state', t => {
+        if ((0, player_js_1.current)()?.id === t.id && !t.lyrics)
+            renderLyrics(t);
+    });
     syncPlay();
 }
 
@@ -3967,8 +4160,10 @@ function load(autoplay = true) {
     (0, state_js_1.emit)('queue');
     if (autoplay) {
         ensureGraph();
-        exports.audio.play().catch(err => { if (err.name !== 'AbortError')
-            console.warn(err); });
+        exports.audio.play().catch(err => {
+            if (err.name !== 'AbortError')
+                console.warn(err);
+        });
     }
     (0, state_js_1.pushRecent)(t.id);
     updateMediaSession(t);
@@ -3993,10 +4188,12 @@ function playList(ids, start = 0, { shuffle } = {}) {
     (0, state_js_1.emit)('modes');
     load();
 }
-function playTrackInQueue(i) { if (i >= 0 && i < exports.P.queue.length) {
-    exports.P.idx = i;
-    load();
-} }
+function playTrackInQueue(i) {
+    if (i >= 0 && i < exports.P.queue.length) {
+        exports.P.idx = i;
+        load();
+    }
+}
 function toggle() {
     if (!(0, exports.current)())
         return;
@@ -4050,8 +4247,10 @@ function prev() {
         load();
     }
 }
-function seek(t) { if (isFinite(exports.audio.duration))
-    exports.audio.currentTime = (0, util_js_1.clamp)(t, 0, exports.audio.duration); }
+function seek(t) {
+    if (isFinite(exports.audio.duration))
+        exports.audio.currentTime = (0, util_js_1.clamp)(t, 0, exports.audio.duration);
+}
 function seekBy(d) { seek(exports.audio.currentTime + d); }
 function setVolume(v) {
     v = (0, util_js_1.clamp)(v, 0, 1);
@@ -4166,12 +4365,15 @@ function purge(ids) {
     (0, state_js_1.emit)('queue');
 }
 // ----- события audio -----
-exports.audio.addEventListener('ended', () => { if (sleepEndOfTrack) {
-    sleepEndOfTrack = false;
-    (0, state_js_1.emit)('sleep');
-    exports.audio.pause();
-    return;
-} next(true); });
+exports.audio.addEventListener('ended', () => {
+    if (sleepEndOfTrack) {
+        sleepEndOfTrack = false;
+        (0, state_js_1.emit)('sleep');
+        exports.audio.pause();
+        return;
+    }
+    next(true);
+});
 // прослушивание засчитывается после 30 секунд (или половины короткого трека)
 exports.audio.addEventListener('timeupdate', () => {
     if (counted)
@@ -4189,9 +4391,11 @@ exports.audio.addEventListener('pause', () => (0, state_js_1.emit)('state'));
 exports.audio.addEventListener('loadedmetadata', () => { (0, state_js_1.emit)('meta'); setPos(); });
 exports.audio.addEventListener('durationchange', () => (0, state_js_1.emit)('meta'));
 exports.audio.addEventListener('seeked', () => { (0, state_js_1.emit)('seeked'); setPos(); });
-exports.audio.addEventListener('error', () => { if (exports.audio.src) {
-    (0, state_js_1.emit)('error', (0, exports.current)());
-} });
+exports.audio.addEventListener('error', () => {
+    if (exports.audio.src) {
+        (0, state_js_1.emit)('error', (0, exports.current)());
+    }
+});
 // ----- Media Session (медиаклавиши, экран блокировки) -----
 function updateMediaSession(t) {
     if (!('mediaSession' in navigator))
@@ -4210,10 +4414,12 @@ function setPos() {
     catch { /* ignore */ }
 }
 if ('mediaSession' in navigator) {
-    const h = (a, f) => { try {
-        navigator.mediaSession.setActionHandler(a, f);
-    }
-    catch { /* unsupported */ } };
+    const h = (a, f) => {
+        try {
+            navigator.mediaSession.setActionHandler(a, f);
+        }
+        catch { /* unsupported */ }
+    };
     h('play', toggle);
     h('pause', toggle);
     h('nexttrack', () => next());
@@ -4246,18 +4452,24 @@ function setSleep(minutes) {
 function fadeOutAndPause() {
     const v0 = exports.audio.volume;
     let k = 0;
-    const iv = setInterval(() => { k++; exports.audio.volume = Math.max(0, v0 * (1 - k / 20)); if (k >= 20) {
-        clearInterval(iv);
-        exports.audio.pause();
-        exports.audio.volume = v0;
-    } }, 100);
+    const iv = setInterval(() => {
+        k++;
+        exports.audio.volume = Math.max(0, v0 * (1 - k / 20));
+        if (k >= 20) {
+            clearInterval(iv);
+            exports.audio.pause();
+            exports.audio.volume = v0;
+        }
+    }, 100);
 }
 
 };
 defs["state.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.playlistTracks = exports.getTrack = exports.emit = exports.on = exports.state = exports.DEFAULT_SETTINGS = void 0;
+exports.playlistTracks = exports.getTrack = exports.hasAlbumCover = exports.hasOwnCover = exports.emit = exports.on = exports.state = exports.DEFAULT_SETTINGS = void 0;
 exports.load = load;
+exports.setTrackCover = setTrackCover;
+exports.setAlbumCover = setAlbumCover;
 exports.save = save;
 exports.flushSave = flushSave;
 exports.setSetting = setSetting;
@@ -4301,6 +4513,7 @@ exports.DEFAULT_SETTINGS = {
     keepAwake: false, // не гасить экран во время музыки
 };
 exports.state = {
+    covers: { t: {}, a: {} }, // свои обложки: t — трек → картинка, a — альбом → картинка
     tracks: new Map(), // id -> track
     playlists: [], // {id, name, ids[], created}
     likes: new Set(),
@@ -4315,12 +4528,14 @@ exports.state = {
 const handlers = {};
 const on = (e, f) => ((handlers[e] || (handlers[e] = [])).push(f), f);
 exports.on = on;
-const emit = (e, ...a) => (handlers[e] || []).forEach(f => { try {
-    f(...a);
-}
-catch (err) {
-    console.error(err);
-} });
+const emit = (e, ...a) => (handlers[e] || []).forEach(f => {
+    try {
+        f(...a);
+    }
+    catch (err) {
+        console.error(err);
+    }
+});
 exports.emit = emit;
 function apply(s) {
     if (!s || typeof s !== 'object')
@@ -4360,7 +4575,38 @@ async function load() {
     catch { /* ignore */ }
     const best = (a?.savedAt || 0) >= (b?.savedAt || 0) ? a : b;
     apply(best || a || b);
+    try {
+        const c = await Promise.race([(0, db_js_1.kvGet)('covers'), new Promise(r => setTimeout(() => r(null), 1500))]);
+        if (c && typeof c === 'object')
+            exports.state.covers = { t: c.t || {}, a: c.a || {} };
+    }
+    catch { /* ignore */ }
 }
+// ---------- свои обложки: для трека или для всего альбома (картинки хранятся в IndexedDB) ----------
+function saveCovers() { (0, db_js_1.kvSet)('covers', exports.state.covers); touchLibrary(); (0, exports.emit)('covers'); }
+function setTrackCover(id, url) {
+    if (url)
+        exports.state.covers.t[id] = url;
+    else
+        delete exports.state.covers.t[id];
+    saveCovers();
+}
+function setAlbumCover(key, url) {
+    const g = derived().groups.get(key);
+    if (url) {
+        exports.state.covers.a[key] = url;
+        if (g) // обложка альбома заменяет и свои обложки отдельных треков этого альбома
+            for (const t of g.tracks)
+                delete exports.state.covers.t[t.id];
+    }
+    else
+        delete exports.state.covers.a[key];
+    saveCovers();
+}
+const hasOwnCover = id => !!exports.state.covers.t[id];
+exports.hasOwnCover = hasOwnCover;
+const hasAlbumCover = key => !!exports.state.covers.a[key];
+exports.hasAlbumCover = hasAlbumCover;
 let idbTimer = 0;
 function save() {
     const snap = snapshot();
@@ -4373,10 +4619,15 @@ function save() {
     clearTimeout(idbTimer);
     idbTimer = setTimeout(() => (0, db_js_1.kvSet)('state', snap), 250);
 }
-function flushSave() { clearTimeout(idbTimer); const snap = snapshot(); try {
-    localStorage.setItem(LS, JSON.stringify(snap));
+function flushSave() {
+    clearTimeout(idbTimer);
+    const snap = snapshot();
+    try {
+        localStorage.setItem(LS, JSON.stringify(snap));
+    }
+    catch { /* ignore */ }
+    (0, db_js_1.kvSet)('state', snap);
 }
-catch { /* ignore */ } (0, db_js_1.kvSet)('state', snap); }
 function setSetting(k, v) { exports.state.settings[k] = v; save(); (0, exports.emit)('settings', k, v); }
 // ---------- производные коллекции ----------
 let cache = null, cacheVer = -1;
@@ -4405,6 +4656,9 @@ function derived() {
             groups.set(key, g);
         }
         g.tracks.push(t);
+        if (t._tagCover === undefined)
+            t._tagCover = t.cover || null; // обложка из самого файла
+        t.cover = exports.state.covers.t[t.id] || exports.state.covers.a[key] || t._tagCover;
         if (!g.cover && t.cover)
             g.cover = t.cover;
         if (!g.year && t.year)
@@ -4538,12 +4792,12 @@ function likedTracks() { return [...exports.state.likes].map(exports.getTrack).f
 
 };
 defs["tags.js"]=function(module,exports,require){"use strict";
-// Собственный парсер метаданных без зависимостей:
-// MP3 (ID3v1/v2.2/2.3/2.4: TIT2, TPE1, TALB, год, жанр, APIC, USLT, SYLT, MPEG-заголовок),
-// FLAC (STREAMINFO, Vorbis comments, PICTURE), OGG Vorbis/Opus, WAV (fmt, LIST INFO, id3), M4A/MP4/AAC (ilst, covr).
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AUDIO_EXT = void 0;
 exports.readMeta = readMeta;
+// Собственный парсер метаданных без зависимостей:
+// MP3 (ID3v1/v2.2/2.3/2.4: TIT2, TPE1, TALB, год, жанр, APIC, USLT, SYLT, MPEG-заголовок),
+// FLAC (STREAMINFO, Vorbis comments, PICTURE), OGG Vorbis/Opus, WAV (fmt, LIST INFO, id3), M4A/MP4/AAC (ilst, covr).
 const dec = (enc, bytes) => new TextDecoder(enc).decode(bytes);
 const u32be = (b, i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
 const u32le = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
@@ -4967,12 +5221,16 @@ async function readOgg(file) {
         o += p.length;
     }
     const meta = {};
-    const find = sig => { const s = Array.from(sig, c => c.charCodeAt(0)); outer: for (let i = 0; i < all.length - s.length; i++) {
-        for (let j = 0; j < s.length; j++)
-            if (all[i + j] !== s[j])
-                continue outer;
-        return i;
-    } return -1; };
+    const find = sig => {
+        const s = Array.from(sig, c => c.charCodeAt(0));
+        outer: for (let i = 0; i < all.length - s.length; i++) {
+            for (let j = 0; j < s.length; j++)
+                if (all[i + j] !== s[j])
+                    continue outer;
+            return i;
+        }
+        return -1;
+    };
     const vi = find('\x01vorbis'), oi = find('OpusHead');
     if (vi >= 0) {
         meta.codec = 'Vorbis';
@@ -5220,6 +5478,7 @@ exports.openMenu = openMenu;
 exports.openModal = openModal;
 exports.closeTopModal = closeTopModal;
 exports.promptText = promptText;
+exports.pickImage = pickImage;
 const icons_js_1 = require("./icons.js");
 const util_js_1 = require("./util.js");
 // ---------- toast ----------
@@ -5236,10 +5495,12 @@ function toast(msg, kind = 'ok', ms = 2600) {
 }
 // ---------- контекстное меню ----------
 let menuEl = null;
-function closeMenu() { if (menuEl) {
-    menuEl.remove();
-    menuEl = null;
-} }
+function closeMenu() {
+    if (menuEl) {
+        menuEl.remove();
+        menuEl = null;
+    }
+}
 function openMenu(anchor, items, { x, y } = {}) {
     closeMenu();
     const root = document.getElementById('popover-root');
@@ -5275,8 +5536,10 @@ function openMenu(anchor, items, { x, y } = {}) {
     });
     el.querySelector('.menu-item')?.focus();
 }
-document.addEventListener('pointerdown', e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest('[data-action="menu"],[data-action="np-menu"]'))
-    closeMenu(); }, true);
+document.addEventListener('pointerdown', e => {
+    if (menuEl && !menuEl.contains(e.target) && !e.target.closest('[data-action="menu"],[data-action="np-menu"]'))
+        closeMenu();
+}, true);
 addEventListener('resize', closeMenu);
 document.addEventListener('scroll', closeMenu, true);
 // ---------- модальные окна ----------
@@ -5291,11 +5554,18 @@ function openModal({ title, html = '', actions = [], wide = false, onMount }) {
     ${actions.length ? `<div class="modal-foot">${actions.map((a, i) => `<button class="btn ${a.primary ? 'btn-primary' : 'btn-soft'} ${a.danger ? 'btn-danger' : ''}" data-act="${i}">${(0, util_js_1.esc)(a.label)}</button>`).join('')}</div>` : ''}
   </div>`;
     root.appendChild(wrap);
-    const api = { el: wrap, close() { wrap.classList.remove('in'); const i = stack.indexOf(api); if (i >= 0)
-            stack.splice(i, 1); setTimeout(() => wrap.remove(), 250); } };
+    const api = { el: wrap, close() {
+            wrap.classList.remove('in');
+            const i = stack.indexOf(api);
+            if (i >= 0)
+                stack.splice(i, 1);
+            setTimeout(() => wrap.remove(), 250);
+        } };
     stack.push(api);
-    wrap.addEventListener('mousedown', e => { if (e.target === wrap)
-        api.close(); });
+    wrap.addEventListener('mousedown', e => {
+        if (e.target === wrap)
+            api.close();
+    });
     wrap.addEventListener('click', e => {
         if (e.target.closest('[data-close]'))
             return api.close();
@@ -5313,36 +5583,103 @@ function openModal({ title, html = '', actions = [], wide = false, onMount }) {
 }
 const topModal = () => stack[stack.length - 1];
 exports.topModal = topModal;
-function closeTopModal() { const m = stack[stack.length - 1]; if (m) {
-    m.close();
-    return true;
-} return false; }
+function closeTopModal() {
+    const m = stack[stack.length - 1];
+    if (m) {
+        m.close();
+        return true;
+    }
+    return false;
+}
 function promptText({ title, label, value = '', ok = 'Готово', placeholder = '' }) {
     return new Promise(resolve => {
         let done = false;
-        const fin = v => { if (!done) {
-            done = true;
-            resolve(v);
-        } };
+        const fin = v => {
+            if (!done) {
+                done = true;
+                resolve(v);
+            }
+        };
         const m = openModal({
             title, html: `<label class="field"><span>${(0, util_js_1.esc)(label)}</span><input class="input" id="prompt-in" value="${(0, util_js_1.esc)(value)}" placeholder="${(0, util_js_1.esc)(placeholder)}" maxlength="80"></label>`,
             actions: [{ label: 'Отмена', onClick: () => fin(null) }, { label: ok, primary: true, onClick: () => fin(m.el.querySelector('#prompt-in').value.trim() || null) }],
             onMount: api => {
                 const inp = api.el.querySelector('#prompt-in');
                 inp.select();
-                inp.addEventListener('keydown', e => { if (e.key === 'Enter') {
-                    fin(inp.value.trim() || null);
-                    api.close();
-                } });
+                inp.addEventListener('keydown', e => {
+                    if (e.key === 'Enter') {
+                        fin(inp.value.trim() || null);
+                        api.close();
+                    }
+                });
                 const orig = api.close;
                 api.close = () => { fin(null); orig(); };
             },
         });
     });
 }
+// ---------- выбор картинки: файл → квадрат w×h (jpeg, data URL) или null, если отменили ----------
+function pickImage(w = 600, h = 600) {
+    return new Promise(resolve => {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = 'image/*';
+        inp.addEventListener('change', () => {
+            const f = inp.files[0];
+            if (!f)
+                return resolve(null);
+            const img = new Image(), url = URL.createObjectURL(f);
+            img.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = w;
+                c.height = h;
+                const s = Math.max(w / img.width, h / img.height), sw = w / s, sh = h / s;
+                c.getContext('2d').drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+                resolve(c.toDataURL('image/jpeg', 0.88));
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); toast('Не удалось прочитать изображение', 'warn'); resolve(null); };
+            img.src = url;
+        });
+        inp.click();
+    });
+}
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -5353,6 +5690,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -5368,14 +5706,13 @@ function fmtTime(s) {
     return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`;
 }
 function fmtTotal(sec) {
-    const m = Math.round(sec / 60), en = require("./i18n.js").isEn();
+    const m = Math.round(sec / 60), en = i18n.isEn();
     if (m < 60)
         return en ? `${m} min` : `${m} мин`;
     const h = Math.floor(m / 60);
     return en ? `${h} h ${m % 60} min` : `${h} ч ${m % 60} мин`;
 }
 function plural(n, forms) {
-    const i18n = require("./i18n.js");
     if (i18n.isEn() && i18n.EN_PLURAL[forms[0]])
         return `${n} ${i18n.EN_PLURAL[forms[0]][n === 1 ? 0 : 1]}`;
     const a = Math.abs(n) % 100, b = a % 10;
@@ -5433,6 +5770,9 @@ defs["views.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ACCENTS = exports.setSongSort = exports.songSort = exports.viewSwitch = exports.albumLink = exports.artistLinks = exports.artistsOf = exports.avatarHTML = exports.mosaic = exports.cov = exports.registerList = exports.lists = void 0;
 exports.trackRow = trackRow;
+exports.mixes = mixes;
+exports.mixById = mixById;
+exports.mixView = mixView;
 exports.homeView = homeView;
 exports.libraryView = libraryView;
 exports.albumView = albumView;
@@ -5444,9 +5784,6 @@ exports.searchResults = searchResults;
 exports.profileView = profileView;
 exports.settingsView = settingsView;
 exports.sidebarPlaylists = sidebarPlaylists;
-exports.mixes = mixes;
-exports.mixById = mixById;
-exports.mixView = mixView;
 const state_js_1 = require("./state.js");
 const icons_js_1 = require("./icons.js");
 const util_js_1 = require("./util.js");
@@ -5456,8 +5793,13 @@ const native_js_1 = require("./native.js");
 // ---------- реестр списков (для воспроизведения «в контексте») ----------
 let seq = 0;
 exports.lists = new Map();
-const registerList = tracks => { const id = ++seq; exports.lists.set(id, tracks); if (exports.lists.size > 60)
-    exports.lists.delete(exports.lists.keys().next().value); return id; };
+const registerList = tracks => {
+    const id = ++seq;
+    exports.lists.set(id, tracks);
+    if (exports.lists.size > 60)
+        exports.lists.delete(exports.lists.keys().next().value);
+    return id;
+};
 exports.registerList = registerList;
 // ---------- базовые компоненты ----------
 const PH = [['#2c2c30', '#0f0f11', '#F5F5F7'], ['#F5F5F7', '#9a9aa2', '#111'], ['#1c1c1f', '#44444a', '#F5F5F7'], ['#E4E4E8', '#8e8e96', '#111'], ['#3a3a40', '#141416', '#E4E4E8'], ['#0f0f11', '#34343a', '#F5F5F7']];
@@ -5671,7 +6013,7 @@ function libraryView(tab = 'albums') {
         body = d.artistList.length ? `<div class="grid artists">${d.artistList.map(a => artistCard(a)).join('')}</div>` : emptyState(true);
     else if (tab === 'playlists') {
         body = `<div class="grid">${likedCard()}${state_js_1.state.playlists.map(playlistCard).join('')}${newPlaylistCard()}</div>
-      <div class="inline-actions"><button class="btn btn-soft sm" data-action="import-m3u">${(0, icons_js_1.icon)('download')}Импорт M3U / M3U8</button></div>`;
+`;
     }
     else {
         if (!d.all.length)
@@ -5697,7 +6039,7 @@ function albumView(key) {
         art: (0, exports.cov)(g.cover, g.key), eyebrow: g.tracks.length > 1 ? 'Альбом' : 'Сингл', title: g.name, bg: g.cover,
         subHTML: (0, exports.artistLinks)(g.artists),
         meta: `${meta}${meta ? ' · ' : ''}${(0, util_js_1.plural)(g.tracks.length, ['песня', 'песни', 'песен'])}, ${(0, util_js_1.fmtTotal)(total)}`,
-        actions: playBtns('play-album', 'shuffle-album', `data-key="${(0, util_js_1.esc)(g.key)}"`),
+        actions: playBtns('play-album', 'shuffle-album', `data-key="${(0, util_js_1.esc)(g.key)}"`) + `<button class="icon-btn lg" data-action="album-menu" data-key="${(0, util_js_1.esc)(g.key)}" aria-label="Ещё">${(0, icons_js_1.icon)('more')}</button>`,
     }) + `<div class="detail">${trackList(g.tracks, {})}</div>`;
 }
 // ---------- страница артиста ----------
@@ -6197,9 +6539,13 @@ function alignText(text, dur, a) {
     if (!items.length)
         return null;
     const sylls = [];
-    items.forEach((it, li) => it.ws.forEach((w, wi) => { for (let k = 0, c = syllables(w); k < c; k++)
-        sylls.push({ li, wi, first: k === 0, wt: 1 }); const last = sylls[sylls.length - 1]; if (wi === it.ws.length - 1)
-        last.wt += it.gap ? 3 : 1; }));
+    items.forEach((it, li) => it.ws.forEach((w, wi) => {
+        for (let k = 0, c = syllables(w); k < c; k++)
+            sylls.push({ li, wi, first: k === 0, wt: 1 });
+        const last = sylls[sylls.length - 1];
+        if (wi === it.ws.length - 1)
+            last.wt += it.gap ? 3 : 1;
+    }));
     const S = sylls.length;
     if (S < 4)
         return null;
@@ -6266,13 +6612,19 @@ function alignText(text, dur, a) {
     }
     // слоги → слова → строки
     const lines = items.map(it => ({ text: it.text, words: [] }));
-    sylls.forEach((sy, i) => { if (sy.first)
-        lines[sy.li].words.push({ t: ts[i], text: items[sy.li].ws[sy.wi], syl: syllables(items[sy.li].ws[sy.wi]) }); });
+    sylls.forEach((sy, i) => {
+        if (sy.first)
+            lines[sy.li].words.push({ t: ts[i], text: items[sy.li].ws[sy.wi], syl: syllables(items[sy.li].ws[sy.wi]) });
+    });
     lines.forEach((l, li) => {
         const nextLine = lines[li + 1] && lines[li + 1].words[0] ? lines[li + 1].words[0].t : dur;
         l.t = l.words[0].t;
-        l.words.forEach((w, k) => { const nxt = l.words[k + 1]; w.b = nxt ? nxt.t : Math.min(sungEnd(a.fine, w.t, nextLine - 0.05), w.t + 6); if (w.b - w.t < 0.12)
-            w.b = w.t + 0.12; });
+        l.words.forEach((w, k) => {
+            const nxt = l.words[k + 1];
+            w.b = nxt ? nxt.t : Math.min(sungEnd(a.fine, w.t, nextLine - 0.05), w.t + 6);
+            if (w.b - w.t < 0.12)
+                w.b = w.t + 0.12;
+        });
         const rate = l.words.map(w => (w.b - w.t) / w.syl);
         l.words.forEach((w, k) => { const o = rate.filter((_, j) => j !== k).sort((x, y) => x - y), med = o[Math.floor(o.length / 2)] || rate[k]; w.held = w.b - w.t >= 0.8 && rate[k] > 2.2 * Math.max(0.12, med); });
     });

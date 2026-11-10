@@ -719,3 +719,14 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .hero-art .mix-label b { font-size: 22px; }
 .mix-art .cov.ph .ic { opacity: 0; }
 .ly-empty .btn .ic { width: 16px; height: 16px; color: inherit; }
+
+/* ===== v1.8.1: контент без пустого места слева, кнопки у лайка, обычный текст без обрезки ===== */
+.view { max-width: none; margin: 0; }
+@media (min-width: 900px) { .rail { margin-right: -44px; padding-right: 44px; } }
+.np-meta .icon-btn { flex: none; }
+#np-edit .ic, #np-lyr-toggle .ic { width: 22px; height: 22px; }
+#np-pane-toggle.on { color: var(--accent-fg); background: var(--accent-soft); }
+/* обычный текст (без меток времени): сверху не гаснет, видна первая строка целиком */
+.pane-lyrics.plain { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); }
+.pane-lyrics.plain .ly-plain { padding: 8px 0 90px; }
+.hero-actions .icon-btn.lg { width: 48px; height: 48px; background: var(--hover); }
