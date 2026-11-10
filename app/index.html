@@ -398,7 +398,7 @@ body.np-open .mini { transform: translateY(150%); opacity: 0; pointer-events: no
 .ly:hover { color: var(--text-2); opacity: 1 !important; filter: none !important; }
 .ly[data-d="1"] { filter: blur(.4px); } .ly[data-d="2"] { filter: blur(1.1px); opacity: .85; } .ly[data-d="3"] { filter: blur(1.8px); opacity: .7; } .ly[data-d="4"] { filter: blur(2.4px); opacity: .55; } .ly[data-d="5"] { filter: blur(3px); opacity: .4; }
 .ly .w { color: var(--text-3); transition: color .35s; } .ly.past { color: var(--text-3); }
-.ly.active { filter: none; opacity: 1; } .ly.active .w { color: var(--text-2); }
+.ly.active { filter: none; opacity: 1; color: var(--text); } .ly.active .w { color: var(--text-2); }
 .ly.active .w.on { color: var(--accent-fg); text-shadow: 0 0 28px var(--accent-soft); }
 .ly.gap { padding: 14px 0; } .dots { display: inline-flex; gap: 8px; } .dots i { width: 10px; height: 10px; border-radius: 50%; background: currentColor; opacity: .5; }
 .ly.active .dots i { background: var(--accent); opacity: 1; animation: dots 1.4s ease-in-out infinite; } .dots i:nth-child(2) { animation-delay: .2s !important; } .dots i:nth-child(3) { animation-delay: .4s !important; }
@@ -675,10 +675,10 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .np[data-pane="queue"] .ly-fab { display: none; }
 
 /* ===== v1.6: пословное караоке, сдвиг, обложка по ширине ===== */
-.ly.active .w { display: inline; color: var(--text-3); transition: color .28s ease-out, text-shadow .4s ease-out; }
-.ly.active .w.sung { color: var(--text-2); }
-.ly.active .w.cur { color: var(--accent-fg); text-shadow: 0 0 24px var(--accent-soft); }
-.ly.active .w.cur.held { animation: heldGlow 1.6s ease-in-out infinite alternate; } @keyframes heldGlow { from { text-shadow: 0 0 14px var(--accent-soft); } to { text-shadow: 0 0 34px var(--accent-soft), 0 0 6px var(--accent-soft); } }
+.ly.active .w { display: inline; color: var(--text); transition: color .28s ease-out, text-shadow .4s ease-out; }
+.ly.active.wordsync .w { color: var(--text-3); } .ly.active.wordsync .w.sung { color: var(--text-2); }
+.ly.active.wordsync .w.cur { color: var(--text); text-shadow: 0 0 24px var(--accent-soft); }
+.ly.active.wordsync .w.cur.held { animation: heldGlow 1.6s ease-in-out infinite alternate; } @keyframes heldGlow { from { text-shadow: 0 0 14px var(--accent-soft); } to { text-shadow: 0 0 34px var(--accent-soft), 0 0 6px var(--accent-soft); } }
 .ly-off { position: absolute; left: 50%; bottom: 54px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 2px; padding: 3px 6px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: rgba(34, 34, 38, .78); color: #fff; backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, .14); white-space: nowrap; }
 .ly-off[hidden] { display: none; } .ly-off span { padding: 0 8px; opacity: .85; } .ly-off b { font-variant-numeric: tabular-nums; } .ly-off .icon-btn { color: #fff; width: 28px; height: 28px; font-size: 18px; line-height: 1; }
 :root[data-theme="light"] .ly-off { background: rgba(255, 255, 255, .9); color: #1D1D1F; border-color: rgba(0, 0, 0, .12); } :root[data-theme="light"] .ly-off .icon-btn { color: #1D1D1F; }
@@ -3237,12 +3237,9 @@ function renderLyrics(t) {
         const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
         if (dur > 20) {
             analyse();
-            const al = t._act && (0, vocal_js_1.alignText)(ly.text, dur, t._act);
-            ly = { type: 'synced', lines: al || fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
+            ly = { type: 'synced', lines: fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
         }
     }
-    else if (ly && ly.type === 'synced')
-        analyse();
     syncOffUI(!!ly && ly.type === 'synced');
     if (t && t._off === undefined)
         (0, lyrics_auto_js_1.getOffset)(t).then(v => { t._off = v; if ((0, player_js_1.current)() === t) {
@@ -3323,6 +3320,7 @@ function updateLyrics(t, force) {
         lyEls.forEach((el, i) => {
             el.classList.toggle('active', i === idx);
             el.classList.toggle('past', i < idx);
+            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.split(' ').length));
             el.dataset.d = Math.min(Math.abs(i - idx), 5);
             if (i !== idx)
                 el.querySelectorAll('.w').forEach(w => w.style.removeProperty('--wp'));
@@ -3332,8 +3330,8 @@ function updateLyrics(t, force) {
             lyBox.scrollTo({ top: el.offsetTop - lyBox.clientHeight * 0.38 + el.offsetHeight / 2, behavior: force ? 'auto' : 'smooth' });
     }
     const el = lyEls[idx];
-    if (!el || el.classList.contains('gap'))
-        return;
+    if (!el || el.classList.contains('gap') || !el.classList.contains('wordsync'))
+        return; // как в Spotify: светится строка; по словам — только если в .lrc есть метки слов
     const ws = el.querySelectorAll('.w');
     if (!wTimes)
         wTimes = wordTimes(idx);

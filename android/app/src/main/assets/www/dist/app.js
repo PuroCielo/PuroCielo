@@ -2410,12 +2410,9 @@ function renderLyrics(t) {
         const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
         if (dur > 20) {
             analyse();
-            const al = t._act && (0, vocal_js_1.alignText)(ly.text, dur, t._act);
-            ly = { type: 'synced', lines: al || fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
+            ly = { type: 'synced', lines: fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
         }
     }
-    else if (ly && ly.type === 'synced')
-        analyse();
     syncOffUI(!!ly && ly.type === 'synced');
     if (t && t._off === undefined)
         (0, lyrics_auto_js_1.getOffset)(t).then(v => { t._off = v; if ((0, player_js_1.current)() === t) {
@@ -2496,6 +2493,7 @@ function updateLyrics(t, force) {
         lyEls.forEach((el, i) => {
             el.classList.toggle('active', i === idx);
             el.classList.toggle('past', i < idx);
+            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.split(' ').length));
             el.dataset.d = Math.min(Math.abs(i - idx), 5);
             if (i !== idx)
                 el.querySelectorAll('.w').forEach(w => w.style.removeProperty('--wp'));
@@ -2505,8 +2503,8 @@ function updateLyrics(t, force) {
             lyBox.scrollTo({ top: el.offsetTop - lyBox.clientHeight * 0.38 + el.offsetHeight / 2, behavior: force ? 'auto' : 'smooth' });
     }
     const el = lyEls[idx];
-    if (!el || el.classList.contains('gap'))
-        return;
+    if (!el || el.classList.contains('gap') || !el.classList.contains('wordsync'))
+        return; // как в Spotify: светится строка; по словам — только если в .lrc есть метки слов
     const ws = el.querySelectorAll('.w');
     if (!wTimes)
         wTimes = wordTimes(idx);
