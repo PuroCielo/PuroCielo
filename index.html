@@ -83,6 +83,7 @@ html[data-view="mobile"] .dock.show{transform:none}
 html[data-view="mobile"] .dock .btn{flex:1;justify-content:center;height:48px;padding:0 14px}
 html[data-view="mobile"] footer{text-align:center}
 html[data-view="desktop"] .dock{display:none}
+.how{margin-top:12px;font-size:14px;color:var(--fg2)}.how summary{cursor:pointer;font-weight:600;color:var(--fg)}.how ol{margin:10px 0 0 18px;display:grid;gap:6px;line-height:1.5}
 </style></head><body>
 <div class="glow"></div>
 <div class="dock" id="dock"><a class="btn primary" id="dock-dl" href="downloads/PuroCielo.apk" download>Скачать</a><a class="btn" href="app/">В браузере</a></div>
@@ -98,8 +99,9 @@ html[data-view="desktop"] .dock{display:none}
 </div>
 <section id="download"><h2>Скачать</h2><p class="sub">Установка без регистрации и без рекламы. Музыка остаётся на вашем устройстве.</p>
 <div class="dl">
-<div class="card"><h3>Windows</h3><p>Установщик с ярлыком на рабочем столе. Windows 10 и новее.</p><div class="meta"><span>версия 1.6.0</span><span>≈ 85 МБ</span><span>.exe</span></div><a class="btn primary" id="dl-win" href="downloads/PuroCielo-Setup.exe" download>Скачать .exe</a></div>
-<div class="card"><h3>Android</h3><p>Выбираете папку с музыкой или добавляете треки по одному. Работает с экрана блокировки.</p><div class="meta"><span>версия 1.6.0</span><span>.apk</span></div><a class="btn primary" id="dl-apk" href="downloads/PuroCielo.apk" download>Скачать .apk</a></div>
+<div class="card"><h3>Windows</h3><p>Установщик с ярлыком на рабочем столе. Windows 10 и новее.</p><div class="meta"><span>версия 1.7.0</span><span>≈ 85 МБ</span><span>.exe</span></div><a class="btn primary" id="dl-win" href="downloads/PuroCielo-Setup.exe" download>Скачать .exe</a></div>
+<div class="card"><h3>Android</h3><p>Выбираете папку с музыкой или добавляете треки по одному. Работает с экрана блокировки.</p><div class="meta"><span>версия 1.7.0</span><span>.apk</span></div><a class="btn primary" id="dl-apk" href="downloads/PuroCielo.apk" download>Скачать .apk</a></div>
+<div class="card" id="ios-card"><h3>iPhone и iPad</h3><p>Файл .ipa для установки через AltStore или Sideloadly: Apple не разрешает ставить приложения не из App Store напрямую. Проще всего открыть плеер в Safari и добавить на экран «Домой».</p><div class="meta"><span>версия 1.7.0</span><span>.ipa</span><span>iOS 15+</span></div><a class="btn primary" id="dl-ipa" href="downloads/PuroCielo.ipa" download>Скачать .ipa</a><details class="how"><summary>Как установить</summary><ol><li>Скачайте <b>.ipa</b> на компьютер или iPhone.</li><li>Поставьте <b>AltStore</b> или <b>Sideloadly</b> и войдите своим Apple ID.</li><li>Выберите файл Puro Cielo.ipa. Подпись с бесплатным Apple ID действует 7 дней, потом её нужно продлить.</li><li>Либо без установки: откройте плеер в Safari → «Поделиться» → «На экран Домой».</li></ol></details></div>
 <div class="card"><h3>В браузере</h3><p>Ничего не устанавливается: откройте и перетащите файлы в окно.</p><div class="meta"><span>Chrome, Edge, Safari</span></div><a class="btn" id="dl-web" href="app/">Открыть</a></div>
 </div>
 </section>
@@ -127,7 +129,7 @@ html[data-view="desktop"] .dock{display:none}
 <div id="auth-me" hidden><div class="me"><img id="me-photo" alt="" hidden><div><b id="me-name"></b><span id="me-nick" style="display:block"></span><span id="me-mail"></span></div></div><div id="claim-box" hidden style="margin-top:18px"><form id="claim-form"><label for="claim-user">Выберите ник</label><input id="claim-user" maxlength="24" placeholder="например, listener" autocomplete="off"><p class="note" id="claim-msg" role="status"></p><button class="btn primary" type="submit" style="margin-top:10px">Занять ник</button></form></div><div class="btns" style="margin-top:18px"><a class="btn primary" href="app/">Открыть плеер</a><button class="btn" id="auth-out" type="button">Выйти</button></div></div></div>
 </div>
 <div class="card"><h3>Зачем аккаунт</h3><p>С аккаунтом мы сможем присылать новости об обновлениях. Ваша музыка по-прежнему остаётся только на вашем устройстве и никуда не загружается.</p></div></div></section>
-<footer><button type="button" class="linkbtn" id="vtoggle2"></button><br>Puro Cielo 1.6.0 · Плеер работает локально, ваши файлы никуда не отправляются.</footer>
+<footer><button type="button" class="linkbtn" id="vtoggle2"></button><br>Puro Cielo 1.7.0 · Плеер работает локально, ваши файлы никуда не отправляются.</footer>
 </div>
 
 <script>
@@ -155,7 +157,7 @@ apply(view);
 var hero=document.getElementById('hero-win'),note=document.getElementById('hero-note'),dock=document.getElementById('dock-dl');
 var DL='<svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>';
 if(os==='android'){hero.href='downloads/PuroCielo.apk';hero.innerHTML=DL+'Скачать для Android';note.textContent='Для Windows установщик ниже, в разделе «Скачать».';dock.textContent='Скачать APK'}
-else if(os==='ios'){hero.href='app/';hero.removeAttribute('download');hero.innerHTML=DL.replace('M12 4v11M7 11l5 5 5-5M5 20h14','M5 12h14M13 6l6 6-6 6')+'Открыть в браузере';note.textContent='На iPhone приложения нет: плеер работает в Safari, добавьте его на экран «Домой».';dock.href='app/';dock.removeAttribute('download');dock.textContent='Открыть плеер'}
+else if(os==='ios'){hero.href='downloads/PuroCielo.ipa';hero.innerHTML=DL+'Скачать для iPhone (.ipa)';note.innerHTML='Установка через AltStore или Sideloadly, инструкция ниже. Проще: открыть <a href="app/">плеер в Safari</a> и добавить на экран «Домой».';dock.href='downloads/PuroCielo.ipa';dock.textContent='Скачать .ipa'}
 else{note.textContent='Android-версия и плеер в браузере ниже.';dock.href='downloads/PuroCielo-Setup.exe';dock.textContent='Скачать для Windows'}
 /* нижняя панель скачивания в телефонном виде появляется после первого экрана */
 var d=document.getElementById('dock');function sc(){d.classList.toggle('show',scrollY>420)}addEventListener('scroll',sc,{passive:true});sc();

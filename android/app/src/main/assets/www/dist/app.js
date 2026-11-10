@@ -1165,6 +1165,7 @@ const ICONS = {
     'chev-right': S('<path d="m9 6 6 6-6 6"/>'),
     'chev-left': S('<path d="m15 6-6 6 6 6"/>'),
     refresh: S('<path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v4.500h-4.500"/>'),
+    lyrics: S('<path d="M5 6.500h14M5 11.500h14M5 16.500h8"/>'),
     sparkle: S('<path d="M12 3l1.800 5.200L19 10l-5.200 1.800L12 17l-1.800-5.200L5 10l5.200-1.800z"/><path d="M19 16v4M17 18h4"/>'),
     note: S('<path d="M9 18V6l11-2v12"/><circle cx="6.500" cy="18" r="2.500" fill="currentColor"/><circle cx="17.500" cy="16" r="2.500" fill="currentColor"/>'),
     disc: S('<circle cx="12" cy="12" r="8.500"/><circle cx="12" cy="12" r="2.500"/>'),
@@ -2395,22 +2396,26 @@ function renderLyrics(t) {
         fab.hidden = !ly;
         fab.innerHTML = `${(0, icons_js_1.icon)('edit')}Изменить текст`;
     }
+    const analyse = () => { if (!t._actTried && lyricsOn()) {
+        t._actTried = true;
+        (0, vocal_js_1.vocalActivity)(t).then(a => { if (a) {
+            t._act = a;
+            if ((0, player_js_1.current)() === t && t.lyrics && t.lyrics.type) {
+                renderLyrics(t);
+                updateLyrics(player_js_1.audio.currentTime, true);
+            }
+        } });
+    } };
     if (ly && ly.type === 'plain' && state_js_1.state.settings.autoKaraoke !== false) {
         const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
         if (dur > 20) {
-            if (!t._actTried) {
-                t._actTried = true;
-                (0, vocal_js_1.vocalActivity)(t).then(a => { if (a) {
-                    t._act = a;
-                    if ((0, player_js_1.current)() === t && t.lyrics?.type === 'plain') {
-                        renderLyrics(t);
-                        updateLyrics(player_js_1.audio.currentTime, true);
-                    }
-                } });
-            }
-            ly = { type: 'synced', lines: fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
+            analyse();
+            const al = t._act && (0, vocal_js_1.alignText)(ly.text, dur, t._act);
+            ly = { type: 'synced', lines: al || fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
         }
     }
+    else if (ly && ly.type === 'synced')
+        analyse();
     syncOffUI(!!ly && ly.type === 'synced');
     if (t && t._off === undefined)
         (0, lyrics_auto_js_1.getOffset)(t).then(v => { t._off = v; if ((0, player_js_1.current)() === t) {
@@ -2463,12 +2468,20 @@ function editLyrics() {
 function wordTimes(i) {
     const l = lines[i], next = lines[i + 1], ws = l.text.split(' ');
     const gap = next ? next.t - l.t : 6;
+    // метки слов уже есть (enhanced LRC или выравнивание по звуку)
     if (l.words && l.words.length === ws.length)
-        return l.words.map((w, k) => ({ a: w.t, b: l.words[k + 1] ? l.words[k + 1].t : l.t + Math.min(gap, 4) }));
+        return l.words.map((w, k) => ({ a: w.t, b: w.b || (l.words[k + 1] ? l.words[k + 1].t : l.t + Math.min(gap, 4)), held: !!w.held }));
+    // по звуку трека: границы слов в пределах строки, протяжные слова помечены
+    const fine = (0, player_js_1.current)()?._act?.fine;
+    if (fine && !l.gapLine) {
+        const r = (0, vocal_js_1.alignWords)(ws, l.t, Math.min(l.t + 10, next ? next.t : l.t + 10), fine);
+        if (r)
+            return r;
+    }
     const sing = (0, util_js_1.clamp)(l.text.length * 0.07 + 0.5, 1.2, 9), dur = Math.max(0.6, Math.min(sing, gap * 0.94));
     const wt = ws.map(w => Math.max(2, w.length)), sum = wt.reduce((x, y) => x + y, 0);
     let acc = 0;
-    return wt.map(w => { const a = l.t + dur * acc / sum; acc += w; return { a, b: l.t + dur * acc / sum }; });
+    return wt.map(w => { const a = l.t + dur * acc / sum; acc += w; return { a, b: l.t + dur * acc / sum, held: false }; });
 }
 function updateLyrics(t, force) {
     if (lyType !== 'synced' || !lines.length)
@@ -2504,7 +2517,7 @@ function updateLyrics(t, force) {
             cur = k;
     if (cur !== wLast[0]) {
         wLast[0] = cur;
-        ws.forEach((w, k) => { w.classList.toggle('cur', k === cur); w.classList.toggle('sung', k < cur); });
+        ws.forEach((w, k) => { w.classList.toggle('cur', k === cur); w.classList.toggle('sung', k < cur); w.classList.toggle('held', k === cur && !!wTimes[k].held); });
     }
 }
 // ---------- сдвиг синхронизации ----------
@@ -2516,15 +2529,34 @@ function syncOffUI(show) {
     const v = curOff || 0;
     box.querySelector('b').textContent = (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + ' с';
 }
-(0, util_js_1.$)('#ly-off')?.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-off]');
+let tapSync = false;
+async function applyOffset(v) {
     const t = (0, player_js_1.current)();
-    if (!b || !t)
+    if (!t)
         return;
-    curOff = b.dataset.off === '0' ? 0 : Math.round(((curOff || 0) + parseFloat(b.dataset.off)) * 10) / 10;
+    curOff = Math.max(-60, Math.min(60, Math.round(v * 10) / 10));
     await (0, lyrics_auto_js_1.setOffset)(t, curOff);
     syncOffUI(true);
     updateLyrics(player_js_1.audio.currentTime, true);
+}
+function tapSyncEnd() { tapSync = false; (0, util_js_1.$)('#ly-off')?.classList.remove('tap'); lyBox.classList.remove('tap-sync'); }
+(0, util_js_1.$)('#ly-off')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-off]');
+    if (!b || !(0, player_js_1.current)())
+        return;
+    if (b.dataset.off === 'tap') {
+        if (tapSync) {
+            tapSyncEnd();
+            return;
+        }
+        tapSync = true;
+        (0, util_js_1.$)('#ly-off').classList.add('tap');
+        lyBox.classList.add('tap-sync');
+        userScrollUntil = 0;
+        (0, ui_js_1.toast)('Нажмите на строку, которую поют прямо сейчас');
+        return;
+    }
+    applyOffset(b.dataset.off === '0' ? 0 : (curOff || 0) + parseFloat(b.dataset.off));
 });
 ['wheel', 'touchmove'].forEach(ev => lyBox.addEventListener(ev, () => { userScrollUntil = Date.now() + 3500; }, { passive: true }));
 (0, util_js_1.$)('#ly-fab').addEventListener('click', () => editLyrics());
@@ -2537,12 +2569,17 @@ lyBox.addEventListener('click', e => {
     if (!p)
         return;
     const l = lines[+p.dataset.i];
-    if (l) {
-        (0, player_js_1.seek)(l.t);
-        userScrollUntil = 0;
-        if (player_js_1.audio.paused)
-            (0, player_js_1.toggle)();
-    }
+    if (!l)
+        return;
+    if (tapSync) {
+        tapSyncEnd();
+        applyOffset(Math.round((player_js_1.audio.currentTime - 0.25 - l.t) * 10) / 10);
+        return;
+    } // «подогнать»: эту строку сейчас поют
+    (0, player_js_1.seek)(l.t + curOff);
+    userScrollUntil = 0;
+    if (player_js_1.audio.paused)
+        (0, player_js_1.toggle)();
 });
 // ---------- Очередь ----------
 function qRow(id, i, kind) {
@@ -2653,10 +2690,39 @@ function frame() {
 function startLoop() { if (raf)
     return; const loop = () => { const more = frame(); raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0; }; raf = requestAnimationFrame(loop); }
 // ---------- открытие / закрытие ----------
-const tabFor = p => (isDesktop() && p === 'player' ? 'lyrics' : p);
+const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
+const tabFor = p => (isDesktop() && p === 'player' ? (lyricsOn() ? 'lyrics' : '') : p);
 function setPane(p) {
+    if (p === 'lyrics' && !lyricsOn())
+        p = 'player';
     np.dataset.pane = p;
     document.querySelectorAll('#np-tabs button').forEach(b => b.classList.toggle('active', b.dataset.pane === tabFor(p)));
+}
+// Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр
+function centerShift() {
+    const body = np.querySelector('.np-body'), side = np.querySelector('.np-side');
+    if (!body || !side)
+        return;
+    const gap = parseFloat(getComputedStyle(body).columnGap) || 0;
+    body.style.setProperty('--shift', isDesktop() ? ((side.offsetWidth + gap) / 2).toFixed(1) + 'px' : '0px');
+}
+function applyLyricsMode(redo) {
+    const on = lyricsOn();
+    centerShift();
+    np.classList.toggle('nolyr', !on);
+    const b = (0, util_js_1.$)('#np-lyr-toggle');
+    if (b) {
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on);
+        b.setAttribute('aria-label', on ? 'Скрыть текст' : 'Показать текст');
+        b.title = b.getAttribute('aria-label');
+    }
+    document.querySelector('#np-tabs [data-pane="lyrics"]')?.toggleAttribute('hidden', !on);
+    setPane(np.dataset.pane === 'lyrics' && !on ? 'player' : np.dataset.pane);
+    if (on && redo && (0, player_js_1.current)()) {
+        renderLyrics((0, player_js_1.current)());
+        updateLyrics(player_js_1.audio.currentTime, true);
+    }
 }
 function openNP(pane) {
     if (!(0, player_js_1.current)())
@@ -2687,10 +2753,11 @@ function closeNP() {
 }
 const isNPOpen = () => npOpen;
 exports.isNPOpen = isNPOpen;
-addEventListener('resize', () => setPane(np.dataset.pane));
+addEventListener('resize', () => { setPane(np.dataset.pane); centerShift(); });
 // ---------- init ----------
 function initPlayerUI() {
     initIcons();
+    (0, util_js_1.$)('#np-lyr-toggle').innerHTML = (0, icons_js_1.icon)('lyrics');
     bindSeek(miniSeek);
     bindSeek(npSeek);
     bindVol(miniVol);
@@ -2748,6 +2815,10 @@ function initPlayerUI() {
     (0, util_js_1.$)('#mini-open').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === e.currentTarget)
         openNP(); });
     (0, util_js_1.$)('#np-close').addEventListener('click', closeNP);
+    (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', () => { state_js_1.state.settings.showLyrics = !lyricsOn(); (0, state_js_1.save)(); (0, state_js_1.emit)('settings', 'showLyrics'); });
+    (0, state_js_1.on)('settings', k => { if (k === 'showLyrics' || k === 'all')
+        applyLyricsMode(true); });
+    applyLyricsMode(false);
     (0, util_js_1.$)('#np-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b)
         setPane(b.dataset.pane); });
     (0, util_js_1.$)('#np-more').addEventListener('click', e => { const t = (0, player_js_1.current)(); if (t)
@@ -3178,6 +3249,7 @@ exports.DEFAULT_SETTINGS = {
     density: 'cozy', // cozy | compact — плотность списков
     anim: true, // анимации интерфейса
     seekStep: 5, // шаг перемотки стрелками, сек
+    showLyrics: true, // показывать текст справа; выключено — плеер по центру
     autoKaraoke: true, // примерное караоке для текстов без меток времени
     lyricsProxy: '', // адрес Cloudflare Worker для NetEase / Genius
     homeRecents: true, // блок «Недавно прослушанное»
@@ -4708,6 +4780,7 @@ function settingsView() {
       <div class="settings">
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».', sw('autoLyrics', s.autoLyrics))}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».', `<button class="btn btn-soft sm" data-action="find-lyrics">${(0, icons_js_1.icon)('lyrics')}Найти</button>`)}
+        ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}
         ${srow('Караоке для обычных текстов', 'Если у песни нет меток времени, строки подсвечиваются примерно по ходу трека.', sw('autoKaraoke', s.autoKaraoke !== false))}
         ${srow('Свой сервер текстов', s.lyricsProxy ? (0, util_js_1.esc)(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${(0, icons_js_1.icon)('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}
@@ -4740,9 +4813,13 @@ function sidebarPlaylists() {
 };
 defs["vocal.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.TUNE = void 0;
 exports.vocalActivity = vocalActivity;
+exports.fineEnvelope = fineEnvelope;
+exports.alignWords = alignWords;
 exports.activityFromSamples = activityFromSamples;
 exports.layoutOnActivity = layoutOnActivity;
+exports.alignText = alignText;
 // Где в треке «поют»: грубая карта активности по громкости в диапазоне голоса (≈250–3500 Гц).
 // Нужна только для обычного текста без меток времени: строки раскладываются по участкам, где есть звук,
 // а вступление, проигрыши и тишина в конце пропускаются. Это приближение, а не распознавание слов.
@@ -4765,9 +4842,9 @@ async function vocalActivity(t) {
             return null; // очень большие файлы не разбираем
         const raw = await res.arrayBuffer();
         const sr = 16000, dur = Math.max(1, t.duration || 180);
-        const ctx = new OAC(1, Math.ceil(sr * dur), sr);
+        const ctx = new OAC(2, Math.ceil(sr * dur), sr);
         const buf = await new Promise((ok, no) => ctx.decodeAudioData(raw, ok, no));
-        const off = new OAC(1, buf.length, sr), src = off.createBufferSource();
+        const off = new OAC(2, buf.length, sr), src = off.createBufferSource();
         src.buffer = buf;
         const hp = off.createBiquadFilter();
         hp.type = 'highpass';
@@ -4779,20 +4856,142 @@ async function vocalActivity(t) {
         hp.connect(lp);
         lp.connect(off.destination);
         src.start();
-        const data = (await off.startRendering()).getChannelData(0);
-        return activityFromSamples(data, sr);
+        const out = await off.startRendering(), L = out.getChannelData(0), R = out.numberOfChannels > 1 ? out.getChannelData(1) : L;
+        const data = new Float32Array(L.length), side = new Float32Array(L.length);
+        for (let i = 0; i < L.length; i++) {
+            data[i] = (L[i] + R[i]) / 2;
+            side[i] = (L[i] - R[i]) / 2;
+        }
+        const r = activityFromSamples(data, sr, side);
+        if (r)
+            r.fine = fineEnvelope(data, sr, side);
+        return r;
     })().catch(() => null);
     cache.set(t.id, job);
     return job;
 }
 // Массив 0/1 по ячейкам STEP секунд: true — есть заметный звук
-function activityFromSamples(data, sr) {
+const FSTEP = 0.02;
+// Точная огибающая (20 мс) и «начала звуков»: по ним определяется, где кончается одно слово и начинается другое, а какое тянется
+function fineEnvelope(data, sr, side) {
+    const per = Math.max(1, Math.floor(sr * FSTEP)), n = Math.floor(data.length / per), env = new Float32Array(n), onset = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        let s = 0, q = 0;
+        for (let k = i * per, e = k + per; k < e; k++) {
+            s += data[k] * data[k];
+            if (side)
+                q += side[k] * side[k];
+        }
+        env[i] = Math.sqrt(Math.max(s * 0.15, s - 0.7 * q) / per);
+    }
+    const lg = Array.from(env, v => Math.log(v + 1e-4));
+    for (let i = 3; i < n; i++)
+        onset[i] = Math.max(0, lg[i] - (lg[i - 1] + lg[i - 2] + lg[i - 3]) / 3 - 0.08);
+    for (let i = n - 2; i > 0; i--)
+        onset[i] = Math.max(onset[i], onset[i - 1] * 0.6);
+    return { step: FSTEP, env, onset };
+}
+const syllables = w => Math.max(1, (String(w).toLowerCase().match(/[aeiouyаеёиоуыэюяії]+/g) || []).length);
+// Времена слов строки по звуку: возвращает [{a, b, held}] или null, если звука для разбора нет
+function alignWords(words, start, limit, fine) {
+    const n = words.length;
+    if (!fine || n < 2)
+        return null;
+    const { step, env, onset } = fine;
+    const i0 = Math.max(0, Math.floor((start - 0.3) / step)), i1 = Math.min(env.length - 1, Math.floor(limit / step));
+    if (i1 - i0 < 15)
+        return null;
+    let peak = 0;
+    for (let i = i0; i <= i1; i++)
+        if (env[i] > peak)
+            peak = env[i];
+    if (peak < 1e-3)
+        return null;
+    const thr = peak * 0.16;
+    let first = i0;
+    while (first < i1 && env[first] < thr)
+        first++;
+    let last = i1;
+    while (last > first && env[last] < thr)
+        last--;
+    const t0 = first * step, t1 = (last + 1) * step, L = t1 - t0;
+    if (L < 0.6)
+        return null;
+    const syl = words.map(syllables), tot = syl.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    const exp = syl.map(c => { const e = t0 + L * acc / tot; acc += c; return e; });
+    // кандидаты: найденные начала звуков и «виртуальные» точки там, где звука не нашлось (протяжные места)
+    let mx = 0;
+    for (let i = first; i <= last; i++)
+        if (onset[i] > mx)
+            mx = onset[i];
+    const cand = [];
+    if (mx > 0)
+        for (let i = first + 3; i < last - 2; i++)
+            if (onset[i] > mx * 0.22 && onset[i] >= onset[i - 1] && onset[i] > onset[i + 1]) {
+                const t = i * step;
+                if (cand.length && t - cand[cand.length - 1].t < 0.11) {
+                    if (onset[i] > cand[cand.length - 1].w * mx) {
+                        cand[cand.length - 1] = { t, w: onset[i] / mx };
+                    }
+                    continue;
+                }
+                cand.push({ t, w: onset[i] / mx });
+            }
+    for (let k = 1; k < n; k++)
+        if (!cand.some(c => Math.abs(c.t - exp[k]) < 0.12))
+            cand.push({ t: exp[k], w: 0 });
+    cand.sort((x, y) => x.t - y.t);
+    const m = cand.length, NEG = -1e9, lam = 5;
+    const dp = Array.from({ length: n }, () => new Float64Array(m).fill(NEG)), from = Array.from({ length: n }, () => new Int32Array(m).fill(-1));
+    for (let j = 0; j < m; j++)
+        dp[1][j] = cand[j].w * 1.6 - lam * ((cand[j].t - exp[1]) / L) ** 2;
+    for (let k = 2; k < n; k++)
+        for (let j = 0; j < m; j++) {
+            let best = NEG, bi = -1;
+            for (let q = 0; q < j; q++)
+                if (dp[k - 1][q] > best && cand[j].t - cand[q].t >= 0.09) {
+                    best = dp[k - 1][q];
+                    bi = q;
+                }
+            if (bi >= 0) {
+                dp[k][j] = best + cand[j].w * 1.6 - lam * ((cand[j].t - exp[k]) / L) ** 2;
+                from[k][j] = bi;
+            }
+        }
+    let bj = -1, bs = NEG;
+    for (let j = 0; j < m; j++)
+        if (dp[n - 1][j] > bs) {
+            bs = dp[n - 1][j];
+            bj = j;
+        }
+    if (bj < 0)
+        return null;
+    const starts = new Array(n);
+    starts[0] = t0;
+    for (let k = n - 1, j = bj; k >= 1; k--) {
+        starts[k] = cand[j].t;
+        j = from[k][j];
+    }
+    const out = starts.map((a, k) => ({ a, b: k + 1 < n ? starts[k + 1] : t1, held: false }));
+    // протяжное слово: на слог уходит заметно больше времени, чем у остальных слов строки
+    const rate = out.map((w, k) => (w.b - w.a) / syl[k]);
+    out.forEach((w, k) => {
+        const others = rate.filter((_, j) => j !== k).sort((x, y) => x - y), med = others[Math.floor(others.length / 2)] || rate[k];
+        w.held = w.b - w.a >= 0.8 && rate[k] > 2.2 * Math.max(0.12, med);
+    });
+    return out;
+}
+function activityFromSamples(data, sr, side) {
     const n = Math.max(1, Math.floor(data.length / (sr * STEP))), e = new Float32Array(n), per = Math.floor(sr * STEP);
     for (let i = 0; i < n; i++) {
-        let s = 0;
-        for (let k = i * per, end = Math.min(data.length, k + per); k < end; k++)
+        let s = 0, q = 0;
+        for (let k = i * per, end = Math.min(data.length, k + per); k < end; k++) {
             s += data[k] * data[k];
-        e[i] = Math.sqrt(s / per);
+            if (side)
+                q += side[k] * side[k];
+        }
+        e[i] = Math.sqrt(Math.max(s * 0.15, s - 0.7 * q) / per);
     }
     const sorted = Array.from(e).sort((a, b) => a - b), p90 = sorted[Math.floor(n * 0.9)] || 0;
     if (p90 < 1e-4)
@@ -4855,6 +5054,125 @@ function layoutOnActivity(weights, dur, a) {
         acc += w;
     }
     return out;
+}
+// Где заканчивается звук, начавшийся в момент t (но не позже limit)
+function sungEnd(fine, t, limit) {
+    const { step, env } = fine;
+    let i = Math.floor(t / step), end = Math.min(env.length - 1, Math.floor(limit / step));
+    let peak = 0;
+    for (let k = i; k <= Math.min(end, i + 50); k++)
+        if (env[k] > peak)
+            peak = env[k];
+    const thr = peak * 0.16;
+    let quiet = 0, last = i;
+    for (let k = i; k <= end; k++) {
+        if (env[k] >= thr) {
+            last = k;
+            quiet = 0;
+        }
+        else if (++quiet > 12)
+            break;
+    }
+    return (last + 1) * step;
+}
+exports.TUNE = { R: 3, W: 3 };
+// Выравнивание обычного текста по звуку: слоги текста сопоставляются с найденными «началами звуков» в порядке следования,
+// при этом время каждого слога не уходит далеко от ожидаемого. Возвращает строки со временем каждого слова или null.
+function alignText(text, dur, a) {
+    if (!a || !a.fine)
+        return null;
+    const raw = String(text).split(/\r?\n/).map(l => l.trim()), items = [];
+    for (const l of raw) {
+        if (l) {
+            const ws = l.split(/\s+/);
+            items.push({ text: ws.join(' '), ws });
+        }
+        else if (items.length)
+            items[items.length - 1].gap = true;
+    }
+    if (!items.length)
+        return null;
+    const sylls = [];
+    items.forEach((it, li) => it.ws.forEach((w, wi) => { for (let k = 0, c = syllables(w); k < c; k++)
+        sylls.push({ li, wi, first: k === 0, wt: 1 }); const last = sylls[sylls.length - 1]; if (wi === it.ws.length - 1)
+        last.wt += it.gap ? 3 : 1; }));
+    const S = sylls.length;
+    if (S < 4)
+        return null;
+    const exp = layoutOnActivity(sylls.map(x => x.wt), dur, a);
+    if (!exp)
+        return null;
+    const { step, onset } = a.fine, n = onset.length, stepA = a.step;
+    let mx = 0;
+    for (let i = 0; i < n; i++)
+        if (onset[i] > mx)
+            mx = onset[i];
+    if (mx <= 0)
+        return null;
+    const cand = [];
+    for (let i = 3; i < n - 2; i++) {
+        if (!(onset[i] > mx * 0.2 && onset[i] >= onset[i - 1] && onset[i] > onset[i + 1]))
+            continue;
+        const t = i * step;
+        if (!a.act[Math.min(a.act.length - 1, Math.floor(t / stepA))])
+            continue; // только там, где «поют»
+        if (cand.length && t - cand[cand.length - 1].t < 0.09) {
+            if (onset[i] / mx > cand[cand.length - 1].w)
+                cand[cand.length - 1] = { t, w: onset[i] / mx };
+            continue;
+        }
+        cand.push({ t, w: onset[i] / mx });
+    }
+    if (cand.length < S * 0.5)
+        return null;
+    for (const e of exp)
+        if (!cand.some(c => Math.abs(c.t - e) < 0.1))
+            cand.push({ t: e, w: 0 });
+    cand.sort((x, y) => x.t - y.t);
+    const M = cand.length, NEG = -1e9;
+    // штраф за отклонение от ожидаемого времени: до 2,5 с почти не штрафуем (темп в песне неравномерный), дальше растёт
+    const R = exports.TUNE.R, pen = (t, e) => { const d = Math.max(0, Math.abs(t - e) - exports.TUNE.W); return (d / 3) ** 2 + 0.03 * Math.abs(t - e); };
+    const from = Array.from({ length: S }, () => new Int32Array(M));
+    let prev = new Float64Array(M);
+    for (let j = 0; j < M; j++)
+        prev[j] = cand[j].w * R - pen(cand[j].t, exp[0]);
+    for (let i = 1; i < S; i++) {
+        const cur = new Float64Array(M).fill(NEG);
+        let best = NEG, bi = -1; // best — лучший prev по строго меньшим j
+        for (let j = 0; j < M; j++) {
+            if (bi >= 0) {
+                cur[j] = best + cand[j].w * R - pen(cand[j].t, exp[i]);
+                from[i][j] = bi;
+            }
+            if (prev[j] > best) {
+                best = prev[j];
+                bi = j;
+            }
+        }
+        prev = cur;
+    }
+    let bj = 0;
+    for (let j = 1; j < M; j++)
+        if (prev[j] > prev[bj])
+            bj = j;
+    const ts = new Array(S);
+    for (let i = S - 1, j = bj; i >= 0; i--) {
+        ts[i] = cand[j].t;
+        j = from[i][j];
+    }
+    // слоги → слова → строки
+    const lines = items.map(it => ({ text: it.text, words: [] }));
+    sylls.forEach((sy, i) => { if (sy.first)
+        lines[sy.li].words.push({ t: ts[i], text: items[sy.li].ws[sy.wi], syl: syllables(items[sy.li].ws[sy.wi]) }); });
+    lines.forEach((l, li) => {
+        const nextLine = lines[li + 1] && lines[li + 1].words[0] ? lines[li + 1].words[0].t : dur;
+        l.t = l.words[0].t;
+        l.words.forEach((w, k) => { const nxt = l.words[k + 1]; w.b = nxt ? nxt.t : Math.min(sungEnd(a.fine, w.t, nextLine - 0.05), w.t + 6); if (w.b - w.t < 0.12)
+            w.b = w.t + 0.12; });
+        const rate = l.words.map(w => (w.b - w.t) / w.syl);
+        l.words.forEach((w, k) => { const o = rate.filter((_, j) => j !== k).sort((x, y) => x - y), med = o[Math.floor(o.length / 2)] || rate[k]; w.held = w.b - w.t >= 0.8 && rate[k] > 2.2 * Math.max(0.12, med); });
+    });
+    return lines;
 }
 
 };
