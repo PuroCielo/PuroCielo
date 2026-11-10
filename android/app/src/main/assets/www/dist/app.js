@@ -2338,7 +2338,7 @@ function renderTrack(t) {
     (0, util_js_1.$)('#np-title').textContent = t.title;
     (0, util_js_1.$)('#np-artist').innerHTML = (0, views_js_1.artistLinks)((0, views_js_1.artistsOf)(t));
     (0, util_js_1.$)('#np-album').innerHTML = [t.album ? (0, views_js_1.albumLink)(t) : '', (0, util_js_1.esc)(t.year || ''), (0, util_js_1.esc)(t.genre || '')].filter(Boolean).join(' · ');
-    (0, util_js_1.$)('#np-chips').innerHTML = tp.map((x, i) => `<span class="chip-s ${i === 0 ? 'codec' : ''}">${(0, util_js_1.esc)(x)}</span>`).join('') + (t.lyrics ? `<span class="chip-s ly-badge">${(0, icons_js_1.icon)('lyrics')}${t.lyrics.type === 'synced' ? 'Караоке' : 'Текст'}</span>` : '');
+    (0, util_js_1.$)('#np-chips').innerHTML = tp.map((x, i) => `<span class="chip-s ${i === 0 ? 'codec' : ''}">${(0, util_js_1.esc)(x)}</span>`).join('');
     (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(t.duration);
     (0, lyrics_auto_js_1.ensureLyrics)(t);
     syncLikeBtns();
