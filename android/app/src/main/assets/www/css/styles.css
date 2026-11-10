@@ -689,3 +689,33 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .ly-off .tap-btn { font-size: 12px; margin-left: 4px; background: rgba(255, 255, 255, .12); } .ly-off.tap .tap-btn { background: var(--accent); color: var(--accent-ink); }
 .pane-lyrics.tap-sync .ly { cursor: crosshair; outline: 1px dashed transparent; } .pane-lyrics.tap-sync .ly:hover { color: var(--accent-fg); }
 @media (max-width: 520px) { .ly-off { bottom: 58px; max-width: calc(100vw - 24px); overflow-x: auto; } .ly-off span { display: none; } }
+
+/* ===== v1.8: плеер без вкладок, миксы, медиатека, круглая аватарка ===== */
+.only-mobile { display: none !important; }
+@media (max-width: 899px) { .only-mobile { display: inline-grid !important; } .only-desktop { display: none !important; } }
+.np-top-sp { gap: 4px; }
+#np-q-toggle.on { color: var(--accent-fg); background: var(--accent-soft); }
+@media (max-width: 899px) { #np-lyr-toggle { opacity: 1; } #np-lyr-toggle:not(.on) { color: inherit; background: none; } }
+/* вкладки библиотеки дублируют боковую панель — на компьютере их не показываем */
+@media (min-width: 900px) { .seg-tabs { display: none; } }
+/* аватар в шапке: строго круг, а не овал */
+.avatar-btn { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; aspect-ratio: 1; border-radius: 50%; overflow: hidden; align-self: center; }
+.avatar-btn .avatar { width: 100%; height: 100%; }
+.side-profile .avatar { width: 38px; height: 38px; aspect-ratio: 1; }
+/* миксы */
+.mix-art { position: relative; width: 100%; height: 100%; aspect-ratio: 1; border-radius: inherit; overflow: hidden; }
+.mix-art > .cov { width: 100%; height: 100%; }
+.mix-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, .78) 0%, rgba(0, 0, 0, .15) 55%, rgba(0, 0, 0, 0) 100%); pointer-events: none; }
+.mix-label { position: absolute; left: 10%; right: 10%; bottom: 9%; display: flex; flex-direction: column; gap: 6px; color: #fff; pointer-events: none; }
+.mix-label .ic { width: 22px; height: 22px; opacity: .9; }
+.mix-label b { font-size: clamp(14px, 1.3vw, 19px); line-height: 1.15; font-weight: 800; letter-spacing: -.02em; text-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+.mix-art::before { content: ""; position: absolute; inset: 0; z-index: 0; }
+.mix-1 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(255, 143, 163, .18)); }
+.mix-2 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(245, 200, 75, .16)); }
+.mix-3 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(124, 196, 255, .16)); }
+.mix-4 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(182, 156, 255, .16)); }
+.mix-5 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(110, 231, 183, .15)); }
+.lrow-cov .mix-label, .mini-cov .mix-label { display: none; }
+.hero-art .mix-label b { font-size: 22px; }
+.mix-art .cov.ph .ic { opacity: 0; }
+.ly-empty .btn .ic { width: 16px; height: 16px; color: inherit; }

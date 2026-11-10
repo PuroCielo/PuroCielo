@@ -703,6 +703,35 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .pane-lyrics.tap-sync .ly { cursor: crosshair; outline: 1px dashed transparent; } .pane-lyrics.tap-sync .ly:hover { color: var(--accent-fg); }
 @media (max-width: 520px) { .ly-off { bottom: 58px; max-width: calc(100vw - 24px); overflow-x: auto; } .ly-off span { display: none; } }
 
+/* ===== v1.8: плеер без вкладок, миксы, медиатека, круглая аватарка ===== */
+.only-mobile { display: none !important; }
+@media (max-width: 899px) { .only-mobile { display: inline-grid !important; } .only-desktop { display: none !important; } }
+.np-top-sp { gap: 4px; }
+#np-q-toggle.on { color: var(--accent-fg); background: var(--accent-soft); }
+@media (max-width: 899px) { #np-lyr-toggle { opacity: 1; } #np-lyr-toggle:not(.on) { color: inherit; background: none; } }
+/* вкладки библиотеки дублируют боковую панель — на компьютере их не показываем */
+@media (min-width: 900px) { .seg-tabs { display: none; } }
+/* аватар в шапке: строго круг, а не овал */
+.avatar-btn { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; aspect-ratio: 1; border-radius: 50%; overflow: hidden; align-self: center; }
+.avatar-btn .avatar { width: 100%; height: 100%; }
+.side-profile .avatar { width: 38px; height: 38px; aspect-ratio: 1; }
+/* миксы */
+.mix-art { position: relative; width: 100%; height: 100%; aspect-ratio: 1; border-radius: inherit; overflow: hidden; }
+.mix-art > .cov { width: 100%; height: 100%; }
+.mix-shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, .78) 0%, rgba(0, 0, 0, .15) 55%, rgba(0, 0, 0, 0) 100%); pointer-events: none; }
+.mix-label { position: absolute; left: 10%; right: 10%; bottom: 9%; display: flex; flex-direction: column; gap: 6px; color: #fff; pointer-events: none; }
+.mix-label .ic { width: 22px; height: 22px; opacity: .9; }
+.mix-label b { font-size: clamp(14px, 1.3vw, 19px); line-height: 1.15; font-weight: 800; letter-spacing: -.02em; text-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+.mix-art::before { content: ""; position: absolute; inset: 0; z-index: 0; }
+.mix-1 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(255, 143, 163, .18)); }
+.mix-2 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(245, 200, 75, .16)); }
+.mix-3 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(124, 196, 255, .16)); }
+.mix-4 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(182, 156, 255, .16)); }
+.mix-5 .mix-shade { background: linear-gradient(to top, rgba(0, 0, 0, .8), rgba(110, 231, 183, .15)); }
+.lrow-cov .mix-label, .mini-cov .mix-label { display: none; }
+.hero-art .mix-label b { font-size: 22px; }
+.mix-art .cov.ph .ic { opacity: 0; }
+.ly-empty .btn .ic { width: 16px; height: 16px; color: inherit; }
 </style>
 </head>
 <body>
@@ -776,12 +805,8 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
     <div class="np-bg"><img id="np-bg" alt=""></div>
     <header class="np-top">
       <button class="icon-btn lg" id="np-close" aria-label="Свернуть"></button>
-      <div class="seg np-tabs" id="np-tabs">
-        <button data-pane="player" class="only-mobile">Плеер</button>
-        <button data-pane="lyrics">Текст</button>
-        <button data-pane="queue">Очередь</button>
-      </div>
-      <span class="np-top-sp"><button class="icon-btn lg" id="np-lyr-toggle" aria-label="Скрыть текст" title="Показать или скрыть текст"></button></span>
+      <span class="np-top-mid"></span>
+      <span class="np-top-sp"><button class="icon-btn lg" id="np-lyr-toggle" aria-label="Скрыть текст" title="Показать или скрыть текст"></button><button class="icon-btn lg only-mobile" id="np-q-toggle" data-act="open-queue" aria-label="Очередь" title="Очередь"></button></span>
     </header>
     <div class="np-body">
       <div class="np-player">
@@ -809,7 +834,6 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
       <div class="np-side">
         <div class="pane pane-lyrics" id="np-lyrics"></div>
         <div class="pane pane-queue" id="np-queue"></div>
-        <div class="ly-off" id="ly-off" hidden title="Если текст идёт раньше или позже голоса"><button class="icon-btn sm" data-off="-2" aria-label="Текст раньше на 2 секунды">−2</button><button class="icon-btn sm" data-off="-0.5" aria-label="Текст раньше">−</button><span>Сдвиг <b>0,0 с</b></span><button class="icon-btn sm" data-off="0.5" aria-label="Текст позже">+</button><button class="icon-btn sm" data-off="2" aria-label="Текст позже на 2 секунды">+2</button><button class="icon-btn sm" data-off="0" aria-label="Сбросить сдвиг">↺</button></div>
         <button class="btn btn-soft sm ly-fab" id="ly-fab" hidden></button>
       </div>
     </div>
@@ -867,12 +891,19 @@ function addToPlaylistModal(ids) {
         }),
     });
 }
-function trackMenu(anchor, id, { pid } = {}) {
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const fmtSpeed = v => String(v).replace('.', ',') + '×';
+function speedMenu(anchor) {
+    const cur = state_js_1.state.settings.speed || 1;
+    (0, ui_js_1.openMenu)(anchor, SPEEDS.map(v => ({ icon: v === cur ? 'check' : '', label: fmtSpeed(v), onClick: () => (0, state_js_1.setSetting)('speed', v) })));
+}
+function trackMenu(anchor, id, { pid, np } = {}) {
     const t = (0, state_js_1.getTrack)(id);
     if (!t)
         return;
     const liked = state_js_1.state.likes.has(id);
     const items = [
+        ...(np ? [{ icon: 'speed', label: `Скорость: ${fmtSpeed(state_js_1.state.settings.speed || 1)}`, keep: true, onClick: () => speedMenu(anchor) }, { sep: true }] : []),
         { icon: 'next2', label: 'Играть следующим', onClick: () => { (0, player_js_1.addNext)(id); (0, ui_js_1.toast)('Добавлено: следующим'); } },
         { icon: 'queue', label: 'В конец очереди', onClick: () => { (0, player_js_1.addToQueue)(id); (0, ui_js_1.toast)('Добавлено в очередь'); } },
         { sep: true },
@@ -939,6 +970,7 @@ const lyrics_auto_js_1 = require("./lyrics-auto.js");
 const util_js_1 = require("./util.js");
 const m3u_js_1 = require("./m3u.js");
 const db_js_1 = require("./db.js");
+const i18n_js_1 = require("./i18n.js");
 const view = (0, util_js_1.$)('#view');
 let query = '';
 // ================= роутер =================
@@ -959,6 +991,8 @@ function routeKey(r) {
         return 'library/' + (r.arg || 'albums');
     if (r.name === 'playlist')
         return 'playlist/' + r.arg;
+    if (r.name === 'mix')
+        return 'home';
     return r.name;
 }
 function render({ keepScroll = false, restore = null } = {}) {
@@ -979,6 +1013,9 @@ function render({ keepScroll = false, restore = null } = {}) {
             break;
         case 'liked':
             html = (0, views_js_1.likedView)();
+            break;
+        case 'mix':
+            html = (0, views_js_1.mixView)(r.arg);
             break;
         case 'search':
             html = (0, views_js_1.searchView)(query);
@@ -1021,9 +1058,9 @@ function renderChrome() {
     (0, util_js_1.$)('#drop-ic').innerHTML = (0, icons_js_1.icon)('upload');
     if (native_js_1.isNative)
         (0, util_js_1.$)('#side-upload').dataset.action = 'add-folder';
-    const nav = [['home', 'home', 'Главная'], ['library/albums', 'disc', 'Альбомы'], ['library/singles', 'single', 'Синглы'], ['library/playlists', 'playlist', 'Плейлисты'], ['library/artists', 'user', 'Артисты'], ['library/songs', 'note', 'Песни']];
+    const nav = [['home', 'home', 'Главная'], ['library/media', 'library', 'Медиатека'], ['library/albums', 'disc', 'Альбомы'], ['library/singles', 'single', 'Синглы'], ['library/playlists', 'playlist', 'Плейлисты'], ['library/artists', 'user', 'Артисты'], ['library/songs', 'note', 'Песни']];
     (0, util_js_1.$)('#side-nav').innerHTML = nav.map(([k, ic, n]) => `<a class="side-link" href="#/${k}" data-route="${k}">${(0, icons_js_1.icon)(ic)}<span>${n}</span></a>`).join('');
-    (0, util_js_1.$)('#tabbar').innerHTML = [['home', 'home', 'Главная', '#/home'], ['search', 'search', 'Поиск', '#/search'], ['library', 'library', 'Библиотека', '#/library/albums'], ['profile', 'user', 'Профиль', '#/profile']]
+    (0, util_js_1.$)('#tabbar').innerHTML = [['home', 'home', 'Главная', '#/home'], ['search', 'search', 'Поиск', '#/search'], ['library', 'library', 'Библиотека', '#/library/media'], ['profile', 'user', 'Профиль', '#/profile']]
         .map(([k, ic, n, h]) => `<a href="${h}" data-tab="${k}">${(0, icons_js_1.icon)(ic)}<span>${n}</span></a>`).join('');
     renderSidePlaylists();
     renderSideProfile();
@@ -1111,6 +1148,14 @@ function doAction(el, e) {
             const p = state_js_1.state.playlists.find(x => x.id === d.id);
             if (p)
                 playIds((0, state_js_1.playlistTracks)(p), el.dataset.action === 'shuffle-playlist');
+            break;
+        }
+        case 'play-mix':
+        case 'shuffle-mix': {
+            e.stopPropagation();
+            const m = (0, views_js_1.mixById)(d.id);
+            if (m)
+                playIds(m.tracks, el.dataset.action === 'shuffle-mix');
             break;
         }
         case 'play-liked':
@@ -1441,6 +1486,7 @@ function exportBackup() {
         (0, state_js_1.save)();
         (0, theme_js_1.applyTheme)(state_js_1.state.theme);
         (0, theme_js_1.applySettings)();
+        (0, i18n_js_1.setLang)(state_js_1.state.settings.lang);
         renderChrome();
         render({ keepScroll: true });
         (0, ui_js_1.toast)('Копия загружена');
@@ -1613,6 +1659,13 @@ addEventListener('drop', async (e) => {
 (0, state_js_1.on)('theme', () => { render({ keepScroll: true }); syncThemeBtn(); });
 (0, state_js_1.on)('settings', k => {
     (0, theme_js_1.applySettings)();
+    if (k === 'lang' || k === 'all') {
+        (0, i18n_js_1.setLang)(state_js_1.state.settings.lang);
+        renderChrome();
+        render({ keepScroll: true });
+        (0, state_js_1.emit)('modes');
+        (0, state_js_1.emit)('volume');
+    }
     if (k === 'speed' || k === 'all')
         (0, player_js_1.setSpeed)(state_js_1.state.settings.speed);
     if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed'].includes(k))
@@ -1751,6 +1804,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
 // ================= старт =================
 (async () => {
     await (0, state_js_1.load)();
+    (0, i18n_js_1.initI18n)(state_js_1.state.settings.lang);
     (0, theme_js_1.applyTheme)(state_js_1.state.theme);
     (0, theme_js_1.applySettings)();
     (0, player_js_1.setVolume)(state_js_1.state.volume);
@@ -1959,6 +2013,261 @@ exports.lyGet = safe(k => tx('lyrics', 'readonly', s => s.get(k)));
 exports.lySet = safe((k, v) => tx('lyrics', 'readwrite', s => s.put(v, k)));
 
 };
+defs["i18n.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.lang = exports.isEn = exports.tr = exports.setLang = exports.initI18n = exports.EN_PLURAL = void 0;
+// Язык интерфейса. Плеер написан по-русски; для English готовые строки на странице переводятся по словарю
+// (тексты кнопок, подсказки, всплывающие сообщения). Названия песен, артистов и тексты песен не трогаются.
+let lang = 'ru';
+exports.lang = () => lang;
+const isEn = () => lang === 'en';
+exports.isEn = isEn;
+const D = {
+    // навигация и разделы
+    'Главная': 'Home', 'Медиатека': 'Media library', 'Альбомы': 'Albums', 'Синглы': 'Singles', 'Плейлисты': 'Playlists', 'Артисты': 'Artists', 'Песни': 'Songs',
+    'Поиск': 'Search', 'Библиотека': 'Library', 'Профиль': 'Profile', 'Настройки': 'Settings', 'Навигация': 'Navigation', 'Нижняя навигация': 'Bottom navigation',
+    'Поиск по библиотеке': 'Search library', 'Новый плейлист': 'New playlist', 'Добавить музыку': 'Add music', 'Выбрать папку': 'Choose folder', 'Сменить тему': 'Switch theme',
+    'Сменить тему (D)': 'Switch theme (D)', 'Понравившееся': 'Liked songs', 'Показать все': 'Show all', 'Назад': 'Back', 'Вперёд': 'Forward',
+    'Миксы для вас': 'Mixes for you', 'Недавно прослушанное': 'Recently played', 'Микс': 'Mix', 'Альбом': 'Album', 'Сингл': 'Single', 'Плейлист': 'Playlist',
+    'Создать': 'Create', 'Пока пусто': 'Nothing yet', 'Лента': 'Rail', 'Сетка': 'Grid', 'Список': 'List', 'Вид главной': 'Home layout',
+    // миксы
+    'Микс понравившегося': 'Liked mix', 'Ваши лайки в случайном порядке': 'Your likes in random order', 'Самое прослушиваемое': 'Most played',
+    'Треки, которые вы включаете чаще всего': 'Tracks you play the most', 'Любимые артисты': 'Favourite artists', 'Слушайте и ставьте лайки — микс соберётся сам': 'Listen and like songs — the mix builds itself',
+    'Давно не слушали': 'Haven’t played in a while', 'Любимое, что давно не звучало': 'Favourites you haven’t heard lately', 'Ещё не слушали': 'Not played yet',
+    'Песни из библиотеки, до которых не дошли руки': 'Songs from your library you haven’t got to yet',
+    // плеер
+    'Играть': 'Play', 'Пауза': 'Pause', 'Играть / пауза': 'Play / pause', 'Перемешать': 'Shuffle', 'Предыдущий': 'Previous', 'Следующий': 'Next', 'Повтор': 'Repeat',
+    'Нравится': 'Like', 'Звук': 'Sound', 'Громкость': 'Volume', 'Текст': 'Lyrics', 'Очередь': 'Queue', 'Развернуть': 'Expand', 'Свернуть': 'Collapse', 'Перемотка': 'Seek',
+    'Ещё': 'More', 'Открыть Now Playing': 'Open Now Playing', 'Скрыть текст': 'Hide lyrics', 'Показать текст': 'Show lyrics', 'Показать или скрыть текст': 'Show or hide lyrics',
+    'Изменить текст': 'Edit lyrics', 'Добавить текст': 'Add lyrics', 'Текста нет': 'No lyrics', 'Ищу текст…': 'Looking for lyrics…', 'Очередь пуста': 'Queue is empty',
+    'Запустите альбом, плейлист или трек — они появятся здесь.': 'Play an album, playlist or track — it will show up here.', 'Ранее': 'Earlier', 'Сейчас играет': 'Now playing', 'Далее': 'Up next',
+    'Дальше ничего нет. Добавьте треки через меню «⋯».': 'Nothing up next. Add tracks from the «⋯» menu.', 'Убрать из очереди': 'Remove from queue', 'Очистить': 'Clear',
+    'Отпустите, чтобы добавить': 'Drop to add',
+    // меню трека
+    'Играть следующим': 'Play next', 'В конец очереди': 'Add to queue', 'Добавить в плейлист…': 'Add to playlist…', 'Убрать из понравившихся': 'Remove from liked',
+    'Найти на SoundCloud': 'Find on SoundCloud', 'Перейти к альбому': 'Go to album', 'Перейти к артисту': 'Go to artist', 'Убрать из плейлиста': 'Remove from playlist',
+    'Переименовать': 'Rename', 'Экспорт в .m3u8': 'Export as .m3u8', 'Удалить плейлист': 'Delete playlist', 'Добавить в плейлист': 'Add to playlist',
+    'Новый плейлист…': 'New playlist…', 'Создать и добавить': 'Create and add', 'Название': 'Name', 'Например, «Ночной драйв»': 'For example, “Night drive”',
+    'Переименовать плейлист': 'Rename playlist', 'Сохранить': 'Save', 'Отмена': 'Cancel', 'Готово': 'Done', 'Закрыть': 'Close',
+    // библиотека
+    'Добавить': 'Add', 'Треки': 'Tracks', 'Папка': 'Folder', 'Импорт M3U / M3U8': 'Import M3U / M3U8', 'Артист': 'Artist', 'Недавно добавленные': 'Recently added',
+    'Длительность': 'Duration', 'Здесь пока пусто': 'Nothing here yet', 'Добавьте свою музыку': 'Add your music', 'Выбрать файлы': 'Choose files',
+    'Выбрать папку с музыкой': 'Choose music folder', 'Добавить треки': 'Add tracks',
+    'Выберите одну папку с музыкой — вся медиатека загрузится из неё, как в Poweramp.': 'Choose one music folder — your whole library loads from it, like in Poweramp.',
+    'Перетащите файлы или целую папку прямо в окно. Поддерживаются MP3, FLAC, AAC / M4A, OGG, WAV, тексты': 'Drag files or a whole folder into the window. Supported: MP3, FLAC, AAC / M4A, OGG, WAV, lyrics',
+    'и плейлисты': 'and playlists', 'Не найдено': 'Not found', 'Возможно, библиотека была очищена.': 'The library may have been cleared.', 'На главную': 'Go home',
+    'Последний релиз': 'Latest release', 'Топ-песни': 'Top songs', 'Синглы и EP': 'Singles & EPs', 'Совместные проекты': 'Collaborations', 'Похожие артисты': 'Similar artists',
+    'Случайные песни артиста': 'Random songs by this artist', 'Плейлист пуст': 'Playlist is empty',
+    'Откройте меню «⋯» у любого трека и выберите «Добавить в плейлист».': 'Open the «⋯» menu on any track and choose “Add to playlist”.',
+    'Пока ничего нет': 'Nothing yet', 'Нажмите на сердечко рядом с треком — он появится здесь.': 'Tap the heart next to a track — it will appear here.',
+    'Неизвестный артист': 'Unknown artist', 'Песни, альбомы, артисты, плейлисты': 'Songs, albums, artists, playlists',
+    'Начните вводить — результаты появятся сразу.': 'Start typing — results appear instantly.', 'Ничего не найдено': 'Nothing found', 'откроется на сайте SoundCloud': 'opens on the SoundCloud website',
+    // профиль
+    'Изменить': 'Edit', 'Изменить имя': 'Change name', 'Изменить ник': 'Change username', 'песен': 'songs', 'релизов': 'releases', 'артистов': 'artists', 'нравится': 'liked',
+    'плейлистов': 'playlists', 'Баннер': 'Banner', 'Аватар': 'Avatar', 'Сбросить': 'Reset', 'Отображаемое имя': 'Display name', 'Имя пользователя': 'Username', 'Слушатель': 'Listener',
+    // настройки
+    'Подстройте плеер под себя': 'Make the player your own', 'Внешний вид': 'Appearance', 'Тема оформления': 'Theme', 'Тёмная по умолчанию, светлая — для яркого дня.': 'Dark by default, light for a bright day.',
+    'Тёмная': 'Dark', 'Светлая': 'Light', 'Главный экран': 'Home screen', 'Как показывать альбомы, синглы, плейлисты и артистов.': 'How to show albums, singles, playlists and artists.',
+    'Скругление обложек': 'Cover corners', 'Мягкие или строгие углы.': 'Soft or sharp corners.', 'Мягкие': 'Soft', 'Острые': 'Sharp',
+    'Плотность списков': 'List density', 'Компактный режим вмещает больше строк.': 'Compact mode fits more rows.', 'Свободно': 'Cozy', 'Компактно': 'Compact',
+    'Анимации интерфейса': 'Interface animations', 'Выключите, если приложение работает на слабом устройстве.': 'Turn off on slower devices.',
+    'Блок «Недавно прослушанное»': '“Recently played” section', 'Показывать на главной.': 'Show on the home screen.', 'Размер карточек': 'Card size', 'Обложки в рядах и сетках.': 'Covers in rails and grids.',
+    'Мелкие': 'Small', 'Средние': 'Medium', 'Крупные': 'Large', 'Язык': 'Language', 'Язык интерфейса плеера.': 'Player interface language.',
+    'Фон': 'Background', 'Плавающие «облака»': 'Floating “clouds”', 'Мягкое свечение, медленно двигающееся по фону.': 'A soft glow slowly drifting across the background.',
+    'Большие ноты': 'Big notes', 'Полупрозрачные ноты на заднем плане.': 'Translucent notes in the background.', 'Пластинка': 'Vinyl record',
+    'Виниловая пластинка крутится, пока играет музыка.': 'A vinyl record spins while music is playing.', 'Частицы': 'Particles', 'Лёгкие пузырьки медленно поднимаются вверх.': 'Light bubbles slowly rise up.',
+    'Свечение от обложки': 'Cover glow', 'Фон подстраивается под текущий трек.': 'The background matches the current track.', 'Воспроизведение': 'Playback',
+    'Тексты песен': 'Lyrics', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».': 'If a file has no lyrics, the player looks for them online. If none are found, it shows “No lyrics”.',
+    'Найти тексты для всей библиотеки': 'Find lyrics for the whole library', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».': 'The player checks every song without lyrics. If none are found, it shows “No lyrics”.',
+    'Найти': 'Find', 'Показывать текст справа': 'Show lyrics on the right', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.': 'Turn off if you just want to listen: the player slides to the centre. The same switch is in the player itself.',
+    'Свой сервер текстов': 'Own lyrics server', 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).': 'Your Cloudflare Worker address: adds NetEase and Genius (see the worker folder).',
+    'Указать': 'Set', 'Размер текста': 'Lyrics size', 'Строки в режиме караоке.': 'Synced lyrics lines.', 'Мелкий': 'Small', 'Средний': 'Medium', 'Крупный': 'Large',
+    'Таймер сна': 'Sleep timer', 'Выкл': 'Off', 'Трек': 'Track', 'Шаг перемотки': 'Seek step', 'Стрелки ← / → на клавиатуре.': 'Keyboard ← / → arrows.',
+    'Спектр в Now Playing': 'Spectrum in Now Playing', 'Анимация звука рядом с обложкой.': 'Sound animation next to the cover.', 'Приложение': 'App',
+    'Заставка при запуске': 'Splash screen', 'Логотип и приветствие при открытии.': 'Logo and greeting on launch.', 'Папка с музыкой': 'Music folder',
+    'Выберите одну папку — вся медиатека загрузится из неё, как в Poweramp.': 'Choose one folder — your whole library loads from it, like in Poweramp.',
+    'Сменить': 'Change', 'Выбрать': 'Choose', 'Обновить': 'Refresh', 'Не гасить экран': 'Keep screen on', 'Пока играет музыка (если поддерживается).': 'While music is playing (if supported).',
+    'Резервная копия': 'Backup', 'Плейлисты, лайки, настройки и профиль — в один файл.': 'Playlists, likes, settings and profile in one file.', 'Загрузить': 'Load',
+    'Очистить историю на главной.': 'Clear the history on the home screen.', 'Сбросить настройки': 'Reset settings', 'Вернуть всё по умолчанию (музыка и плейлисты останутся).': 'Restore defaults (music and playlists stay).',
+    'Горячие клавиши': 'Keyboard shortcuts', 'Пробел, стрелки, N / P, S, R, L, M, D, F, Q…': 'Space, arrows, N / P, S, R, L, M, D, F, Q…', 'Показать': 'Show',
+    'Можно выбрать папку целиком или добавлять треки по одному. Сами файлы остаются на устройстве.': 'Pick a whole folder or add tracks one by one. The files stay on your device.',
+    'Файлы хранятся только в вашем браузере (IndexedDB).': 'Files are stored only in your browser (IndexedDB).',
+    // окна
+    'Сбросить настройки?': 'Reset settings?', 'Вид, цвета, фон и остальные параметры вернутся к значениям по умолчанию. Музыка, плейлисты и профиль не затрагиваются.': 'Layout, colours, background and other options return to defaults. Music, playlists and profile are not affected.',
+    'Очистить библиотеку?': 'Clear library?',
+    'Кэш тегов и обложек будет удалён, а музыка в вашей папке останется нетронутой. Выберите папку заново, чтобы загрузить библиотеку. Лайки и плейлисты сохранятся, но треки в них станут недоступны.': 'The tag and cover cache will be deleted; the music in your folder stays untouched. Choose the folder again to load the library. Likes and playlists are kept, but their tracks become unavailable.',
+    'Все добавленные файлы будут удалены из браузера. Лайки и плейлисты сохранятся, но треки в них станут недоступны.': 'All added files will be removed from the browser. Likes and playlists are kept, but their tracks become unavailable.',
+    'Текст песни': 'Song lyrics', 'Текст песни…': 'Song lyrics…', 'Вставьте текст или загрузите файл': 'Paste the lyrics or load a', 'Из файла': 'From file', 'Удалить текст': 'Delete lyrics',
+    '. Если в тексте есть метки времени вида': ' file. If the text has timestamps like', ', он будет идти как караоке.': ', it will scroll in sync with the song.',
+    'Адрес Cloudflare Worker (https://…workers.dev)': 'Cloudflare Worker address (https://…workers.dev)',
+    // горячие клавиши
+    'Пробел': 'Space', 'Перемотка на 5 секунд': 'Seek 5 seconds', 'Предыдущий / следующий трек': 'Previous / next track', 'Выключить звук': 'Mute',
+    'Повтор: выкл → все → один': 'Repeat: off → all → one', 'Следующий / предыдущий': 'Next / previous', 'Открыть / закрыть Now Playing': 'Open / close Now Playing',
+    'Назад, в конце — на главную': 'Back, then to Home',
+    // сообщения
+    'Добавлено: следующим': 'Added: playing next', 'Добавлено в очередь': 'Added to queue', 'Здесь пока нет песен': 'No songs here yet', 'Проверяю папку…': 'Checking folder…',
+    'Таймер сна выключен': 'Sleep timer off', 'Остановлюсь в конце трека': 'Will stop at the end of the track', 'Поиск уже идёт…': 'Search already running…',
+    'У всех песен уже есть текст': 'All songs already have lyrics', 'История очищена': 'History cleared', 'Резервная копия сохранена': 'Backup saved', 'Копия загружена': 'Backup loaded',
+    'Это не файл резервной копии Puro Cielo': 'This is not a Puro Cielo backup file', 'Не удалось прочитать изображение': 'Could not read the image',
+    'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
+    'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
+    'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
+};
+// Строки с подставленными значениями
+const R = [
+    [/^(Доброй ночи|Доброе утро|Добрый день|Добрый вечер), (.+)$/, (m, g, n) => ({ 'Доброй ночи': 'Good night', 'Доброе утро': 'Good morning', 'Добрый день': 'Good afternoon', 'Добрый вечер': 'Good evening' }[g] + ', ' + (n === 'Слушатель' ? 'Listener' : n))],
+    [/^(.+) и не только$/, (m, a) => `${a} and more`],
+    [/^Скорость: (.+)$/, (m, v) => `Speed: ${v.replace(',', '.')}`],
+    [/^([\d,.]+)×$/, (m, v) => `${v.replace(',', '.')}×`],
+    [/^Повтор: (выкл|все|один)$/, (m, v) => `Repeat: ${{ выкл: 'off', все: 'all', один: 'one' }[v]}`],
+    [/^Далее · (\d+)$/, (m, n) => `Up next · ${n}`],
+    [/^(\d+) с$/, (m, n) => `${n} s`],
+    [/^([\d,.]+) кГц$/, (m, v) => `${v.replace(',', '.')} kHz`],
+    [/^(≈ )?([\d\s  ,.]+) кбит\/с$/, (m, a, v) => `${a || ''}${v.replace(/[\s  ]/g, ',')} kbps`],
+    [/^(\d+) бит$/, (m, n) => `${n}-bit`],
+    [/^(.*) · Сингл(.*)$/, (m, a, b) => `${a} · Single${b}`],
+    [/^· Сингл$/, () => '· Single'],
+    [/^Искать «(.+)» на SoundCloud$/, (m, q) => `Search “${q}” on SoundCloud`],
+    [/^По запросу «(.+)» в вашей библиотеке нет совпадений\.$/, (m, q) => `Nothing in your library matches “${q}”.`],
+    [/^(.+)\. Слушайте музыку и ставьте лайки — микс обновится сам\.$/, (m, d) => `${tr(d)}. Listen and like songs — the mix updates itself.`],
+    [/^Выбрана: (.+)\. Новые файлы подхватываются при каждом запуске\.$/, (m, f) => `Selected: ${f}. New files are picked up on every launch.`],
+    [/^Музыка плавно затихнет и остановится\. Сейчас: (.+)\.$/, (m, v) => `Music fades out and stops. Now: ${v === 'выключен' ? 'off' : v === 'до конца трека' ? 'until the end of the track' : v.replace(/^ещё (\d+) мин$/, '$1 min left')}.`],
+    [/^Таймер сна: (\d+) мин$/, (m, n) => `Sleep timer: ${n} min`],
+    [/^Добавлено в «(.+)»$/, (m, n) => `Added to “${n}”`],
+    [/^Уже в «(.+)»$/, (m, n) => `Already in “${n}”`],
+    [/^«(.+)»: добавлено (.+)$/, (m, n, c) => `“${n}”: added ${c}`],
+    [/^Плейлист «(.+)» создан$/, (m, n) => `Playlist “${n}” created`],
+    [/^Плейлист «(.+)» удалён$/, (m, n) => `Playlist “${n}” deleted`],
+    [/^Плейлист «(.+)»: (\d+) треков(?:, не найдено: (\d+))?$/, (m, n, a, b) => `Playlist “${n}”: ${a} tracks${b ? `, not found: ${b}` : ''}`],
+    [/^Плейлист «(.+)»: ни один трек не найден в библиотеке — сначала добавьте музыку$/, (m, n) => `Playlist “${n}”: no tracks found in the library — add music first`],
+    [/^Не удалось воспроизвести «(.+)»\. Возможно, формат не поддерживается\.$/, (m, n) => `Could not play “${n}”. The format may not be supported.`],
+    [/^Библиотека восстановлена: (\d+)$/, (m, n) => `Library restored: ${n}`],
+    [/^Ищу тексты: (\d+) песен…$/, (m, n) => `Looking for lyrics: ${n} songs…`],
+    [/^Готово: найдено (\d+) из (\d+)\. Остальные — «Текста нет»\.$/, (m, a, b) => `Done: found ${a} of ${b}. The rest show “No lyrics”.`],
+    [/^Загружаю (\d+) (файл|файлов)…$/, (m, n) => `Loading ${n} file${n === '1' ? '' : 's'}…`],
+    [/^Сканирую папку «(.*)»: (\d+) (файл|файлов)…$/, (m, f, n) => `Scanning folder “${f}”: ${n} file${n === '1' ? '' : 's'}…`],
+    [/^Для «(.+)» не найден трек с таким именем$/, (m, n) => `No track with a matching name for “${n}”`],
+    [/^Не удалось прочитать папку: (.+)$/, (m, e) => `Could not read the folder: ${e}`],
+    [/^(?:(?:добавлено|удалено|уже были|не удалось прочитать|текстов \.lrc): \d+(?: · )?)+$/, m => m.replace(/добавлено/g, 'added').replace(/удалено/g, 'removed').replace(/уже были/g, 'already there').replace(/не удалось прочитать/g, 'unreadable').replace(/текстов \.lrc/g, '.lrc lyrics')],
+];
+// Формы множественного числа для plural()
+exports.EN_PLURAL = { 'песня': ['song', 'songs'], 'трек': ['track', 'tracks'], 'альбом': ['album', 'albums'], 'сингл': ['single', 'singles'], 'файл': ['file', 'files'] };
+function tr(s) {
+    if (lang !== 'en' || !s || !/[А-Яа-яЁё]/.test(s))
+        return s;
+    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s), core = m[2];
+    let out = D[core];
+    if (out === undefined)
+        for (const [re, f] of R) {
+            const x = re.exec(core);
+            if (x) {
+                out = f(...x);
+                break;
+            }
+        }
+    return out === undefined ? s : m[1] + out + m[3];
+}
+exports.tr = tr;
+// ---------- перевод страницы ----------
+const SKIP = '.ly,.ly-plain,#np-title,#mini-title,.row-title,.trow-title,.q-text b,textarea,script,style,[data-notr]';
+const ATTRS = ['aria-label', 'title', 'placeholder'];
+const origText = new WeakMap(), wroteText = new WeakMap(), origAttr = new WeakMap();
+function doText(n) {
+    const p = n.parentElement;
+    if (!p || p.closest(SKIP))
+        return;
+    if (wroteText.get(n) === n.data)
+        return; // это мы сами записали
+    origText.set(n, n.data);
+    const t = tr(n.data);
+    if (t !== n.data) {
+        wroteText.set(n, t);
+        n.data = t;
+    }
+    else
+        wroteText.delete(n);
+}
+function doAttrs(el) {
+    if (el.closest(SKIP))
+        return;
+    let o = origAttr.get(el);
+    for (const a of ATTRS) {
+        const v = el.getAttribute(a);
+        if (v == null)
+            continue;
+        if (o && o[a] && o[a].w === v)
+            continue;
+        const t = tr(v);
+        if (!o)
+            origAttr.set(el, o = {});
+        o[a] = { ru: v, w: t };
+        if (t !== v)
+            el.setAttribute(a, t);
+    }
+}
+function walk(root) {
+    if (root.nodeType === 3)
+        return doText(root);
+    if (root.nodeType !== 1)
+        return;
+    doAttrs(root);
+    const it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    let n;
+    while ((n = it.nextNode()))
+        n.nodeType === 3 ? doText(n) : doAttrs(n);
+}
+// обратно на русский: возвращаем запомненные исходные строки
+function restore(root) {
+    const it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    let n = root;
+    do {
+        if (n.nodeType === 3) {
+            const o = origText.get(n);
+            if (o !== undefined && wroteText.get(n) === n.data)
+                n.data = o;
+            wroteText.delete(n);
+        }
+        else if (n.nodeType === 1) {
+            const o = origAttr.get(n);
+            if (o)
+                for (const a of ATTRS)
+                    if (o[a] && n.getAttribute(a) === o[a].w)
+                        n.setAttribute(a, o[a].ru);
+            origAttr.delete(n);
+        }
+    } while ((n = it.nextNode()));
+}
+let observer = null;
+function initI18n(l) {
+    observer = new MutationObserver(list => {
+        if (lang !== 'en')
+            return;
+        for (const m of list) {
+            if (m.type === 'childList')
+                m.addedNodes.forEach(walk);
+            else if (m.type === 'characterData')
+                doText(m.target);
+            else if (m.type === 'attributes')
+                doAttrs(m.target);
+        }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+    setLang(l);
+}
+exports.initI18n = initI18n;
+function setLang(l) {
+    const next = l === 'en' ? 'en' : 'ru';
+    const was = lang;
+    lang = next;
+    document.documentElement.lang = next;
+    if (next === 'en')
+        walk(document.body);
+    else if (was === 'en')
+        restore(document.body);
+}
+exports.setLang = setLang;
+
+};
 defs["icons.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.icon = icon;
@@ -2012,6 +2321,8 @@ const ICONS = {
     'view-grid': S('<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>'),
     'view-list': S('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.500" cy="6" r="1" fill="currentColor"/><circle cx="4.500" cy="12" r="1" fill="currentColor"/><circle cx="4.500" cy="18" r="1" fill="currentColor"/>'),
     settings: S('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
+    speed: S('<path d="M4.5 17a8.500 8.500 0 1 1 15 0"/><path d="m12 13 4-5"/><circle cx="12" cy="13" r="1.300" fill="currentColor"/>'),
+    mix: S('<path d="M3 7h3.500c2 0 3.200.900 4.300 2.600l2.400 4.800c1.100 1.700 2.300 2.600 4.300 2.600H21"/><path d="M3 17h3.500c1.400 0 2.400-.400 3.200-1.200M14.300 8.200c.800-.800 1.800-1.200 3.200-1.200H21"/><path d="m18.500 4.500 2.500 2.500-2.500 2.500M18.500 14.500l2.500 2.500-2.500 2.500"/>'),
     tower: F('<path fill-rule=\"evenodd\" d=\"M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z\"/>'),
 };
 function icon(name, cls = '') {
@@ -3036,7 +3347,6 @@ exports.initPlayerUI = initPlayerUI;
 const player_js_1 = require("./player.js");
 const state_js_1 = require("./state.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
-const vocal_js_1 = require("./vocal.js");
 const ui_js_1 = require("./ui.js");
 const icons_js_1 = require("./icons.js");
 const lrc_js_1 = require("./lrc.js");
@@ -3070,7 +3380,7 @@ const setIc = (id, name) => { const el = document.getElementById(id); if (el)
 function initIcons() {
     [['m-shuffle', 'shuffle'], ['m-prev', 'prev'], ['m-next', 'next'], ['m-repeat', 'repeat'], ['m-like', 'heart'], ['m-lyrics', 'lyrics'], ['m-queue', 'queue'], ['m-expand', 'chev-up'],
         ['mm-next', 'next'], ['np-close', 'chev-down'], ['np-more', 'more'], ['np-like', 'heart'], ['n-shuffle', 'shuffle'], ['n-prev', 'prev'], ['n-next', 'next'], ['n-repeat', 'repeat'],
-        ['n-vol-hi', 'vol-high']].forEach(([a, b]) => setIc(a, b));
+        ['n-vol-hi', 'vol-high'], ['np-q-toggle', 'queue']].forEach(([a, b]) => setIc(a, b));
     ['m-play', 'mm-play', 'n-play'].forEach(id => setIc(id, 'play'));
     syncVolume();
     syncTheme();
@@ -3174,34 +3484,7 @@ function renderTrack(t) {
     syncPlay();
     document.title = `${t.title} — ${(0, views_js_1.artistsOf)(t).join(', ') || 'Puro Cielo'}`;
 }
-// Примерное время строк для обычного текста. Если известна карта «где поют» (vocal.js), строки раскладываются по ней,
-// иначе трек делится пропорционально длине строк.
-function fakeSync(text, dur, act) {
-    const raw = String(text).split(/\r?\n/).map(l => l.trim()), items = [];
-    for (const l of raw) {
-        if (l)
-            items.push({ text: l, w: Math.max(14, l.length) });
-        else if (items.length && items[items.length - 1].text)
-            items[items.length - 1].gap = true;
-    }
-    const weights = items.map(x => x.w + (x.gap ? 10 : 0));
-    const on = act && (0, vocal_js_1.layoutOnActivity)(weights, dur, act);
-    if (on)
-        return items.map((x, i) => ({ t: on[i], text: x.text }));
-    const start = Math.min(14, dur * 0.06), end = dur - Math.min(10, dur * 0.05), span = Math.max(10, end - start);
-    const tot = weights.reduce((s, w) => s + w, 0) || 1;
-    let t = start;
-    const out = [];
-    items.forEach((x, i) => { out.push({ t, text: x.text }); t += span * weights[i] / tot; });
-    return out;
-}
-let lastPlainDur = 0;
 function syncMeta() {
-    const t0 = (0, player_js_1.current)();
-    if (t0?.lyrics?.type === 'plain' && isFinite(player_js_1.audio.duration) && Math.abs(player_js_1.audio.duration - lastPlainDur) > 1) {
-        lastPlainDur = player_js_1.audio.duration;
-        renderLyrics(t0);
-    }
     const d = player_js_1.audio.duration;
     if (isFinite(d))
         (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(d);
@@ -3223,32 +3506,7 @@ function renderLyrics(t) {
         fab.hidden = !ly;
         fab.innerHTML = `${(0, icons_js_1.icon)('edit')}Изменить текст`;
     }
-    const analyse = () => { if (!t._actTried && lyricsOn()) {
-        t._actTried = true;
-        (0, vocal_js_1.vocalActivity)(t).then(a => { if (a) {
-            t._act = a;
-            if ((0, player_js_1.current)() === t && t.lyrics && t.lyrics.type) {
-                renderLyrics(t);
-                updateLyrics(player_js_1.audio.currentTime, true);
-            }
-        } });
-    } };
-    if (ly && ly.type === 'plain' && state_js_1.state.settings.autoKaraoke !== false) {
-        const dur = t.duration || (isFinite(player_js_1.audio.duration) ? player_js_1.audio.duration : 0);
-        if (dur > 20) {
-            analyse();
-            ly = { type: 'synced', lines: fakeSync(ly.text, dur, t._act), source: ly.source, approx: true, byAudio: !!t._act };
-        }
-    }
-    syncOffUI(!!ly && ly.type === 'synced');
-    if (t && t._off === undefined)
-        (0, lyrics_auto_js_1.getOffset)(t).then(v => { t._off = v; if ((0, player_js_1.current)() === t) {
-            curOff = v;
-            syncOffUI(lyType === 'synced');
-            updateLyrics(player_js_1.audio.currentTime, true);
-        } });
-    else
-        curOff = t?._off || 0;
+    curOff = 0;
     if (!ly) {
         const loading = t && t._ly === 'loading';
         lyBox.innerHTML = loading
@@ -3256,14 +3514,13 @@ function renderLyrics(t) {
             : `<div class="ly-empty">${(0, icons_js_1.icon)('lyrics')}<h3>Текста нет</h3><button class="btn btn-soft sm" data-ly="edit">${(0, icons_js_1.icon)('edit')}Добавить текст</button></div>`;
         return;
     }
-    const src = { lrc: 'файл .lrc', sylt: 'встроенный SYLT', uslt: 'встроенный USLT', online: 'найден онлайн', manual: 'ваш текст', netease: 'NetEase', genius: 'Genius', lyricscom: 'Lyrics.com', azlyrics: 'AZLyrics', 'text-pesni': 'Text-pesni', 'vse-pesni': 'Vse-pesni' }[ly.source] || 'текст';
     lyType = ly.type;
     if (ly.type === 'plain') {
-        lyBox.innerHTML = `<div class="ly-src">Текст · ${src}</div><div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `<div class="ly-src">${ly.approx ? (ly.byAudio ? 'Примерное караоке по звуку' : 'Примерное караоке') : 'Синхронизировано'} · ${src}</div><div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `<div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -3295,13 +3552,6 @@ function wordTimes(i) {
     // метки слов уже есть (enhanced LRC или выравнивание по звуку)
     if (l.words && l.words.length === ws.length)
         return l.words.map((w, k) => ({ a: w.t, b: w.b || (l.words[k + 1] ? l.words[k + 1].t : l.t + Math.min(gap, 4)), held: !!w.held }));
-    // по звуку трека: границы слов в пределах строки, протяжные слова помечены
-    const fine = (0, player_js_1.current)()?._act?.fine;
-    if (fine && !l.gapLine) {
-        const r = (0, vocal_js_1.alignWords)(ws, l.t, Math.min(l.t + 10, next ? next.t : l.t + 10), fine);
-        if (r)
-            return r;
-    }
     const sing = (0, util_js_1.clamp)(l.text.length * 0.07 + 0.5, 1.2, 9), dur = Math.max(0.6, Math.min(sing, gap * 0.94));
     const wt = ws.map(w => Math.max(2, w.length)), sum = wt.reduce((x, y) => x + y, 0);
     let acc = 0;
@@ -3345,44 +3595,6 @@ function updateLyrics(t, force) {
         ws.forEach((w, k) => { w.classList.toggle('cur', k === cur); w.classList.toggle('sung', k < cur); w.classList.toggle('held', k === cur && !!wTimes[k].held); });
     }
 }
-// ---------- сдвиг синхронизации ----------
-function syncOffUI(show) {
-    const box = (0, util_js_1.$)('#ly-off');
-    if (!box)
-        return;
-    box.hidden = !show;
-    const v = curOff || 0;
-    box.querySelector('b').textContent = (v > 0 ? '+' : '') + v.toFixed(1).replace('.', ',') + ' с';
-}
-let tapSync = false;
-async function applyOffset(v) {
-    const t = (0, player_js_1.current)();
-    if (!t)
-        return;
-    curOff = Math.max(-60, Math.min(60, Math.round(v * 10) / 10));
-    await (0, lyrics_auto_js_1.setOffset)(t, curOff);
-    syncOffUI(true);
-    updateLyrics(player_js_1.audio.currentTime, true);
-}
-function tapSyncEnd() { tapSync = false; (0, util_js_1.$)('#ly-off')?.classList.remove('tap'); lyBox.classList.remove('tap-sync'); }
-(0, util_js_1.$)('#ly-off')?.addEventListener('click', e => {
-    const b = e.target.closest('[data-off]');
-    if (!b || !(0, player_js_1.current)())
-        return;
-    if (b.dataset.off === 'tap') {
-        if (tapSync) {
-            tapSyncEnd();
-            return;
-        }
-        tapSync = true;
-        (0, util_js_1.$)('#ly-off').classList.add('tap');
-        lyBox.classList.add('tap-sync');
-        userScrollUntil = 0;
-        (0, ui_js_1.toast)('Нажмите на строку, которую поют прямо сейчас');
-        return;
-    }
-    applyOffset(b.dataset.off === '0' ? 0 : (curOff || 0) + parseFloat(b.dataset.off));
-});
 ['wheel', 'touchmove'].forEach(ev => lyBox.addEventListener(ev, () => { userScrollUntil = Date.now() + 3500; }, { passive: true }));
 (0, util_js_1.$)('#ly-fab').addEventListener('click', () => editLyrics());
 lyBox.addEventListener('click', e => {
@@ -3396,12 +3608,7 @@ lyBox.addEventListener('click', e => {
     const l = lines[+p.dataset.i];
     if (!l)
         return;
-    if (tapSync) {
-        tapSyncEnd();
-        applyOffset(Math.round((player_js_1.audio.currentTime - 0.25 - l.t) * 10) / 10);
-        return;
-    } // «подогнать»: эту строку сейчас поют
-    (0, player_js_1.seek)(l.t + curOff);
+    (0, player_js_1.seek)(l.t);
     userScrollUntil = 0;
     if (player_js_1.audio.paused)
         (0, player_js_1.toggle)();
@@ -3468,6 +3675,8 @@ function drawViz() {
         freq = null;
     g.clearRect(0, 0, w, h);
     const usable = (an ? an.frequencyBinCount : 256) * 0.62, gap = 3 * dpr, bw = (w - gap * (BARS - 1)) / BARS;
+    if (bw <= 0)
+        return false;
     const grad = g.createLinearGradient(0, h, 0, 0);
     grad.addColorStop(0, accent + '55');
     grad.addColorStop(1, accent);
@@ -3516,12 +3725,13 @@ function startLoop() { if (raf)
     return; const loop = () => { const more = frame(); raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0; }; raf = requestAnimationFrame(loop); }
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
-const tabFor = p => (isDesktop() && p === 'player' ? (lyricsOn() ? 'lyrics' : '') : p);
 function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
     np.dataset.pane = p;
-    document.querySelectorAll('#np-tabs button').forEach(b => b.classList.toggle('active', b.dataset.pane === tabFor(p)));
+    (0, util_js_1.$)('#np-q-toggle')?.classList.toggle('on', p === 'queue');
+    if (!isDesktop())
+        (0, util_js_1.$)('#np-lyr-toggle')?.classList.toggle('on', p === 'lyrics');
 }
 // Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр
 function centerShift() {
@@ -3537,12 +3747,12 @@ function applyLyricsMode(redo) {
     np.classList.toggle('nolyr', !on);
     const b = (0, util_js_1.$)('#np-lyr-toggle');
     if (b) {
-        b.classList.toggle('on', on);
+        if (isDesktop())
+            b.classList.toggle('on', on);
         b.setAttribute('aria-pressed', on);
         b.setAttribute('aria-label', on ? 'Скрыть текст' : 'Показать текст');
         b.title = b.getAttribute('aria-label');
     }
-    document.querySelector('#np-tabs [data-pane="lyrics"]')?.toggleAttribute('hidden', !on);
     setPane(np.dataset.pane === 'lyrics' && !on ? 'player' : np.dataset.pane);
     if (on && redo && (0, player_js_1.current)()) {
         renderLyrics((0, player_js_1.current)());
@@ -3629,6 +3839,8 @@ function initPlayerUI() {
             case 'open-queue':
                 if (npOpen && np.dataset.pane === 'queue')
                     setPane(isDesktop() ? 'lyrics' : 'player');
+                else if (npOpen)
+                    setPane('queue');
                 else
                     openNP('queue');
                 break;
@@ -3640,14 +3852,22 @@ function initPlayerUI() {
     (0, util_js_1.$)('#mini-open').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === e.currentTarget)
         openNP(); });
     (0, util_js_1.$)('#np-close').addEventListener('click', closeNP);
-    (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', () => { state_js_1.state.settings.showLyrics = !lyricsOn(); (0, state_js_1.save)(); (0, state_js_1.emit)('settings', 'showLyrics'); });
+    (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', () => {
+        if (!isDesktop()) { // на телефоне кнопка просто переключает плеер ↔ текст
+            setPane(np.dataset.pane === 'lyrics' ? 'player' : 'lyrics');
+            if (np.dataset.pane === 'lyrics')
+                updateLyrics(player_js_1.audio.currentTime, true);
+            return;
+        }
+        state_js_1.state.settings.showLyrics = !lyricsOn();
+        (0, state_js_1.save)();
+        (0, state_js_1.emit)('settings', 'showLyrics');
+    });
     (0, state_js_1.on)('settings', k => { if (k === 'showLyrics' || k === 'all')
         applyLyricsMode(true); });
     applyLyricsMode(false);
-    (0, util_js_1.$)('#np-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b)
-        setPane(b.dataset.pane); });
     (0, util_js_1.$)('#np-more').addEventListener('click', e => { const t = (0, player_js_1.current)(); if (t)
-        (0, actions_js_1.trackMenu)(e.currentTarget, t.id); });
+        (0, actions_js_1.trackMenu)(e.currentTarget, t.id, { np: true }); });
     // свайп вниз по Now Playing на мобильных
     let y0 = null;
     np.addEventListener('touchstart', e => { y0 = e.target.closest('.pane') ? null : e.touches[0].clientY; }, { passive: true });
@@ -4075,7 +4295,7 @@ exports.DEFAULT_SETTINGS = {
     anim: true, // анимации интерфейса
     seekStep: 5, // шаг перемотки стрелками, сек
     showLyrics: true, // показывать текст справа; выключено — плеер по центру
-    autoKaraoke: true, // примерное караоке для текстов без меток времени
+    lang: 'ru', // ru | en — язык интерфейса
     lyricsProxy: '', // адрес Cloudflare Worker для NetEase / Genius
     homeRecents: true, // блок «Недавно прослушанное»
     keepAwake: false, // не гасить экран во время музыки
@@ -5148,13 +5368,16 @@ function fmtTime(s) {
     return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`;
 }
 function fmtTotal(sec) {
-    const m = Math.round(sec / 60);
+    const m = Math.round(sec / 60), en = require("./i18n.js").isEn();
     if (m < 60)
-        return `${m} мин`;
+        return en ? `${m} min` : `${m} мин`;
     const h = Math.floor(m / 60);
-    return `${h} ч ${m % 60} мин`;
+    return en ? `${h} h ${m % 60} min` : `${h} ч ${m % 60} мин`;
 }
 function plural(n, forms) {
+    const i18n = require("./i18n.js");
+    if (i18n.isEn() && i18n.EN_PLURAL[forms[0]])
+        return `${n} ${i18n.EN_PLURAL[forms[0]][n === 1 ? 0 : 1]}`;
     const a = Math.abs(n) % 100, b = a % 10;
     const f = a > 10 && a < 20 ? forms[2] : b > 1 && b < 5 ? forms[1] : b === 1 ? forms[0] : forms[2];
     return `${n} ${f}`;
@@ -5221,6 +5444,9 @@ exports.searchResults = searchResults;
 exports.profileView = profileView;
 exports.settingsView = settingsView;
 exports.sidebarPlaylists = sidebarPlaylists;
+exports.mixes = mixes;
+exports.mixById = mixById;
+exports.mixView = mixView;
 const state_js_1 = require("./state.js");
 const icons_js_1 = require("./icons.js");
 const util_js_1 = require("./util.js");
@@ -5334,6 +5560,53 @@ function hero({ art, eyebrow, title, subHTML = '', meta = '', actions = '', bg =
       <div class="hero-actions">${actions}</div></div></div></section>`;
 }
 const playBtns = (playAct, shufAct, attrs) => `<button class="btn btn-primary" data-action="${playAct}" ${attrs}>${(0, icons_js_1.icon)('play')}Играть</button><button class="btn btn-soft" data-action="${shufAct}" ${attrs}>${(0, icons_js_1.icon)('shuffle')}Перемешать</button>`;
+// ---------- миксы: собираются из того, что слушает пользователь ----------
+const MIX_MAX = 50;
+function mixes() {
+    const d = (0, state_js_1.derived)(), all = d.all, pl = state_js_1.state.plays, likes = state_js_1.state.likes;
+    const seed = k => (0, util_js_1.hash)('mix:' + k) ^ util_js_1.SESSION_SEED;
+    const recent = new Set(state_js_1.state.recents);
+    // 1) понравившиеся вперемешку
+    const liked = (0, util_js_1.seededShuffle)((0, state_js_1.likedTracks)(), seed('liked'));
+    // 2) самые прослушанные
+    const top = all.filter(t => pl[t.id] > 0).sort((a, b) => pl[b.id] - pl[a.id] || (likes.has(b.id) ? 1 : 0) - (likes.has(a.id) ? 1 : 0));
+    // 3) любимые артисты: прослушивания + лайки (лайк = 3 прослушивания), берём пятёрку лучших
+    const score = a => a.tracks.reduce((s, t) => s + (pl[t.id] || 0) + (likes.has(t.id) ? 3 : 0), 0);
+    const favArtists = d.artistList.map(a => [a, score(a)]).filter(x => x[1] > 0).sort((x, y) => y[1] - x[1]).slice(0, 5).map(x => x[0]);
+    const favSet = new Map();
+    for (const a of favArtists)
+        for (const t of a.tracks)
+            favSet.set(t.id, t);
+    const artists = (0, util_js_1.seededShuffle)([...favSet.values()], seed('artists'));
+    // 4) давно не слушали: то, что нравилось или слушалось, но не попадало в недавние
+    const forgotten = (0, util_js_1.seededShuffle)(all.filter(t => !recent.has(t.id) && (pl[t.id] > 0 || likes.has(t.id))), seed('forgotten'));
+    // 5) ещё не слушали: ни одного прослушивания, сначала недавно добавленные
+    const fresh = all.filter(t => !pl[t.id] && !likes.has(t.id)).sort((a, b) => b.addedAt - a.addedAt);
+    const fav = favArtists.slice(0, 3).map(a => a.name).join(', ');
+    return [
+        { id: 'liked', n: 1, name: 'Микс понравившегося', desc: 'Ваши лайки в случайном порядке', tracks: liked },
+        { id: 'top', n: 2, name: 'Самое прослушиваемое', desc: 'Треки, которые вы включаете чаще всего', tracks: top },
+        { id: 'artists', n: 3, name: 'Любимые артисты', desc: fav ? `${fav} и не только` : 'Слушайте и ставьте лайки — микс соберётся сам', tracks: artists },
+        { id: 'forgotten', n: 4, name: 'Давно не слушали', desc: 'Любимое, что давно не звучало', tracks: forgotten },
+        { id: 'fresh', n: 5, name: 'Ещё не слушали', desc: 'Песни из библиотеки, до которых не дошли руки', tracks: fresh },
+    ].map(m => ({ ...m, tracks: m.tracks.slice(0, MIX_MAX) }));
+}
+function mixById(id) { return mixes().find(m => m.id === id) || null; }
+const mixArt = m => `<div class="mix-art mix-${m.n}">${(0, exports.mosaic)(m.tracks, 'mix' + m.id)}<span class="mix-shade"></span><span class="mix-label">${(0, icons_js_1.icon)('mix')}<b>${(0, util_js_1.esc)(m.name)}</b></span></div>`;
+const mixCard = m => `<article class="card" tabindex="0" role="link" data-nav="#/mix/${m.id}">
+  <div class="card-art">${mixArt(m)}<button class="play-fab" data-action="play-mix" data-id="${m.id}" aria-label="Играть">${(0, icons_js_1.icon)('play')}</button></div>
+  <h3 class="card-title">${(0, util_js_1.esc)(m.name)}</h3><p class="card-sub">${m.tracks.length ? (0, util_js_1.plural)(m.tracks.length, ['песня', 'песни', 'песен']) : 'Пока пусто'}</p></article>`;
+const mixRow = m => lrow({ cover: mixArt(m), title: m.name, nav: `#/mix/${m.id}`, act: `data-action="play-mix" data-id="${m.id}"`, sub: m.tracks.length ? (0, util_js_1.plural)(m.tracks.length, ['песня', 'песни', 'песен']) : 'Пока пусто' });
+function mixView(id) {
+    const m = mixById(id);
+    if (!m)
+        return notFound();
+    const total = m.tracks.reduce((s, t) => s + t.duration, 0);
+    return hero({ art: mixArt(m), eyebrow: 'Микс', title: m.name, bg: m.tracks.find(t => t.cover)?.cover, subHTML: (0, util_js_1.esc)(m.desc),
+        meta: `${(0, util_js_1.plural)(m.tracks.length, ['песня', 'песни', 'песен'])}${m.tracks.length ? ', ' + (0, util_js_1.fmtTotal)(total) : ''}`,
+        actions: m.tracks.length ? playBtns('play-mix', 'shuffle-mix', `data-id="${m.id}"`) : '' })
+        + `<div class="detail">${m.tracks.length ? trackList(m.tracks, { cover: true }) : `<div class="empty compact"><div class="empty-icon">${(0, icons_js_1.icon)('mix')}</div><h2>Пока пусто</h2><p>${(0, util_js_1.esc)(m.desc)}. Слушайте музыку и ставьте лайки — микс обновится сам.</p></div>`}</div>`;
+}
 // ---------- экраны ----------
 function greeting() {
     const h = new Date().getHours();
@@ -5363,6 +5636,8 @@ function homeView() {
             ? section('Недавно прослушанное', `<div class="tracklist" data-lid="${lid}">${rec.slice(0, 8).map((t, i) => trackRow(t, i, lid, { cover: true })).join('')}</div>`)
             : block(mode, 'Недавно прослушанное', { cards: rec.map((t, i) => recentCard(t, i, lid)), rows: [] });
     }
+    const mx = mixes();
+    h += block(mode, 'Миксы для вас', { cards: mx.map(mixCard), rows: mx.map(mixRow), listMax: 5 });
     if (d.albums.length)
         h += block(mode, 'Альбомы', { cards: d.albums.map(albumCard), rows: d.albums.map(g => albumRow(g, false)), href: '#/library/albums' });
     if (d.singles.length)
@@ -5372,7 +5647,7 @@ function homeView() {
         h += block(mode, 'Артисты', { cards: d.artistList.map(a => artistCard(a)), rows: d.artistList.map(artistRow), href: '#/library/artists' });
     return h;
 }
-const TABS = [['albums', 'Альбомы'], ['singles', 'Синглы'], ['playlists', 'Плейлисты'], ['artists', 'Артисты'], ['songs', 'Песни']];
+const TABS = [['media', 'Медиатека'], ['albums', 'Альбомы'], ['singles', 'Синглы'], ['playlists', 'Плейлисты'], ['artists', 'Артисты'], ['songs', 'Песни']];
 exports.songSort = 'title';
 const setSongSort = v => { exports.songSort = v; };
 exports.setSongSort = setSongSort;
@@ -5380,9 +5655,15 @@ function libraryView(tab = 'albums') {
     const d = (0, state_js_1.derived)();
     const tabs = `<nav class="seg-tabs" role="tablist">${TABS.map(([k, n]) => `<a role="tab" aria-selected="${k === tab}" class="${k === tab ? 'active' : ''}" href="#/library/${k}">${n}</a>`).join('')}</nav>`;
     const actions = native_js_1.isNative ? `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Треки</button><button class="btn btn-soft sm" data-action="add-folder">${(0, icons_js_1.icon)('folder')}Папка</button>` : `<button class="btn btn-soft sm" data-action="add-files">${(0, icons_js_1.icon)('plus')}Добавить</button>`;
-    let h = pageHead('Библиотека', `${(0, util_js_1.plural)(d.all.length, ['песня', 'песни', 'песен'])}`, actions) + tabs;
+    const title = tab === 'media' ? 'Медиатека' : 'Библиотека';
+    const sub = tab === 'media' ? `${(0, util_js_1.plural)(d.albums.length, ['альбом', 'альбома', 'альбомов'])} · ${(0, util_js_1.plural)(d.singles.length, ['сингл', 'сингла', 'синглов'])}` : (0, util_js_1.plural)(d.all.length, ['песня', 'песни', 'песен']);
+    let h = pageHead(title, sub, actions) + tabs;
     let body = '';
-    if (tab === 'albums')
+    if (tab === 'media') {
+        const rel = [...d.albums, ...d.singles].sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }));
+        body = rel.length ? `<div class="grid">${rel.map(g => g.tracks.length > 1 ? albumCard(g) : singleCard(g)).join('')}</div>` : emptyState(true);
+    }
+    else if (tab === 'albums')
         body = d.albums.length ? `<div class="grid">${d.albums.map(albumCard).join('')}</div>` : emptyState(true);
     else if (tab === 'singles')
         body = d.singles.length ? `<div class="grid">${d.singles.map(singleCard).join('')}</div>` : emptyState(true);
@@ -5573,7 +5854,6 @@ function profileView() {
         <div><b>${d.artistList.length}</b><span>артистов</span></div><div><b>${state_js_1.state.likes.size}</b><span>нравится</span></div><div><b>${state_js_1.state.playlists.length}</b><span>плейлистов</span></div>
       </div>
 
-      <div class="settings"><div class="setting"><div><h3>Настройки</h3><p>Тема, цвета, фон, тексты песен, резервная копия и многое другое.</p></div><div class="setting-ctl"><button class="btn btn-primary sm" data-nav="#/settings">${(0, icons_js_1.icon)('settings')}Открыть</button></div></div></div>
     </div></section>`;
 }
 function settingsView() {
@@ -5590,6 +5870,7 @@ function settingsView() {
         ${srow('Анимации интерфейса', 'Выключите, если приложение работает на слабом устройстве.', sw('anim', s.anim))}
         ${srow('Блок «Недавно прослушанное»', 'Показывать на главной.', sw('homeRecents', s.homeRecents !== false))}
         ${srow('Размер карточек', 'Обложки в рядах и сетках.', seg('cardSize', [['s', 'Мелкие'], ['m', 'Средние'], ['l', 'Крупные']], s.cardSize))}
+        ${srow('Язык', 'Язык интерфейса плеера.', seg('lang', [['ru', 'Русский'], ['en', 'English']], s.lang || 'ru'))}
       </div>
 
       <h2 class="sg-title">Фон</h2>
@@ -5606,10 +5887,8 @@ function settingsView() {
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».', sw('autoLyrics', s.autoLyrics))}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».', `<button class="btn btn-soft sm" data-action="find-lyrics">${(0, icons_js_1.icon)('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}
-        ${srow('Караоке для обычных текстов', 'Если у песни нет меток времени, строки подсвечиваются примерно по ходу трека.', sw('autoKaraoke', s.autoKaraoke !== false))}
         ${srow('Свой сервер текстов', s.lyricsProxy ? (0, util_js_1.esc)(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${(0, icons_js_1.icon)('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}
-        ${srow('Скорость', 'Тон голоса не меняется.', seg('speed', [[0.75, '0.75×'], [1, '1×'], [1.25, '1.25×'], [1.5, '1.5×'], [2, '2×']], s.speed))}
         ${srow('Таймер сна', `Музыка плавно затихнет и остановится. Сейчас: ${sleepLabel()}.`, `<div class="seg">${sleepOpts.map(([v, n]) => `<button class="${String(sleepCur) === String(v) ? 'on' : ''}" data-action="sleep" data-v="${v}">${n}</button>`).join('')}</div>`)}
         ${srow('Шаг перемотки', 'Стрелки ← / → на клавиатуре.', seg('seekStep', [[5, '5 с'], [10, '10 с'], [15, '15 с'], [30, '30 с']], s.seekStep))}
         ${srow('Спектр в Now Playing', 'Анимация звука рядом с обложкой.', sw('visualizer', s.visualizer))}
@@ -6002,7 +6281,6 @@ function alignText(text, dur, a) {
 
 };
 req("app.js")})();
-
 </script>
 </body>
 </html>
