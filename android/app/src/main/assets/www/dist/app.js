@@ -2500,7 +2500,7 @@ function updateLyrics(t, force) {
         });
         const el = lyEls[idx];
         if (el && npOpen && Date.now() > userScrollUntil)
-            lyBox.scrollTo({ top: el.offsetTop - lyBox.clientHeight * 0.38 + el.offsetHeight / 2, behavior: force ? 'auto' : 'smooth' });
+            lyBox.scrollTo({ top: el.offsetTop - lyBox.clientHeight * 0.5 + el.offsetHeight / 2, behavior: force ? 'auto' : 'smooth' });
     }
     const el = lyEls[idx];
     if (!el || el.classList.contains('gap') || !el.classList.contains('wordsync'))
