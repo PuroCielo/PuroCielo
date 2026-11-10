@@ -5499,10 +5499,14 @@ function closeMenu() {
     if (menuEl) {
         menuEl.remove();
         menuEl = null;
+        return true;
     }
+    return false;
 }
+let menuY = 0;
 function openMenu(anchor, items, { x, y } = {}) {
     closeMenu();
+    menuY = scrollY;
     const root = document.getElementById('popover-root');
     const el = document.createElement('div');
     el.className = 'menu';
@@ -5541,7 +5545,13 @@ document.addEventListener('pointerdown', e => {
         closeMenu();
 }, true);
 addEventListener('resize', closeMenu);
-document.addEventListener('scroll', closeMenu, true);
+// меню закрывается при прокрутке страницы, но не когда сам листается текст песни или очередь
+// (и не от мелкого подрагивания страницы — только если её заметно прокрутили)
+document.addEventListener('scroll', e => {
+    const page = e.target === document || e.target === document.documentElement;
+    if (page ? Math.abs(scrollY - menuY) >= 24 : !!(e.target.closest && e.target.closest('.rail')))
+        closeMenu();
+}, true);
 // ---------- модальные окна ----------
 const stack = [];
 function openModal({ title, html = '', actions = [], wide = false, onMount }) {
