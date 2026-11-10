@@ -2020,6 +2020,9 @@ function activeLine(lines, t) {
 };
 defs["lyrics-auto.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.cleanTitle = cleanTitle;
+exports.candidates = candidates;
+exports.pickBest = pickBest;
 exports.getOffset = getOffset;
 exports.setOffset = setOffset;
 exports.rawLyrics = rawLyrics;
@@ -2037,9 +2040,52 @@ const native_js_1 = require("./native.js");
 // Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
 const API = 'https://lrclib.net/api';
 const MISS_TTL = 14 * 24 * 3600 * 1000; // «не найдено» помним две недели
-const cleanTitle = s => String(s || '').replace(/\s*[(\[][^)\]]*[)\]]/g, '').replace(/\s+[-–—]\s+(?:remaster(?:ed)?|live|radio edit|single version).*$/i, '').trim() || String(s || '').trim();
-const primaryArtist = t => (t._artists && t._artists[0]) || (0, artists_js_1.splitArtists)(t.artist)[0] || t.artist || '';
-const keyOf = t => `v2|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+// Название без «мусора»: (скобки), [скобки], prod./feat. в конце, @ники, 160bpm, адреса сайтов (Sefon.Pro, zaycev.net…)
+function cleanTitle(s) {
+    const raw = String(s || '').trim();
+    let t = raw.replace(/\s*[(\[{][^)\]}]*[)\]}]/g, ' ')
+        .replace(/@[\w.]+/g, ' ')
+        .replace(/\b\d{2,3}\s?bpm\b/gi, ' ')
+        .replace(/(?:^|\s)(?:www\.)?[\w-]+\.(?:pro|net|ru|com|me|fm|org|cc|to|club|info|biz|su|io)\b/gi, ' ')
+        .replace(/\s(?:prod(?:uced)?\.?(?:\s?by)?|feat\.?|ft\.?|при уч\.?)\s.*$/i, '')
+        .replace(/\s+[-–—]\s+(?:remaster(?:ed)?|live|radio edit|single version)\b.*$/i, '')
+        .replace(/\s+/g, ' ').replace(/^[\s\-–—|_.,]+|[\s\-–—|_.,]+$/g, '').trim();
+    return t || raw;
+}
+// Исполнители трека без «Неизвестного артиста»
+const realArtists = t => (t._artists || (0, artists_js_1.splitArtists)(t.artist)).filter(a => a && a !== artists_js_1.UNKNOWN);
+const primaryArtist = t => realArtists(t)[0] || '';
+// Варианты «артист + название» для поиска: из тегов; «Артист - Название» внутри названия; из имени файла
+function candidates(t) {
+    const out = [], seen = new Set();
+    const add = (artist, title) => {
+        title = cleanTitle(title);
+        artist = String(artist || '').trim();
+        const k = (0, util_js_1.norm)(artist) + '|' + (0, util_js_1.norm)(title);
+        if (title && !seen.has(k)) {
+            seen.add(k);
+            out.push({ artist, title });
+        }
+    };
+    const arts = realArtists(t);
+    const title = cleanTitle(t.title);
+    const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
+    if (dash) { // «hitmar - plan»: слева артист (тот же, что в теге, или вообще без тега)
+        const left = (0, util_js_1.norm)(dash[1]);
+        if (!arts.length || arts.some(a => (0, util_js_1.norm)(a) === left || left.includes((0, util_js_1.norm)(a))))
+            add(arts[0] || dash[1], dash[2]);
+    }
+    for (const a of arts)
+        add(a, title);
+    if (!arts.length) {
+        const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
+        if (f)
+            add(f[1], f[2]);
+        add('', title);
+    }
+    return out;
+}
+const keyOf = t => `v3|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -2068,39 +2114,69 @@ async function getJSON(url, ms = 9000) {
     }
 }
 // Это та же песня? LRCLIB ищет нечётко и может вернуть другой трек — тогда текст «идёт» не по песне.
-const sameTrack = (x, title, artist) => {
+const sameTitle = (x, title) => {
     const a = (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName || x.name)), b = (0, lyrics_web_js_1.norm)(title);
-    if (a && b && !(a.includes(b) || b.includes(a)))
+    return !!a && !!b && (a.includes(b) || b.includes(a));
+};
+const sameTrack = (x, title, artist) => {
+    if (!sameTitle(x, title))
         return false;
     const who = (0, lyrics_web_js_1.norm)(artist), got = (0, lyrics_web_js_1.norm)(x.artistName);
-    return !who || !got || got.includes(who) || who.includes(got) || (0, lyrics_web_js_1.norm)(x.artistName).includes((0, lyrics_web_js_1.norm)((0, artists_js_1.splitArtists)(x.artistName)[0] || ''));
+    return !who || !got || got.includes(who) || who.includes(got);
 };
+// Выбор версии: сначала с метками времени и почти той же длины, потом обычный текст.
+// Версия другой длины (другой монтаж) с метками разъедется со звуком — такую не берём.
+function pickBest(list, dur) {
+    const diff = x => (dur && x.duration ? Math.abs(x.duration - dur) : 0);
+    const ok = list.filter(Boolean);
+    const by = arr => arr.sort((a, b) => diff(a) - diff(b))[0] || null;
+    return by(ok.filter(x => x.syncedLyrics && diff(x) <= 4))
+        || by(ok.filter(x => x.plainLyrics && diff(x) <= 6))
+        || by(ok.filter(x => x.instrumental && diff(x) <= 4));
+}
 async function lookup(t) {
-    const artist = primaryArtist(t), title = cleanTitle(t.title), dur = Math.round(t.duration || 0);
-    const q = new URLSearchParams({ track_name: title, artist_name: artist });
-    if (t.album)
-        q.set('album_name', t.album);
-    if (dur)
-        q.set('duration', String(dur));
-    let r = await getJSON(`${API}/get?${q}`);
-    const exact = r.data && (r.data.syncedLyrics || r.data.plainLyrics || r.data.instrumental) ? r.data : null;
-    if (exact && (!dur || !exact.duration || Math.abs(exact.duration - dur) <= 3))
-        return exact; // версия совпадает по длине
-    const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: title, artist_name: artist })}`);
-    const list = Array.isArray(s.data) ? s.data : [];
-    const ok = list.filter(x => x && (x.syncedLyrics || x.plainLyrics) && sameTrack(x, title, artist));
-    // ближайшая по длительности версия; при равенстве — с метками времени
-    ok.sort((a, b) => (Math.abs((a.duration || 0) - dur) - Math.abs((b.duration || 0) - dur)) || ((b.syncedLyrics ? 1 : 0) - (a.syncedLyrics ? 1 : 0)));
-    const best = ok[0];
-    if (best && (!dur || !best.duration || Math.abs(best.duration - dur) <= 6))
-        return best;
-    if (exact && (!dur || !exact.duration || Math.abs(exact.duration - dur) <= 6))
-        return exact;
-    return null;
+    const dur = Math.round(t.duration || 0), cands = candidates(t), found = [];
+    const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
+    const take = (list, test) => {
+        for (const x of list || [])
+            if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && test(x))
+                found.push(x);
+    };
+    for (const c of cands) {
+        if (!c.artist)
+            continue;
+        // 1) точный запрос
+        const q = new URLSearchParams({ track_name: c.title, artist_name: c.artist });
+        if (t.album)
+            q.set('album_name', t.album);
+        if (dur)
+            q.set('duration', String(dur));
+        const r = await getJSON(`${API}/get?${q}`);
+        if (r.data)
+            take([r.data], () => true);
+        if (synced())
+            break;
+        // 2) поиск по артисту и названию
+        const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
+        take(s.data, x => sameTrack(x, c.title, c.artist));
+        if (synced())
+            break;
+    }
+    // 3) свободный поиск (артист записан иначе: латиницей/кириллицей, с соавтором и т.п.) — только при совпадении названия и длины
+    if (!synced() && cands.length) {
+        const c = cands[0];
+        const s = await getJSON(`${API}/search?${new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })}`);
+        take(s.data, x => sameTrack(x, c.title, c.artist) || (sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2));
+        if (!synced() && c.artist) {
+            const s2 = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title })}`);
+            take(s2.data, x => sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2);
+        }
+    }
+    return pickBest(found, dur);
 }
 // Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
 async function extraSources(t) {
-    const artist = primaryArtist(t), title = cleanTitle(t.title);
+    const c0 = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) }, artist = c0.artist, title = c0.title;
     if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.genius) { // приложение для Windows: Genius напрямую
         try {
             const txt = await window.PuroDesktop.genius(artist, title);
@@ -2243,19 +2319,21 @@ function ensureLyrics(t) {
                 return true;
             }
             if (!ly && (!d || !d.instrumental)) { // запасной источник — lyrics.ovh (только обычный текст)
-                try {
-                    const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(primaryArtist(t))}/${encodeURIComponent(cleanTitle(t.title))}`, 8000);
-                    const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
-                    if (txt) {
-                        const l2 = { type: 'plain', text: txt, source: 'online' };
-                        t.lyrics = l2;
-                        t._ly = undefined;
-                        (0, db_js_1.lySet)(key, { ly: l2, at: Date.now() });
-                        (0, state_js_1.emit)('lyrics', t);
-                        return true;
+                const c0 = candidates(t)[0];
+                if (c0 && c0.artist)
+                    try {
+                        const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(c0.artist)}/${encodeURIComponent(c0.title)}`, 8000);
+                        const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
+                        if (txt) {
+                            const l2 = { type: 'plain', text: txt, source: 'online' };
+                            t.lyrics = l2;
+                            t._ly = undefined;
+                            (0, db_js_1.lySet)(key, { ly: l2, at: Date.now() });
+                            (0, state_js_1.emit)('lyrics', t);
+                            return true;
+                        }
                     }
-                }
-                catch { /* источник недоступен */ }
+                    catch { /* источник недоступен */ }
             }
             if (!ly) { // ещё источники: свой сервер (NetEase, Genius) и lyrist
                 const more = await extraSources(t);
