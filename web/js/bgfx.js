@@ -1,8 +1,8 @@
 import { on, state } from './state.js';
 import { audio, current, getAnalyser } from './player.js';
 import { icon } from './icons.js';
-// Фон: живой градиент из цветов обложки, мерцающая «звёздная пыль» (оживает в такт басам),
-// пластинка, свечение от обложки, лёгкое зерно плёнки — и заставка при запуске.
+// Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
+// (она сильно размыта и медленно плывёт). Ноты, пластинка и звёздная пыль — по желанию, в настройках.
 const $ = s => document.querySelector(s);
 const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
 // ---------- цвета обложки ----------
@@ -159,7 +159,8 @@ export function initBgFx() {
     let lastUrl = null;
     const setPalette = cols => {
         const c = cols || GRAPHITE;
-        c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
+        c.forEach((v, i) => document.documentElement.style.setProperty(`--c${i + 1}`, v));
+        document.documentElement.classList.toggle('has-glow', !!cols);
         dust?.setTint(cols ? cols[0] : null);
     };
     const paintCover = async () => {

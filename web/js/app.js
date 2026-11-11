@@ -884,7 +884,7 @@ on('settings', k => {
     }
     if (k === 'speed' || k === 'all')
         setSpeed(state.settings.speed);
-    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
+    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgDust', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes2', 'bgVinyl2', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
         render({ keepScroll: true });
 });
 on('sleep', () => { if (['profile', 'settings'].includes(route().name))

@@ -24,7 +24,7 @@
     'Эквалайзер и переходы': 'Equalizer and transitions', 'Готовые настройки звука или своя. Плавный переход между треками и режим без пауз.': 'Sound presets or your own. Crossfade between tracks and a gapless mode.',
     'Перевод и данные треков': 'Translation and track info', 'Перевод текста строчкой под оригиналом. Название, артист, альбом и обложка из MusicBrainz.': 'Lyrics translation under each line. Title, artist, album and cover from MusicBrainz.',
     'Русский и English': 'Russian and English', 'Язык интерфейса, плотность, углы, фон, резервная копия — в настройках.': 'Interface language, density, corners, background and backup — in settings.',
-    'Живой фон': 'Living background', 'Мягкое свечение, пластинка, которая крутится, пока играет музыка, и частицы.': 'A soft glow, a record that spins while music plays, and particles.',
+    'Фон от обложки': 'Background from the cover', 'В тёмной теме — чёрный фон и мягкое свечение в цвет обложки, в светлой — свет от самой обложки.': 'Dark theme: a black background with a soft glow in the cover colour. Light theme: light from the cover itself.',
     'Как выглядит': 'How it looks', 'Текст песни идёт вместе с музыкой, а «Итоги» показывают, что вы слушали.': 'Lyrics move with the music, and Stats show what you’ve been listening to.',
     'Экран «Сейчас играет» с текстом песни': 'Now Playing with lyrics', 'Экран «Итоги»': 'Stats screen',
     'Сейчас играет: обложка, текст песни, эквалайзер и очередь в одном месте.': 'Now Playing: cover, lyrics, equalizer and queue in one place.',

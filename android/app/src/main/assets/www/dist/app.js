@@ -73,6 +73,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -240,7 +273,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1006,7 +1039,7 @@ addEventListener('drop', async (e) => {
     }
     if (k === 'speed' || k === 'all')
         (0, player_js_1.setSpeed)(state_js_1.state.settings.speed);
-    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
+    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgDust', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes2', 'bgVinyl2', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
         render({ keepScroll: true });
 });
 (0, state_js_1.on)('sleep', () => {
@@ -1277,8 +1310,8 @@ exports.runSplash = runSplash;
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const icons_js_1 = require("./icons.js");
-// Фон: живой градиент из цветов обложки, мерцающая «звёздная пыль» (оживает в такт басам),
-// пластинка, свечение от обложки, лёгкое зерно плёнки — и заставка при запуске.
+// Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
+// (она сильно размыта и медленно плывёт). Ноты, пластинка и звёздная пыль — по желанию, в настройках.
 const $ = s => document.querySelector(s);
 const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
 // ---------- цвета обложки ----------
@@ -1435,7 +1468,8 @@ function initBgFx() {
     let lastUrl = null;
     const setPalette = cols => {
         const c = cols || GRAPHITE;
-        c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
+        c.forEach((v, i) => document.documentElement.style.setProperty(`--c${i + 1}`, v));
+        document.documentElement.classList.toggle('has-glow', !!cols);
         dust?.setTint(cols ? cols[0] : null);
     };
     const paintCover = async () => {
@@ -2047,7 +2081,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Искать обложки': 'Find covers', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).': 'If a song or album has no cover, the player finds one itself (iTunes, MusicBrainz).', 'Убирать приписки сайтов': 'Remove site tags', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.': 'For example, “Song (Sefon.Pro)” → “Song”. Files aren’t changed.', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Фон от обложки': 'Background from cover', 'Тёмная тема: чёрный фон и мягкое свечение в цвет обложки. Светлая тема: свет от самой обложки.': 'Dark theme: black background with a soft glow in the cover colour. Light theme: light from the cover itself.', 'Движение фона': 'Background motion', 'Свет от обложки медленно плывёт.': 'The light from the cover drifts slowly.', 'Искать обложки': 'Find covers', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).': 'If a song or album has no cover, the player finds one itself (iTunes, MusicBrainz).', 'Убирать приписки сайтов': 'Remove site tags', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.': 'For example, “Song (Sefon.Pro)” → “Song”. Files aren’t changed.', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -4823,15 +4857,15 @@ exports.DEFAULT_SETTINGS = {
     lyTranslate: false, // перевод текста песни под строками
     autoLyrics: true, // искать тексты онлайн, если их нет в файле
     bgAnim: true, // плавающие «облака»
-    bgNotes: true, // большие ноты на фоне
-    bgVinyl: true, // пластинка и частицы
+    bgNotes2: false, // большие ноты на фоне (с 1.9.9 выключены по умолчанию)
+    bgVinyl2: false, // пластинка
     splash: true, // заставка при запуске
     visualizer: true, // спектр в Now Playing
     speed: 1, // скорость воспроизведения
     transition: 0, // переход между треками: 0 — обычный, -1 — без пауз, N — плавный переход N секунд
     eq: 'flat', // эквалайзер: готовая настройка или 'custom'
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
-    bgParticles: true, // поднимающиеся частицы
+    bgDust: false, // звёздная пыль
     bgCover: true, // свечение от обложки играющего трека
     stripSource: true, // убирать приписки сайтов из названий («(Sefon.Pro)» и т.п.)
     autoCovers: true, // искать обложки онлайн для песен и альбомов без обложки
@@ -6348,7 +6382,7 @@ const state_js_1 = require("./state.js");
 function applyTheme(t = state_js_1.state.theme) {
     state_js_1.state.theme = t === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = state_js_1.state.theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', state_js_1.state.theme === 'dark' ? '#111113' : '#F5F5F7');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', state_js_1.state.theme === 'dark' ? '#09090B' : '#F5F5F7');
     (0, state_js_1.save)();
     (0, state_js_1.emit)('theme');
 }
@@ -6363,9 +6397,9 @@ function applySettings() {
     r.dataset.corners = s.corners;
     r.dataset.density = s.density;
     r.classList.toggle('no-bg-anim', !s.bgAnim);
-    r.classList.toggle('no-bg-notes', !s.bgNotes);
-    r.classList.toggle('no-bg-vinyl', !s.bgVinyl);
-    r.classList.toggle('no-bg-particles', !s.bgParticles);
+    r.classList.toggle('no-bg-notes', !s.bgNotes2);
+    r.classList.toggle('no-bg-vinyl', !s.bgVinyl2);
+    r.classList.toggle('no-bg-particles', !s.bgDust);
     r.classList.toggle('no-bg-cover', !s.bgCover);
     r.classList.toggle('no-anim', !s.anim);
 }
@@ -6687,6 +6721,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6698,7 +6765,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -7354,11 +7421,11 @@ function settingsView() {
 
       <h2 class="sg-title">Фон</h2>
       <div class="settings">
-        ${srow('Живой градиент', 'Цвета обложки играющей песни медленно перетекают по фону.', sw('bgAnim', s.bgAnim))}
-        ${srow('Большие ноты', 'Полупрозрачные ноты на заднем плане.', sw('bgNotes', s.bgNotes))}
-        ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl', s.bgVinyl))}
-        ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgParticles', s.bgParticles))}
-        ${srow('Цвета из обложки', 'Фон и искры окрашиваются в цвета текущего трека.', sw('bgCover', s.bgCover))}
+        ${srow('Фон от обложки', 'Тёмная тема: чёрный фон и мягкое свечение в цвет обложки. Светлая тема: свет от самой обложки.', sw('bgCover', s.bgCover))}
+        ${srow('Движение фона', 'Свет от обложки медленно плывёт.', sw('bgAnim', s.bgAnim))}
+        ${srow('Большие ноты', 'Полупрозрачные ноты на заднем плане.', sw('bgNotes2', s.bgNotes2))}
+        ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl2', s.bgVinyl2))}
+        ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgDust', s.bgDust))}
       </div>
 
       <h2 class="sg-title">Воспроизведение</h2>

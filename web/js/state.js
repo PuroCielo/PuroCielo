@@ -11,15 +11,15 @@ export const DEFAULT_SETTINGS = {
     lyTranslate: false, // перевод текста песни под строками
     autoLyrics: true, // искать тексты онлайн, если их нет в файле
     bgAnim: true, // плавающие «облака»
-    bgNotes: true, // большие ноты на фоне
-    bgVinyl: true, // пластинка и частицы
+    bgNotes2: false, // большие ноты на фоне (с 1.9.9 выключены по умолчанию)
+    bgVinyl2: false, // пластинка
     splash: true, // заставка при запуске
     visualizer: true, // спектр в Now Playing
     speed: 1, // скорость воспроизведения
     transition: 0, // переход между треками: 0 — обычный, -1 — без пауз, N — плавный переход N секунд
     eq: 'flat', // эквалайзер: готовая настройка или 'custom'
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
-    bgParticles: true, // поднимающиеся частицы
+    bgDust: false, // звёздная пыль
     bgCover: true, // свечение от обложки играющего трека
     stripSource: true, // убирать приписки сайтов из названий («(Sefon.Pro)» и т.п.)
     autoCovers: true, // искать обложки онлайн для песен и альбомов без обложки
