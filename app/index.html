@@ -2716,6 +2716,197 @@ exports.firebaseConfig = {
 };
 
 };
+defs["genius.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.pickGenius = pickGenius;
+exports.geniusEmbed = geniusEmbed;
+exports.embedText = embedText;
+exports.cleanup = cleanup;
+exports.geniusLyrics = geniusLyrics;
+const lyrics_web_js_1 = require("./lyrics-web.js");
+// Genius — главный источник обычного (не синхронного) текста.
+// Сайт Genius не разрешает браузеру читать свои страницы (CORS), поэтому идём несколькими путями по очереди:
+//  1) «посредник», если он есть: приложение для Windows/Android или свой Cloudflare Worker;
+//  2) прямой запрос (вдруг разрешён);
+//  3) публичные CORS-посредники (allorigins, corsproxy) — только для поиска и страницы песни;
+//  4) сам текст — через официальный виджет Genius (embed.js): он подключается как <script> и CORS не нужен.
+const PUBLIC = [
+    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+    u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+];
+async function get(u, ms = 9000) {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
+    try {
+        const r = await fetch(u, { signal: ctl.signal });
+        return r.ok ? await r.text() : '';
+    }
+    catch {
+        return '';
+    }
+    finally {
+        clearTimeout(tm);
+    }
+}
+// по очереди: посредник приложения → напрямую → публичные посредники; запоминаем, какой путь сработал
+let goodRoute = -1;
+async function fetchAny(u, fetchText, test) {
+    const routes = [
+        fetchText ? () => fetchText(u) : null,
+        () => get(u),
+        ...PUBLIC.map(p => () => get(p(u))),
+    ];
+    const order = routes.map((_, i) => i);
+    if (goodRoute >= 0)
+        order.sort((a, b) => (b === goodRoute) - (a === goodRoute));
+    for (const i of order) {
+        if (!routes[i])
+            continue;
+        let txt = '';
+        try {
+            txt = await routes[i]();
+        }
+        catch { /* следующий */ }
+        if (txt && test(txt)) {
+            goodRoute = i;
+            return txt;
+        }
+    }
+    return '';
+}
+const NOT_SONG = /\b(translations?|перевод|переклад|romanized|türkçe|traducción|tradução|übersetzung)\b/i;
+// выбор песни из ответа поиска Genius: то же название и тот же артист; без переводов и пересказов
+function pickGenius(json, artists, title, skip = []) {
+    const sections = (json && json.response && json.response.sections) || [];
+    const hits = [].concat(...sections.map(s => s.hits || [])).filter(h => h && h.result && (h.type === 'song' || h.index === 'song'));
+    const ok = h => {
+        const r = h.result, by = `${r.artist_names || ''} ${r.primary_artist ? r.primary_artist.name : ''}`;
+        if (skip.includes('genius:' + r.id))
+            return false;
+        if (NOT_SONG.test(by) || NOT_SONG.test(r.title || ''))
+            return false;
+        const t = r.title || r.title_with_featured || '';
+        return ((0, lyrics_web_js_1.titleMatch)(t, title) || (0, lyrics_web_js_1.titleMatch)(String(t).replace(/\s*[([].*?[)\]]/g, ''), title)) && (!artists.length || (0, lyrics_web_js_1.artistMatch)(by, artists));
+    };
+    const h = hits.find(ok);
+    return h ? { id: h.result.id, url: h.result.url } : null;
+}
+// Виджет Genius: https://genius.com/songs/<id>/embed.js вызывает document.write(<html с текстом>).
+// Подменяем document.write на время загрузки и забираем этот html. Загружаем по одному.
+let embedQueue = Promise.resolve();
+function geniusEmbed(id, ms = 9000) {
+    const job = () => new Promise(res => {
+        const doc = document, orig = doc.write, sc = doc.createElement('script');
+        let html = '', done = false;
+        // на случай, если виджет вставляет текст рядом со своей ссылкой, а не через document.write
+        const box = doc.createElement('div');
+        box.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+        box.setAttribute('aria-hidden', 'true');
+        box.innerHTML = `<div id="rg_embed_link_${Number(id) || 0}" class="rg_embed_link" data-song-id="${Number(id) || 0}"></div>`;
+        doc.body.appendChild(box);
+        const end = () => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(tm);
+            doc.write = orig;
+            if (!html) {
+                const body = doc.querySelector('.rg_embed_body');
+                if (body)
+                    html = `<div class='rg_embed_body'>${body.innerHTML}</div><div class='rg_embed_footer'></div>`;
+            }
+            doc.querySelectorAll('.rg_embed, .rg_embed_body').forEach(e => { if (!e.closest('#lyrics, .np'))
+                e.remove(); });
+            box.remove();
+            sc.remove();
+            res(html);
+        };
+        const tm = setTimeout(end, ms);
+        doc.write = (...a) => { html += a.join(''); };
+        sc.onload = () => setTimeout(end, 150);
+        sc.onerror = end;
+        sc.src = `https://genius.com/songs/${encodeURIComponent(id)}/embed.js`;
+        doc.head.appendChild(sc);
+    });
+    const p = embedQueue.then(job, job);
+    embedQueue = p.catch(() => { });
+    return p.then(embedText);
+}
+// html виджета → текст песни
+function embedText(html) {
+    html = String(html || '');
+    if (!html)
+        return '';
+    const m = /<div[^>]*class=['"][^'"]*rg_embed_body[^'"]*['"][^>]*>([\s\S]*?)<\/div>\s*(?:<div[^>]*class=['"][^'"]*rg_embed_footer|$)/i.exec(html);
+    let body = m ? m[1] : '';
+    if (!body) {
+        const s = html.indexOf('rg_embed_body');
+        if (s < 0)
+            return '';
+        body = html.slice(html.indexOf('>', s) + 1);
+        const f = body.search(/<div[^>]*rg_embed_footer|<div[^>]*rg_embed_header/i);
+        if (f > 0)
+            body = body.slice(0, f);
+    }
+    return cleanup((0, lyrics_web_js_1.htmlToText)(body));
+}
+// убираем шапку «N Contributors … Lyrics», «Embed», «You might also like» и лишние пустые строки
+function cleanup(t) {
+    return String(t || '')
+        .replace(/^[\s\S]{0,300}?\bLyrics\b[^\n]*\n(?=\s*\[)/, '')
+        .replace(/^\d+\s*Contributors?[^\n]*\n/i, '')
+        .replace(/\n?You might also like\n?/gi, '\n')
+        .replace(/\d*\s*Embed\s*$/i, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+const enough = t => !!t && t.split('\n').filter(l => l.trim()).length >= 4;
+const looksJson = s => /^\s*\{/.test(s) && s.includes('"response"');
+// cands: [{ artist, title }] — варианты из тегов/имени файла; artists — все артисты трека
+async function geniusLyrics(cands, artists, fetchText, skip = []) {
+    const seen = new Set();
+    const queries = [];
+    for (const c of cands) {
+        for (const q of [`${c.artist} ${c.title}`.trim(), `${c.title} ${c.artist}`.trim(), c.title])
+            if (q && !seen.has(q.toLowerCase())) {
+                seen.add(q.toLowerCase());
+                queries.push({ q, c });
+            }
+    }
+    for (const { q, c } of queries.slice(0, 5)) {
+        const arts = c.artist ? [...new Set([c.artist, ...artists])] : artists;
+        if (!arts.length && q === c.title)
+            continue; // без артиста по одному названию — слишком легко ошибиться
+        let hit = null;
+        for (const ep of ['search/song', 'search/multi']) {
+            const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson);
+            if (!raw)
+                break; // поиск недоступен ни одним путём
+            try {
+                hit = pickGenius(JSON.parse(raw), arts, c.title, skip);
+            }
+            catch { /* битый ответ */ }
+            if (hit)
+                break;
+        }
+        if (!hit)
+            continue;
+        // текст: виджет (без CORS) → страница песни
+        let text = '';
+        try {
+            text = await geniusEmbed(hit.id);
+        }
+        catch { /* дальше */ }
+        if (!enough(text) && hit.url) {
+            const page = await fetchAny(hit.url, fetchText, s => s.includes('data-lyrics-container'));
+            text = cleanup((0, lyrics_web_js_1.extractGenius)(page));
+        }
+        if (enough(text))
+            return { text, ref: 'genius:' + hit.id };
+    }
+    return null;
+}
+
+};
 defs["i18n.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EN_PLURAL = exports.isEn = exports.getLang = void 0;
@@ -3539,6 +3730,7 @@ const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
 const native_js_1 = require("./native.js");
+const genius_js_1 = require("./genius.js");
 // Автоматический поиск текста песни.
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
 // Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
@@ -3589,7 +3781,7 @@ function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v4|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v5|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -3676,31 +3868,53 @@ async function lookup(t, bad = []) {
     }
     return pickBest(found, dur);
 }
-// Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
-async function extraSources(t) {
-    const c0 = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) }, artist = c0.artist, title = c0.title;
-    if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.genius) { // приложение для Windows: Genius напрямую
+// Кто скачает страницу сайта, который браузеру читать нельзя: Windows-приложение, APK или свой Worker
+function siteFetcher() {
+    const proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText)
+        return u => window.PuroDesktop.fetchText(u);
+    if (native_js_1.isNative)
+        return u => (0, native_js_1.nativeFetchText)(u);
+    if (proxy)
+        return async (u) => {
+            try {
+                const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
+                return r.ok ? await r.text() : '';
+            }
+            catch {
+                return '';
+            }
+        };
+    return null;
+}
+// Genius — основной источник обычного текста
+async function fromGenius(t, skip) {
+    if (typeof window === 'undefined')
+        return null;
+    const cands = candidates(t).filter(c => c.title);
+    if (!cands.length)
+        return null;
+    try {
+        const g = await (0, genius_js_1.geniusLyrics)(cands, realArtists(t), siteFetcher(), skip);
+        if (g)
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref };
+    }
+    catch { /* дальше */ }
+    if (window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
         try {
-            const txt = await window.PuroDesktop.genius(artist, title);
+            const c = cands[0], txt = await window.PuroDesktop.genius(c.artist, c.title);
             if (txt)
                 return { type: 'plain', text: txt, source: 'genius' };
         }
         catch { /* дальше */ }
     }
+    return null;
+}
+// Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
+async function extraSources(t) {
+    const c0 = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) }, artist = c0.artist, title = c0.title;
     const proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
-    const desktop = typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText;
-    const fetchText = desktop ? u => window.PuroDesktop.fetchText(u)
-        : native_js_1.isNative ? u => (0, native_js_1.nativeFetchText)(u)
-            : proxy ? async (u) => {
-                try {
-                    const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
-                    return r.ok ? await r.text() : '';
-                }
-                catch {
-                    return '';
-                }
-            }
-                : null;
+    const fetchText = siteFetcher();
     if (proxy) {
         try {
             const r = await getJSON(`${proxy}/lyrics?${new URLSearchParams({ artist, title, duration: String(Math.round(t.duration || 0)) })}`, 12000);
@@ -3719,7 +3933,7 @@ async function extraSources(t) {
     }
     if (fetchText) { // Genius, Lyrics.com, AZLyrics, Text-pesni, Vse-pesni
         try {
-            const w = await (0, lyrics_web_js_1.webLyrics)(artist, title, fetchText, { skip: desktop && window.PuroDesktop.genius ? ['genius'] : [] });
+            const w = await (0, lyrics_web_js_1.webLyrics)(artist, title, fetchText, { skip: ['genius'] });
             if (w)
                 return { type: 'plain', text: w.text, source: w.source };
         }
@@ -3840,7 +4054,13 @@ function ensureLyrics(t) {
                 return false;
             }
             const d = await lookup(t, bad.ids || []);
-            const ly = d && !d.instrumental ? toLyrics(d) : null;
+            let ly = d && !d.instrumental ? toLyrics(d) : null;
+            // с метками времени (LRCLIB) — лучше всего; иначе обычный текст сначала ищем на Genius
+            if ((!ly || ly.type !== 'synced') && !(d && d.instrumental && !ly)) {
+                const g = await fromGenius(t, bad.ids || []);
+                if (g)
+                    ly = g;
+            }
             if (ly) {
                 t.lyrics = ly;
                 t._ly = undefined;

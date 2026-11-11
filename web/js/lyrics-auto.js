@@ -5,6 +5,7 @@ import { norm } from './util.js';
 import { UNKNOWN, splitArtists } from './artists.js';
 import { artistMatch, norm as norm_LyricsWeb, titleMatch, webLyrics } from './lyrics-web.js';
 import { isNative, nativeFetchText } from './native.js';
+import { geniusLyrics } from './genius.js';
 
 // Автоматический поиск текста песни.
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
@@ -56,7 +57,7 @@ export function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v4|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v5|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -141,29 +142,51 @@ async function lookup(t, bad = []) {
     }
     return pickBest(found, dur);
 }
-// Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
-async function extraSources(t) {
-    const c0 = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) }, artist = c0.artist, title = c0.title;
-    if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.genius) { // приложение для Windows: Genius напрямую
+// Кто скачает страницу сайта, который браузеру читать нельзя: Windows-приложение, APK или свой Worker
+function siteFetcher() {
+    const proxy = (state.settings.lyricsProxy || '').replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText)
+        return u => window.PuroDesktop.fetchText(u);
+    if (isNative)
+        return u => nativeFetchText(u);
+    if (proxy)
+        return async (u) => { try {
+            const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
+            return r.ok ? await r.text() : '';
+        }
+        catch {
+            return '';
+        } };
+    return null;
+}
+// Genius — основной источник обычного текста
+async function fromGenius(t, skip) {
+    if (typeof window === 'undefined')
+        return null;
+    const cands = candidates(t).filter(c => c.title);
+    if (!cands.length)
+        return null;
+    try {
+        const g = await geniusLyrics(cands, realArtists(t), siteFetcher(), skip);
+        if (g)
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref };
+    }
+    catch { /* дальше */ }
+    if (window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
         try {
-            const txt = await window.PuroDesktop.genius(artist, title);
+            const c = cands[0], txt = await window.PuroDesktop.genius(c.artist, c.title);
             if (txt)
                 return { type: 'plain', text: txt, source: 'genius' };
         }
         catch { /* дальше */ }
     }
+    return null;
+}
+// Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
+async function extraSources(t) {
+    const c0 = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) }, artist = c0.artist, title = c0.title;
     const proxy = (state.settings.lyricsProxy || '').replace(/\/+$/, '');
-    const desktop = typeof window !== 'undefined' && window.PuroDesktop && window.PuroDesktop.fetchText;
-    const fetchText = desktop ? u => window.PuroDesktop.fetchText(u)
-        : isNative ? u => nativeFetchText(u)
-            : proxy ? async (u) => { try {
-                const r = await fetch(`${proxy}/fetch?url=${encodeURIComponent(u)}`);
-                return r.ok ? await r.text() : '';
-            }
-            catch {
-                return '';
-            } }
-                : null;
+    const fetchText = siteFetcher();
     if (proxy) {
         try {
             const r = await getJSON(`${proxy}/lyrics?${new URLSearchParams({ artist, title, duration: String(Math.round(t.duration || 0)) })}`, 12000);
@@ -182,7 +205,7 @@ async function extraSources(t) {
     }
     if (fetchText) { // Genius, Lyrics.com, AZLyrics, Text-pesni, Vse-pesni
         try {
-            const w = await webLyrics(artist, title, fetchText, { skip: desktop && window.PuroDesktop.genius ? ['genius'] : [] });
+            const w = await webLyrics(artist, title, fetchText, { skip: ['genius'] });
             if (w)
                 return { type: 'plain', text: w.text, source: w.source };
         }
@@ -300,7 +323,13 @@ export function ensureLyrics(t) {
                 return false;
             }
             const d = await lookup(t, bad.ids || []);
-            const ly = d && !d.instrumental ? toLyrics(d) : null;
+            let ly = d && !d.instrumental ? toLyrics(d) : null;
+            // с метками времени (LRCLIB) — лучше всего; иначе обычный текст сначала ищем на Genius
+            if ((!ly || ly.type !== 'synced') && !(d && d.instrumental && !ly)) {
+                const g = await fromGenius(t, bad.ids || []);
+                if (g)
+                    ly = g;
+            }
             if (ly) {
                 t.lyrics = ly;
                 t._ly = undefined;
