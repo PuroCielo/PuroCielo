@@ -73,6 +73,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -239,7 +272,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1263,39 +1296,196 @@ exports.artistKey = artistKey;
 };
 defs["bgfx.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.paletteFrom = paletteFrom;
 exports.initBgFx = initBgFx;
 exports.runSplash = runSplash;
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const icons_js_1 = require("./icons.js");
-// Дополнительные эффекты фона: пластинка (крутится, пока играет), поднимающиеся частицы,
-// мягкое свечение от обложки текущего трека, и заставка при запуске.
+// Фон: живой градиент из цветов обложки, мерцающая «звёздная пыль» (оживает в такт басам),
+// пластинка, свечение от обложки, лёгкое зерно плёнки — и заставка при запуске.
 const $ = s => document.querySelector(s);
+const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
+// ---------- цвета обложки ----------
+function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn)
+        return [0, 0, l];
+    const d = mx - mn, s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+}
+const hsl = (h, s, l) => `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+// 4 цвета: самые «весомые» оттенки обложки, приглушённые до благородной яркости
+function paletteFrom(url) {
+    return new Promise(resolve => {
+        if (!url)
+            return resolve(null);
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = c.height = 32;
+                const x = c.getContext('2d', { willReadFrequently: true });
+                x.drawImage(img, 0, 0, 32, 32);
+                const px = x.getImageData(0, 0, 32, 32).data, bins = new Map();
+                for (let i = 0; i < px.length; i += 4) {
+                    const [h, s, l] = rgbToHsl(px[i], px[i + 1], px[i + 2]);
+                    if (l < .08 || l > .95)
+                        continue;
+                    const k = s < .12 ? 'grey' : Math.round(h / 24) % 15;
+                    const w = s < .12 ? .25 : .4 + s;
+                    const b = bins.get(k) || { w: 0, h: 0, s: 0, l: 0, n: 0 };
+                    b.w += w;
+                    b.h += h;
+                    b.s += s;
+                    b.l += l;
+                    b.n++;
+                    bins.set(k, b);
+                }
+                const top = [...bins.values()].sort((a, b) => b.w - a.w).slice(0, 4).map(b => [b.h / b.n, b.s / b.n, b.l / b.n]);
+                if (!top.length)
+                    return resolve(null);
+                while (top.length < 4)
+                    top.push([(top[0][0] + 40 * top.length) % 360, top[0][1] * .8, top[0][2]]);
+                resolve(top.map(([h, s, l], i) => hsl(h, Math.min(.85, s * 1.15 + .05), Math.min(.6, Math.max(.28, l * (i === 3 ? .7 : 1))))));
+            }
+            catch {
+                resolve(null);
+            }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+    });
+}
+// ---------- звёздная пыль (canvas) ----------
+function initDust(cv) {
+    const ctx = cv.getContext('2d');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0;
+    // мягкая светящаяся точка — рисуется один раз, дальше только копируется
+    const sprite = document.createElement('canvas');
+    const paintSprite = () => {
+        sprite.width = sprite.height = 64;
+        const g = sprite.getContext('2d'), rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        const [r, gg, b] = tint;
+        rg.addColorStop(0, `rgba(255,255,255,1)`);
+        rg.addColorStop(.18, `rgba(${r},${gg},${b},.85)`);
+        rg.addColorStop(.45, `rgba(${r},${gg},${b},.18)`);
+        rg.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+        g.fillStyle = rg;
+        g.fillRect(0, 0, 64, 64);
+    };
+    const make = (y) => ({ x: Math.random() * W, y: y ?? Math.random() * H, z: .25 + Math.random() * .75, ph: Math.random() * Math.PI * 2, sp: .4 + Math.random() * 1.4, dx: (Math.random() - .5) * .15 });
+    const resize = () => {
+        dpr = Math.min(1.5, devicePixelRatio || 1);
+        W = cv.width = Math.round(innerWidth * dpr);
+        H = cv.height = Math.round(innerHeight * dpr);
+        const n = Math.round(Math.min(110, Math.max(40, (innerWidth * innerHeight) / 16000)));
+        parts = Array.from({ length: n }, () => make());
+    };
+    const level = () => {
+        const an = (0, player_js_1.getAnalyser)();
+        if (!an || player_js_1.audio.paused)
+            return 0;
+        const d = new Uint8Array(an.frequencyBinCount);
+        an.getByteFrequencyData(d);
+        let s = 0;
+        for (let i = 1; i < 10; i++)
+            s += d[i];
+        return Math.max(0, s / 9 / 255 - .35) / .65; // басы, 0…1
+    };
+    const frame = (t) => {
+        raf = requestAnimationFrame(frame);
+        if (document.hidden || document.documentElement.classList.contains('no-bg-particles'))
+            return;
+        if (t - last < 28)
+            return; // ~35 кадров в секунду хватает
+        const dt = Math.min(80, t - last) / 16.7;
+        last = t;
+        const playing = !player_js_1.audio.paused && !player_js_1.audio.ended;
+        energy += ((playing ? level() : 0) - energy) * .18;
+        const light = document.documentElement.dataset.theme === 'light';
+        ctx.clearRect(0, 0, W, H);
+        ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
+        const speed = (playing ? 1 : .35) * (1 + energy * 2.2) * dpr;
+        for (const p of parts) {
+            p.y -= p.sp * p.z * .32 * speed * dt;
+            p.x += (p.dx + Math.sin(t / 4000 + p.ph) * .12) * p.z * dpr * dt;
+            if (p.y < -20 * dpr) {
+                Object.assign(p, make(H + 20 * dpr));
+            }
+            const tw = .55 + .45 * Math.sin(t / (900 + p.sp * 500) + p.ph);
+            const a = (light ? .22 : .5) * p.z * tw * (playing ? 1 : .6) + energy * .35 * p.z;
+            const size = (2.2 + p.z * 5.5) * (1 + energy * .9 * p.z) * dpr;
+            ctx.globalAlpha = Math.min(1, a);
+            ctx.drawImage(sprite, p.x - size, p.y - size, size * 2, size * 2);
+        }
+        ctx.globalAlpha = 1;
+    };
+    paintSprite();
+    resize();
+    addEventListener('resize', resize);
+    if (!reduce)
+        raf = requestAnimationFrame(frame);
+    else
+        frame(1000);
+    return {
+        setTint(css) {
+            const m = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(css || '');
+            if (!m) {
+                tint = [255, 236, 200];
+            }
+            else {
+                const h = +m[1] / 360, s = Math.min(.55, +m[2] / 100), l = .82;
+                const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+                tint = [f(0), f(8), f(4)];
+            }
+            paintSprite();
+        },
+    };
+}
 function initBgFx() {
-    const vinyl = $('#bg-vinyl'), parts = $('#bg-parts'), cover = $('#bg-cover');
+    const vinyl = $('#bg-vinyl'), cover = $('#bg-cover'), fx = $('.bg-fx'), dustCv = $('#bg-dust');
     if (vinyl)
         vinyl.innerHTML = `<div class="v-disc"><i class="v-groove g1"></i><i class="v-groove g2"></i><i class="v-groove g3"></i><div class="v-label">${(0, icons_js_1.icon)('tower')}</div></div><div class="v-arm"></div>`;
-    if (parts) {
-        let h = '';
-        for (let i = 0; i < 16; i++) {
-            const x = (i * 6.3 + Math.random() * 4) % 100, d = 14 + Math.random() * 18, dl = -Math.random() * d, s = 6 + Math.random() * 14;
-            h += `<i style="left:${x.toFixed(1)}%;width:${s.toFixed(0)}px;height:${s.toFixed(0)}px;animation-duration:${d.toFixed(1)}s;animation-delay:${dl.toFixed(1)}s"></i>`;
-        }
-        parts.innerHTML = h;
-    }
+    const dust = dustCv ? initDust(dustCv) : null;
     const sync = () => document.documentElement.classList.toggle('is-playing', !player_js_1.audio.paused && !player_js_1.audio.ended && !!(0, player_js_1.current)());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         player_js_1.audio.addEventListener(e, sync);
-    const paintCover = () => {
-        const t = (0, player_js_1.current)();
+    let lastUrl = null;
+    const setPalette = cols => {
+        const c = cols || GRAPHITE;
+        c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
+        dust?.setTint(cols ? cols[0] : null);
+    };
+    const paintCover = async () => {
+        const t = (0, player_js_1.current)(), url = state_js_1.state.settings.bgCover !== false ? t?.cover || null : null;
         if (cover) {
             cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
             cover.classList.toggle('on', !!t?.cover);
         }
         sync();
+        if (url === lastUrl)
+            return;
+        lastUrl = url;
+        const cols = await paletteFrom(url);
+        if (url === lastUrl)
+            setPalette(cols);
     };
+    setPalette(null);
     (0, state_js_1.on)('track', paintCover);
     (0, state_js_1.on)('state', sync);
+    (0, state_js_1.on)('settings', k => {
+        if (k === 'bgCover' || k === 'all') {
+            lastUrl = undefined;
+            paintCover();
+        }
+    });
 }
 const greet = () => { const h = new Date().getHours(); return (h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер') + ', ' + state_js_1.state.profile.name; };
 function runSplash() {
@@ -1488,7 +1678,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -5958,6 +6148,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -5968,7 +6191,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -6598,11 +6821,11 @@ function settingsView() {
 
       <h2 class="sg-title">Фон</h2>
       <div class="settings">
-        ${srow('Плавающие «облака»', 'Мягкое свечение, медленно двигающееся по фону.', sw('bgAnim', s.bgAnim))}
+        ${srow('Живой градиент', 'Цвета обложки играющей песни медленно перетекают по фону.', sw('bgAnim', s.bgAnim))}
         ${srow('Большие ноты', 'Полупрозрачные ноты на заднем плане.', sw('bgNotes', s.bgNotes))}
         ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl', s.bgVinyl))}
-        ${srow('Частицы', 'Лёгкие пузырьки медленно поднимаются вверх.', sw('bgParticles', s.bgParticles))}
-        ${srow('Свечение от обложки', 'Фон подстраивается под текущий трек.', sw('bgCover', s.bgCover))}
+        ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgParticles', s.bgParticles))}
+        ${srow('Цвета из обложки', 'Фон и искры окрашиваются в цвета текущего трека.', sw('bgCover', s.bgCover))}
       </div>
 
       <h2 class="sg-title">Воспроизведение</h2>

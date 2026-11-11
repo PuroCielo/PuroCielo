@@ -806,6 +806,30 @@ select.input { appearance: auto; }
 /* пустая обложка плейлиста в боковой панели не растягивается на всю ширину */
 .cov.mini-cov { width: 30px; height: 30px; display: grid; }
 .pl-pick .cov.mini-cov { width: 48px; height: 48px; }
+
+/* ===== v1.10: фон «подороже» — живой градиент из обложки, звёздная пыль, зерно плёнки ===== */
+@property --c1 { syntax: '<color>'; inherits: true; initial-value: #5b5d66; }
+@property --c2 { syntax: '<color>'; inherits: true; initial-value: #3d3f47; }
+@property --c3 { syntax: '<color>'; inherits: true; initial-value: #7a7c86; }
+@property --c4 { syntax: '<color>'; inherits: true; initial-value: #2c2d33; }
+.bg-fx { transition: --c1 2.6s ease, --c2 2.6s ease, --c3 2.6s ease, --c4 2.6s ease; }
+.bg-fx .blob { filter: blur(80px) saturate(1.15); opacity: .42; mix-blend-mode: normal; }
+.bg-fx .b1 { background: radial-gradient(circle at 50% 50%, var(--c1) 0%, transparent 66%); }
+.bg-fx .b2 { background: radial-gradient(circle at 50% 50%, var(--c2) 0%, transparent 66%); }
+.bg-fx .b3 { background: radial-gradient(circle at 50% 50%, var(--c3) 0%, transparent 66%); }
+.bg-fx .b4 { width: 44vmax; height: 44vmax; right: 6vw; bottom: -18vmax; background: radial-gradient(circle at 50% 50%, var(--c4) 0%, transparent 66%); animation: drift4 30s ease-in-out infinite alternate; }
+@keyframes drift4 { to { transform: translate3d(-18vw, -16vh, 0) scale(1.18) rotate(20deg); } }
+:root.is-playing .bg-fx .blob { opacity: .55; }
+:root[data-theme="light"] .bg-fx .blob { opacity: .3; }
+.bg-cover.on { opacity: .12; } :root[data-theme="light"] .bg-cover.on { opacity: .16; }
+.bg-dust { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bg-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, .42) 100%); }
+:root[data-theme="light"] .bg-vignette { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 60%, rgba(0, 0, 0, .06) 100%); }
+.bg-grain { position: absolute; inset: 0; opacity: .07; mix-blend-mode: overlay; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+:root[data-theme="light"] .bg-grain { opacity: .05; mix-blend-mode: multiply; }
+:root.no-bg-anim .bg-fx .blob, :root.no-bg-anim .bg-grain, :root.no-bg-particles .bg-dust { display: none; }
+.bg-parts { display: none; }
+@media (prefers-reduced-motion: reduce) { .bg-fx .b4 { animation: none; } }
 </style>
 </head>
 <body>
@@ -813,8 +837,9 @@ select.input { appearance: auto; }
 <div class="bg-fx" aria-hidden="true">
   <div class="bg-cover" id="bg-cover"></div>
   <div class="bg-vinyl" id="bg-vinyl"></div>
-  <div class="bg-parts" id="bg-parts"></div>
-  <i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
+  <i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i>
+  <canvas class="bg-dust" id="bg-dust"></canvas>
+  <i class="bg-vignette"></i><i class="bg-grain"></i>
   <svg class="bg-note n1" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg>
   <svg class="bg-note n2" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg>
   <svg class="bg-note n3" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg>
@@ -999,6 +1024,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1165,7 +1223,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2189,39 +2247,196 @@ exports.artistKey = artistKey;
 };
 defs["bgfx.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.paletteFrom = paletteFrom;
 exports.initBgFx = initBgFx;
 exports.runSplash = runSplash;
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const icons_js_1 = require("./icons.js");
-// Дополнительные эффекты фона: пластинка (крутится, пока играет), поднимающиеся частицы,
-// мягкое свечение от обложки текущего трека, и заставка при запуске.
+// Фон: живой градиент из цветов обложки, мерцающая «звёздная пыль» (оживает в такт басам),
+// пластинка, свечение от обложки, лёгкое зерно плёнки — и заставка при запуске.
 const $ = s => document.querySelector(s);
+const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
+// ---------- цвета обложки ----------
+function rgbToHsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn)
+        return [0, 0, l];
+    const d = mx - mn, s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+}
+const hsl = (h, s, l) => `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+// 4 цвета: самые «весомые» оттенки обложки, приглушённые до благородной яркости
+function paletteFrom(url) {
+    return new Promise(resolve => {
+        if (!url)
+            return resolve(null);
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = c.height = 32;
+                const x = c.getContext('2d', { willReadFrequently: true });
+                x.drawImage(img, 0, 0, 32, 32);
+                const px = x.getImageData(0, 0, 32, 32).data, bins = new Map();
+                for (let i = 0; i < px.length; i += 4) {
+                    const [h, s, l] = rgbToHsl(px[i], px[i + 1], px[i + 2]);
+                    if (l < .08 || l > .95)
+                        continue;
+                    const k = s < .12 ? 'grey' : Math.round(h / 24) % 15;
+                    const w = s < .12 ? .25 : .4 + s;
+                    const b = bins.get(k) || { w: 0, h: 0, s: 0, l: 0, n: 0 };
+                    b.w += w;
+                    b.h += h;
+                    b.s += s;
+                    b.l += l;
+                    b.n++;
+                    bins.set(k, b);
+                }
+                const top = [...bins.values()].sort((a, b) => b.w - a.w).slice(0, 4).map(b => [b.h / b.n, b.s / b.n, b.l / b.n]);
+                if (!top.length)
+                    return resolve(null);
+                while (top.length < 4)
+                    top.push([(top[0][0] + 40 * top.length) % 360, top[0][1] * .8, top[0][2]]);
+                resolve(top.map(([h, s, l], i) => hsl(h, Math.min(.85, s * 1.15 + .05), Math.min(.6, Math.max(.28, l * (i === 3 ? .7 : 1))))));
+            }
+            catch {
+                resolve(null);
+            }
+        };
+        img.onerror = () => resolve(null);
+        img.src = url;
+    });
+}
+// ---------- звёздная пыль (canvas) ----------
+function initDust(cv) {
+    const ctx = cv.getContext('2d');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0;
+    // мягкая светящаяся точка — рисуется один раз, дальше только копируется
+    const sprite = document.createElement('canvas');
+    const paintSprite = () => {
+        sprite.width = sprite.height = 64;
+        const g = sprite.getContext('2d'), rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        const [r, gg, b] = tint;
+        rg.addColorStop(0, `rgba(255,255,255,1)`);
+        rg.addColorStop(.18, `rgba(${r},${gg},${b},.85)`);
+        rg.addColorStop(.45, `rgba(${r},${gg},${b},.18)`);
+        rg.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+        g.fillStyle = rg;
+        g.fillRect(0, 0, 64, 64);
+    };
+    const make = (y) => ({ x: Math.random() * W, y: y ?? Math.random() * H, z: .25 + Math.random() * .75, ph: Math.random() * Math.PI * 2, sp: .4 + Math.random() * 1.4, dx: (Math.random() - .5) * .15 });
+    const resize = () => {
+        dpr = Math.min(1.5, devicePixelRatio || 1);
+        W = cv.width = Math.round(innerWidth * dpr);
+        H = cv.height = Math.round(innerHeight * dpr);
+        const n = Math.round(Math.min(110, Math.max(40, (innerWidth * innerHeight) / 16000)));
+        parts = Array.from({ length: n }, () => make());
+    };
+    const level = () => {
+        const an = (0, player_js_1.getAnalyser)();
+        if (!an || player_js_1.audio.paused)
+            return 0;
+        const d = new Uint8Array(an.frequencyBinCount);
+        an.getByteFrequencyData(d);
+        let s = 0;
+        for (let i = 1; i < 10; i++)
+            s += d[i];
+        return Math.max(0, s / 9 / 255 - .35) / .65; // басы, 0…1
+    };
+    const frame = (t) => {
+        raf = requestAnimationFrame(frame);
+        if (document.hidden || document.documentElement.classList.contains('no-bg-particles'))
+            return;
+        if (t - last < 28)
+            return; // ~35 кадров в секунду хватает
+        const dt = Math.min(80, t - last) / 16.7;
+        last = t;
+        const playing = !player_js_1.audio.paused && !player_js_1.audio.ended;
+        energy += ((playing ? level() : 0) - energy) * .18;
+        const light = document.documentElement.dataset.theme === 'light';
+        ctx.clearRect(0, 0, W, H);
+        ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
+        const speed = (playing ? 1 : .35) * (1 + energy * 2.2) * dpr;
+        for (const p of parts) {
+            p.y -= p.sp * p.z * .32 * speed * dt;
+            p.x += (p.dx + Math.sin(t / 4000 + p.ph) * .12) * p.z * dpr * dt;
+            if (p.y < -20 * dpr) {
+                Object.assign(p, make(H + 20 * dpr));
+            }
+            const tw = .55 + .45 * Math.sin(t / (900 + p.sp * 500) + p.ph);
+            const a = (light ? .22 : .5) * p.z * tw * (playing ? 1 : .6) + energy * .35 * p.z;
+            const size = (2.2 + p.z * 5.5) * (1 + energy * .9 * p.z) * dpr;
+            ctx.globalAlpha = Math.min(1, a);
+            ctx.drawImage(sprite, p.x - size, p.y - size, size * 2, size * 2);
+        }
+        ctx.globalAlpha = 1;
+    };
+    paintSprite();
+    resize();
+    addEventListener('resize', resize);
+    if (!reduce)
+        raf = requestAnimationFrame(frame);
+    else
+        frame(1000);
+    return {
+        setTint(css) {
+            const m = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(css || '');
+            if (!m) {
+                tint = [255, 236, 200];
+            }
+            else {
+                const h = +m[1] / 360, s = Math.min(.55, +m[2] / 100), l = .82;
+                const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+                tint = [f(0), f(8), f(4)];
+            }
+            paintSprite();
+        },
+    };
+}
 function initBgFx() {
-    const vinyl = $('#bg-vinyl'), parts = $('#bg-parts'), cover = $('#bg-cover');
+    const vinyl = $('#bg-vinyl'), cover = $('#bg-cover'), fx = $('.bg-fx'), dustCv = $('#bg-dust');
     if (vinyl)
         vinyl.innerHTML = `<div class="v-disc"><i class="v-groove g1"></i><i class="v-groove g2"></i><i class="v-groove g3"></i><div class="v-label">${(0, icons_js_1.icon)('tower')}</div></div><div class="v-arm"></div>`;
-    if (parts) {
-        let h = '';
-        for (let i = 0; i < 16; i++) {
-            const x = (i * 6.3 + Math.random() * 4) % 100, d = 14 + Math.random() * 18, dl = -Math.random() * d, s = 6 + Math.random() * 14;
-            h += `<i style="left:${x.toFixed(1)}%;width:${s.toFixed(0)}px;height:${s.toFixed(0)}px;animation-duration:${d.toFixed(1)}s;animation-delay:${dl.toFixed(1)}s"></i>`;
-        }
-        parts.innerHTML = h;
-    }
+    const dust = dustCv ? initDust(dustCv) : null;
     const sync = () => document.documentElement.classList.toggle('is-playing', !player_js_1.audio.paused && !player_js_1.audio.ended && !!(0, player_js_1.current)());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         player_js_1.audio.addEventListener(e, sync);
-    const paintCover = () => {
-        const t = (0, player_js_1.current)();
+    let lastUrl = null;
+    const setPalette = cols => {
+        const c = cols || GRAPHITE;
+        c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
+        dust?.setTint(cols ? cols[0] : null);
+    };
+    const paintCover = async () => {
+        const t = (0, player_js_1.current)(), url = state_js_1.state.settings.bgCover !== false ? t?.cover || null : null;
         if (cover) {
             cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
             cover.classList.toggle('on', !!t?.cover);
         }
         sync();
+        if (url === lastUrl)
+            return;
+        lastUrl = url;
+        const cols = await paletteFrom(url);
+        if (url === lastUrl)
+            setPalette(cols);
     };
+    setPalette(null);
     (0, state_js_1.on)('track', paintCover);
     (0, state_js_1.on)('state', sync);
+    (0, state_js_1.on)('settings', k => {
+        if (k === 'bgCover' || k === 'all') {
+            lastUrl = undefined;
+            paintCover();
+        }
+    });
 }
 const greet = () => { const h = new Date().getHours(); return (h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер') + ', ' + state_js_1.state.profile.name; };
 function runSplash() {
@@ -2414,7 +2629,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -6884,6 +7099,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6894,7 +7142,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -7524,11 +7772,11 @@ function settingsView() {
 
       <h2 class="sg-title">Фон</h2>
       <div class="settings">
-        ${srow('Плавающие «облака»', 'Мягкое свечение, медленно двигающееся по фону.', sw('bgAnim', s.bgAnim))}
+        ${srow('Живой градиент', 'Цвета обложки играющей песни медленно перетекают по фону.', sw('bgAnim', s.bgAnim))}
         ${srow('Большие ноты', 'Полупрозрачные ноты на заднем плане.', sw('bgNotes', s.bgNotes))}
         ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl', s.bgVinyl))}
-        ${srow('Частицы', 'Лёгкие пузырьки медленно поднимаются вверх.', sw('bgParticles', s.bgParticles))}
-        ${srow('Свечение от обложки', 'Фон подстраивается под текущий трек.', sw('bgCover', s.bgCover))}
+        ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgParticles', s.bgParticles))}
+        ${srow('Цвета из обложки', 'Фон и искры окрашиваются в цвета текущего трека.', sw('bgCover', s.bgCover))}
       </div>
 
       <h2 class="sg-title">Воспроизведение</h2>
