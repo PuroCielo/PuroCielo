@@ -841,3 +841,34 @@ select.input { appearance: auto; }
 :root[data-theme="light"] .np-bg::after { background: linear-gradient(to bottom, rgba(255, 255, 255, .28), rgba(255, 255, 255, .5)); opacity: 1; }
 :root.no-bg-anim .bg-cover, :root.no-bg-anim .np-bg img { animation: none; }
 @media (prefers-reduced-motion: reduce) { .bg-cover, .np-bg img { animation: none !important; } }
+
+/* ---------- 1.10.0: корзина в строке песни ---------- */
+.row { grid-template-columns: 52px minmax(0, 1.6fr) minmax(0, 1fr) 34px 34px 56px 34px; }
+.row .row-del:hover { color: var(--danger); }
+@media (max-width: 899px) { .row { grid-template-columns: 48px minmax(0, 1fr) 30px 46px 30px; } .row .row-del { display: none; } }
+
+/* ---------- 1.10.0: главная — «Продолжить», быстрые кнопки, буквы у артистов, порядок разделов ---------- */
+.cont { position: relative; overflow: hidden; display: flex; align-items: center; gap: 26px; padding: 22px; margin: 4px 0 22px; border-radius: 26px; background: var(--card); box-shadow: var(--shadow-card); }
+.cont-bg { position: absolute; inset: -30%; background-size: cover; background-position: center; filter: blur(60px) saturate(1.4); opacity: .38; pointer-events: none; }
+:root[data-theme="light"] .cont-bg { opacity: .5; }
+.cont-art { position: relative; flex: none; width: 168px; border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+.cont-art .cov { width: 100%; aspect-ratio: 1; }
+.cont-text { position: relative; min-width: 0; flex: 1; }
+.cont-text h2 { font-size: 30px; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cont-sub { color: var(--text-2); font-size: 15.5px; margin: 0 0 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cont-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.quick { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 26px; }
+.qbtn { display: inline-flex; align-items: center; gap: 9px; height: 42px; padding: 0 18px; border-radius: 999px; background: var(--card); color: var(--text); font-size: 14.5px; font-weight: 600; text-decoration: none; transition: background .2s, transform .2s; }
+.qbtn:hover { background: var(--card-2); transform: translateY(-1px); }
+.qbtn svg { width: 18px; height: 18px; }
+.cov.letter { display: grid; place-items: center; font-weight: 800; font-size: clamp(28px, 4.2vw, 64px); letter-spacing: -.02em; }
+.lrow .cov.letter, .mini-cov.letter { font-size: 18px; }
+.artist-avatar .cov.letter { font-size: 72px; }
+.set-note { color: var(--text-3); font-size: 13.5px; margin: 0 0 6px; padding: 0 4px; }
+.ho-row .setting-ctl { display: flex; align-items: center; gap: 6px; }
+.ho-row .icon-btn[disabled] { opacity: .25; pointer-events: none; }
+@media (max-width: 899px) {
+  .cont { flex-direction: row; gap: 14px; padding: 14px; border-radius: 20px; } .cont-art { width: 96px; border-radius: 14px; }
+  .cont-text h2 { font-size: 20px; } .cont-sub { font-size: 13.5px; margin-bottom: 12px; } .cont-actions .btn-soft { display: none; }
+  .quick { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 20px; padding: 0 16px; scrollbar-width: none; } .quick::-webkit-scrollbar { display: none; } .qbtn { flex: none; height: 38px; padding: 0 14px; font-size: 13.5px; }
+}

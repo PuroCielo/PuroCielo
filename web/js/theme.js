@@ -17,9 +17,6 @@ export function applySettings() {
     r.dataset.corners = s.corners;
     r.dataset.density = s.density;
     r.classList.toggle('no-bg-anim', !s.bgAnim);
-    r.classList.toggle('no-bg-notes', !s.bgNotes2);
-    r.classList.toggle('no-bg-vinyl', !s.bgVinyl2);
-    r.classList.toggle('no-bg-particles', !s.bgDust);
     r.classList.toggle('no-bg-cover', !s.bgCover);
     r.classList.toggle('no-anim', !s.anim);
 }

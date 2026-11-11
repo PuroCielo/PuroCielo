@@ -1,7 +1,8 @@
 import { openTrackInfo } from './tagedit.js';
-import { addToPlaylist, createPlaylist, derived, getTrack, playlistTracks, removeFromPlaylist, setSetting, state, toggleLike } from './state.js';
-import { addNext, addToQueue } from './player.js';
-import { openMenu, openModal, promptText, toast } from './ui.js';
+import { addToPlaylist, createPlaylist, derived, getTrack, playlistTracks, removeFromPlaylist, removeTracks, setSetting, state, toggleLike } from './state.js';
+import { forgetFile } from './native.js';
+import { addNext, addToQueue, purge } from './player.js';
+import { confirmBox, openMenu, openModal, promptText, toast } from './ui.js';
 import { icon } from './icons.js';
 import { esc, plural } from './util.js';
 import { mosaic } from './views.js';
@@ -36,6 +37,18 @@ export function addToPlaylistModal(ids) {
         }),
     });
 }
+export async function deleteTrackFlow(id) {
+    const t = getTrack(id);
+    if (!t)
+        return;
+    const yes = await confirmBox({ title: 'Удалить песню?', text: `«${t.title}» исчезнет из медиатеки, плейлистов и понравившихся. Сам файл на устройстве останется.`, ok: 'Удалить', danger: true });
+    if (!yes)
+        return;
+    purge([id]);
+    forgetFile(id);
+    removeTracks([id]);
+    toast(`Песня «${t.title}» удалена`);
+}
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 const fmtSpeed = v => String(v).replace('.', ',') + '×';
 function speedMenu(anchor) {
@@ -63,5 +76,6 @@ export function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
     ];
     if (pid)
         items.push({ sep: true }, { icon: 'trash', label: 'Убрать из плейлиста', danger: true, onClick: () => removeFromPlaylist(pid, id) });
+    items.push({ sep: true }, { icon: 'trash', label: 'Удалить из медиатеки', danger: true, onClick: () => deleteTrackFlow(id) });
     openMenu(anchor, items);
 }

@@ -5,7 +5,7 @@ import { createPlaylist, emit, state, touchLibrary } from './state.js';
 import { allFiles, delFile, putFile } from './db.js';
 import { RemoteFile, isNative, isNativeId, nativeId, nativeUrl } from './native.js';
 import { extOf, norm, stripExt } from './util.js';
-import { toast } from './ui.js';
+import { confirmBox, toast } from './ui.js';
 
 const trackId = f => `${f.name}|${f.size}`;
 function getDuration(url) {
@@ -144,31 +144,69 @@ export async function importFiles(fileList) {
     if (audio.length)
         toast(`Загружаю ${audio.length} ${audio.length === 1 ? 'файл' : 'файлов'}…`, 'info', 1800);
     const stamp = Date.now();
+    // Копии: тот же файл или песня с тем же названием, артистом и длиной. Их не добавляем молча — сначала спрашиваем.
+    const copies = [];
+    const twin = t => { const k = norm(t.title) + '|' + norm(t.artist); for (const x of state.tracks.values())
+        if (norm((x._orig || x).title) + '|' + norm((x._orig || x).artist) === k && Math.abs((x.duration || 0) - (t.duration || 0)) <= 1)
+            return x; return null; };
+    const build = async (f, id) => {
+        const l = lrcMap.get(norm(stripExt(f.name)));
+        const rec = { id, blob: f, name: f.name, lrc: l ? await readText(l) : null, addedAt: stamp + added };
+        return { rec, t: await buildTrack(rec) };
+    };
+    const put = ({ rec, t }) => { state.tracks.set(rec.id, t); added++; putFile(rec); };
     await pool(audio, 4, async (f) => {
         const id = trackId(f);
         if (state.tracks.has(id)) {
-            dup++;
+            copies.push({ f, title: state.tracks.get(id).title });
             return;
         }
         try {
-            const l = lrcMap.get(norm(stripExt(f.name)));
-            const lrc = l ? await readText(l) : null;
-            const rec = { id, blob: f, name: f.name, lrc, addedAt: stamp + added };
-            const t = await buildTrack(rec);
-            if (!t.duration) {
-                URL.revokeObjectURL(t.url);
+            const b = await build(f, id);
+            if (!b.t.duration) {
+                URL.revokeObjectURL(b.t.url);
                 bad++;
                 return;
             }
-            state.tracks.set(id, t);
-            added++;
-            putFile(rec);
+            if (twin(b.t)) {
+                copies.push({ f, title: b.t.title, built: b });
+                return;
+            }
+            put(b);
         }
         catch (err) {
             console.warn(err);
             bad++;
         }
     });
+    if (copies.length) {
+        const one = copies.length === 1;
+        const yes = await confirmBox({
+            title: one ? 'Добавить копию песни?' : 'Добавить копии песен?',
+            text: one ? `«${copies[0].title}» уже есть в медиатеке. Вы хотите добавить копию песни?` : `В медиатеке уже есть ${copies.length} из этих песен. Вы хотите добавить копии?`,
+            ok: one ? 'Добавить копию' : 'Добавить копии', cancel: 'Не добавлять',
+        });
+        for (const [i, c] of copies.entries()) {
+            if (!yes) {
+                dup++;
+                if (c.built)
+                    URL.revokeObjectURL(c.built.t.url);
+                continue;
+            }
+            try {
+                const b = c.built || await build(c.f, `${trackId(c.f)}|copy${stamp}${i}`);
+                if (!b.t.duration) {
+                    bad++;
+                    continue;
+                }
+                put(b);
+            }
+            catch (err) {
+                console.warn(err);
+                bad++;
+            }
+        }
+    }
     // отдельные .lrc к уже загруженным трекам
     let lrcAttached = 0;
     for (const l of lrcs) {
@@ -256,7 +294,8 @@ export async function syncNativeLibrary(scan) {
     syncing = true;
     try {
         const files = scan.files || [];
-        const audio = files.filter(f => AUDIO_EXT.has(extOf(f.name)));
+        const gone = new Set(state.hidden || []); // удалённые пользователем песни из папки не возвращаем
+        const audio = files.filter(f => AUDIO_EXT.has(extOf(f.name)) && !gone.has(nativeId(f.id)));
         const lrcs = new Map(files.filter(f => extOf(f.name) === 'lrc').map(f => [norm(stripExt(f.name)), f]));
         const m3us = files.filter(f => ['m3u', 'm3u8'].includes(extOf(f.name)));
         const present = new Set(audio.map(f => nativeId(f.id)));

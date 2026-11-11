@@ -1,8 +1,8 @@
 import { on, state } from './state.js';
-import { audio, current, getAnalyser } from './player.js';
+import { audio, current } from './player.js';
 import { icon } from './icons.js';
 // Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
-// (она сильно размыта и медленно плывёт). Ноты, пластинка и звёздная пыль — по желанию, в настройках.
+// (она сильно размыта и медленно плывёт). Больше на фоне ничего нет.
 const $ = s => document.querySelector(s);
 const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
 // ---------- цвета обложки ----------
@@ -61,107 +61,15 @@ export function paletteFrom(url) {
         img.src = url;
     });
 }
-// ---------- звёздная пыль (canvas) ----------
-function initDust(cv) {
-    const ctx = cv.getContext('2d');
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0;
-    // мягкая светящаяся точка — рисуется один раз, дальше только копируется
-    const sprite = document.createElement('canvas');
-    const paintSprite = () => {
-        sprite.width = sprite.height = 64;
-        const g = sprite.getContext('2d'), rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-        const [r, gg, b] = tint;
-        rg.addColorStop(0, `rgba(255,255,255,1)`);
-        rg.addColorStop(.18, `rgba(${r},${gg},${b},.85)`);
-        rg.addColorStop(.45, `rgba(${r},${gg},${b},.18)`);
-        rg.addColorStop(1, `rgba(${r},${gg},${b},0)`);
-        g.fillStyle = rg;
-        g.fillRect(0, 0, 64, 64);
-    };
-    const make = (y) => ({ x: Math.random() * W, y: y ?? Math.random() * H, z: .25 + Math.random() * .75, ph: Math.random() * Math.PI * 2, sp: .4 + Math.random() * 1.4, dx: (Math.random() - .5) * .15 });
-    const resize = () => {
-        dpr = Math.min(1.5, devicePixelRatio || 1);
-        W = cv.width = Math.round(innerWidth * dpr);
-        H = cv.height = Math.round(innerHeight * dpr);
-        const n = Math.round(Math.min(110, Math.max(40, (innerWidth * innerHeight) / 16000)));
-        parts = Array.from({ length: n }, () => make());
-    };
-    const level = () => {
-        const an = getAnalyser();
-        if (!an || audio.paused)
-            return 0;
-        const d = new Uint8Array(an.frequencyBinCount);
-        an.getByteFrequencyData(d);
-        let s = 0;
-        for (let i = 1; i < 10; i++)
-            s += d[i];
-        return Math.max(0, s / 9 / 255 - .35) / .65; // басы, 0…1
-    };
-    const frame = (t) => {
-        raf = requestAnimationFrame(frame);
-        if (document.hidden || document.documentElement.classList.contains('no-bg-particles'))
-            return;
-        if (t - last < 28)
-            return; // ~35 кадров в секунду хватает
-        const dt = Math.min(80, t - last) / 16.7;
-        last = t;
-        const playing = !audio.paused && !audio.ended;
-        energy += ((playing ? level() : 0) - energy) * .18;
-        const light = document.documentElement.dataset.theme === 'light';
-        ctx.clearRect(0, 0, W, H);
-        ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
-        const speed = (playing ? 1 : .35) * (1 + energy * 2.2) * dpr;
-        for (const p of parts) {
-            p.y -= p.sp * p.z * .32 * speed * dt;
-            p.x += (p.dx + Math.sin(t / 4000 + p.ph) * .12) * p.z * dpr * dt;
-            if (p.y < -20 * dpr) {
-                Object.assign(p, make(H + 20 * dpr));
-            }
-            const tw = .55 + .45 * Math.sin(t / (900 + p.sp * 500) + p.ph);
-            const a = (light ? .22 : .5) * p.z * tw * (playing ? 1 : .6) + energy * .35 * p.z;
-            const size = (2.2 + p.z * 5.5) * (1 + energy * .9 * p.z) * dpr;
-            ctx.globalAlpha = Math.min(1, a);
-            ctx.drawImage(sprite, p.x - size, p.y - size, size * 2, size * 2);
-        }
-        ctx.globalAlpha = 1;
-    };
-    paintSprite();
-    resize();
-    addEventListener('resize', resize);
-    if (!reduce)
-        raf = requestAnimationFrame(frame);
-    else
-        frame(1000);
-    return {
-        setTint(css) { // искры чуть окрашены в главный цвет обложки
-            const m = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(css || '');
-            if (!m) {
-                tint = [255, 236, 200];
-            }
-            else {
-                const h = +m[1] / 360, s = Math.min(.55, +m[2] / 100), l = .82;
-                const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
-                tint = [f(0), f(8), f(4)];
-            }
-            paintSprite();
-        },
-    };
-}
 export function initBgFx() {
-    const vinyl = $('#bg-vinyl'), cover = $('#bg-cover'), fx = $('.bg-fx'), dustCv = $('#bg-dust');
-    if (vinyl)
-        vinyl.innerHTML = `<div class="v-disc"><i class="v-groove g1"></i><i class="v-groove g2"></i><i class="v-groove g3"></i><div class="v-label">${icon('tower')}</div></div><div class="v-arm"></div>`;
-    const dust = dustCv ? initDust(dustCv) : null;
-    const sync = () => document.documentElement.classList.toggle('is-playing', !audio.paused && !audio.ended && !!current());
+    const cover = $('#bg-cover'), root = document.documentElement;
+    const sync = () => root.classList.toggle('is-playing', !audio.paused && !audio.ended && !!current());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         audio.addEventListener(e, sync);
     let lastUrl = null;
     const setPalette = cols => {
-        const c = cols || GRAPHITE;
-        c.forEach((v, i) => document.documentElement.style.setProperty(`--c${i + 1}`, v));
-        document.documentElement.classList.toggle('has-glow', !!cols);
-        dust?.setTint(cols ? cols[0] : null);
+        (cols || GRAPHITE).forEach((v, i) => root.style.setProperty(`--c${i + 1}`, v));
+        root.classList.toggle('has-glow', !!cols);
     };
     const paintCover = async () => {
         const t = current(), url = state.settings.bgCover !== false ? t?.cover || null : null;

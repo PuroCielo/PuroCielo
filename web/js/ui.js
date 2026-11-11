@@ -99,6 +99,20 @@ export function openModal({ title, html = '', actions = [], wide = false, onMoun
     onMount?.(api);
     return api;
 }
+export function confirmBox({ title, text, ok = 'Да', cancel = 'Отмена', danger = false }) {
+    return new Promise(resolve => {
+        let done = false;
+        const fin = v => { if (!done) {
+            done = true;
+            resolve(v);
+        } };
+        openModal({
+            title, html: `<p class="modal-text">${esc(text)}</p>`,
+            actions: [{ label: cancel, onClick: () => fin(false) }, { label: ok, primary: true, danger, onClick: () => fin(true) }],
+            onMount: api => { const orig = api.close; api.close = () => { orig(); setTimeout(() => fin(false), 0); }; },
+        });
+    });
+}
 export const topModal = () => stack[stack.length - 1];
 export function closeTopModal() { const m = stack[stack.length - 1]; if (m) {
     m.close();

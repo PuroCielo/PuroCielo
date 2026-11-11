@@ -1,7 +1,7 @@
 import { derived, getTrack, likedTracks, playlistTracks, smartTracks, state } from './state.js';
 import { icon } from './icons.js';
 import { SESSION_SEED, enc, esc, fmtTime, fmtTotal, hash, norm, plural, seededShuffle } from './util.js';
-import { artistKey, trackArtists } from './artists.js';
+import { UNKNOWN, artistKey, trackArtists } from './artists.js';
 import { canGoogle, sync } from './sync.js';
 import { isEn } from './i18n.js';
 import { EQ_BANDS, EQ_PRESETS, current, sleepState } from './player.js';
@@ -44,8 +44,10 @@ const albumCard = g => `<article class="card" tabindex="0" role="link" data-nav=
 const singleCard = g => `<article class="card" tabindex="0" role="link" data-nav="${albumHref(g.key)}">
   <div class="card-art">${cov(g.cover, g.key)}<button class="play-fab" data-action="play-album" data-key="${esc(g.key)}" aria-label="Играть">${icon('play')}</button></div>
   <h3 class="card-title">${esc(g.name)}</h3><p class="card-sub">${artistLinks(g.artists)} · ${g.tracks.length === 1 ? 'Сингл' : 'EP'}</p></article>`;
+// у артиста без своей картинки — первая буква имени, а не обложка чужого трека
+export const artistArt = a => a.cover ? cov(a.cover, a.key, 'round') : `<div class="cov ph round letter" style="${phStyle(a.key)}">${esc((String(a.name || '?').trim()[0] || '?').toUpperCase())}</div>`;
 const artistCard = (a, { sub = true } = {}) => `<article class="card card-artist" tabindex="0" role="link" data-nav="${artistHref(a.key)}">
-  <div class="card-art round">${cov(a.cover, a.key, 'round')}<button class="play-fab" data-action="play-artist" data-key="${esc(a.key)}" aria-label="Играть">${icon('play')}</button></div>
+  <div class="card-art round">${artistArt(a)}<button class="play-fab" data-action="play-artist" data-key="${esc(a.key)}" aria-label="Играть">${icon('play')}</button></div>
   <h3 class="card-title center">${esc(a.name)}</h3>${sub ? `<p class="card-sub center">${plural(a.tracks.length, ['песня', 'песни', 'песен'])}</p>` : ''}</article>`;
 const playlistCard = p => {
     const ts = playlistTracks(p);
@@ -76,7 +78,7 @@ const lrow = ({ cover, title, sub, nav, act, round }) => `<article class="lrow" 
   ${nav && act ? `<button class="icon-btn lrow-play" ${act} aria-label="Играть">${icon('play')}</button>` : ''}</article>`;
 const albumRow = (g, single) => lrow({ cover: cov(g.cover, g.key), title: g.name, nav: albumHref(g.key), act: `data-action="play-album" data-key="${esc(g.key)}"`,
     sub: `${artistLinks(g.artists)}${single ? ' · ' + (g.tracks.length === 1 ? 'Сингл' : 'EP') : g.year ? ' · ' + esc(g.year) : ''}` });
-const artistRow = a => lrow({ cover: cov(a.cover, a.key, 'round'), round: true, title: a.name, nav: artistHref(a.key), act: `data-action="play-artist" data-key="${esc(a.key)}"`, sub: plural(a.tracks.length, ['песня', 'песни', 'песен']) });
+const artistRow = a => lrow({ cover: artistArt(a), round: true, title: a.name, nav: artistHref(a.key), act: `data-action="play-artist" data-key="${esc(a.key)}"`, sub: plural(a.tracks.length, ['песня', 'песни', 'песен']) });
 const playlistRow = p => { const ts = playlistTracks(p); return lrow({ cover: mosaic(ts, p.id), title: p.name, nav: `#/playlist/${p.id}`, act: `data-action="play-playlist" data-id="${p.id}"`, sub: plural(ts.length, ['песня', 'песни', 'песен']) }); };
 const likedRow = () => lrow({ cover: `<div class="cov liked-cov">${icon('heart-fill')}</div>`, title: 'Понравившееся', nav: '#/liked', act: 'data-action="play-liked"', sub: plural(state.likes.size, ['песня', 'песни', 'песен']) });
 const newPlaylistRow = () => lrow({ cover: `<div class="cov new-cov">${icon('plus')}</div>`, title: 'Новый плейлист', act: 'new-playlist', sub: 'Создать' });
@@ -89,6 +91,7 @@ export function trackRow(t, i, lid, o = {}) {
     </div>
     <div class="row-main"><div class="row-title">${esc(t.title)}</div><div class="row-artist">${artistLinks(artistsOf(t))}</div></div>
     <div class="row-album">${t.album ? albumLink(t) : '—'}</div>
+    <button class="icon-btn row-del" data-action="delete-track" data-id="${esc(t.id)}" aria-label="Удалить песню" title="Удалить песню">${icon('trash')}</button>
     <button class="icon-btn like ${state.likes.has(t.id) ? 'on' : ''}" data-action="like" data-id="${esc(t.id)}" aria-label="Нравится">${icon(state.likes.has(t.id) ? 'heart-fill' : 'heart')}</button>
     <div class="row-time">${fmtTime(t.duration)}</div>
     <button class="icon-btn" data-action="menu" data-id="${esc(t.id)}" ${o.pid ? `data-pid="${o.pid}"` : ''} aria-label="Ещё">${icon('more')}</button>
@@ -178,29 +181,54 @@ function block(mode, title, { cards, rows, href, railMax = 14, gridMax = 18, lis
 }
 const HOME_VIEWS = [['rail', 'view-rail', 'Лента'], ['grid', 'view-grid', 'Сетка'], ['list', 'view-list', 'Список']];
 export const viewSwitch = mode => `<div class="seg seg-icons" role="group" aria-label="Вид главной">${HOME_VIEWS.map(([k, ic, n]) => `<button class="${k === mode ? 'on' : ''}" data-action="home-view" data-v="${k}" title="${n}" aria-label="${n}">${icon(ic)}</button>`).join('')}</div>`;
+// Разделы главной: порядок и видимость настраиваются (Настройки → Главная)
+export const HOME_SECTIONS = [['continue', 'Продолжить'], ['quick', 'Быстрые кнопки'], ['recents', 'Недавно прослушанное'], ['mixes', 'Миксы для вас'], ['albums', 'Альбомы'], ['singles', 'Синглы'], ['playlists', 'Плейлисты'], ['artists', 'Артисты']];
+export function homeOrder() {
+    const all = HOME_SECTIONS.map(x => x[0]), o = (state.settings.homeOrder || []).filter(k => all.includes(k));
+    return [...o, ...all.filter(k => !o.includes(k))];
+}
+export const homeHidden = () => new Set([...(state.settings.homeHidden || []), ...(state.settings.homeRecents === false ? ['recents'] : [])]);
+// «Продолжить»: песня, на которой остановились (или которая играет сейчас)
+export function continueCard() {
+    const t = current() || getTrack(state.recents[0]);
+    if (!t)
+        return '';
+    const g = derived().groups.get(t._albumKey);
+    return `<section class="cont" data-track-id="${esc(t.id)}">
+    ${t.cover ? `<div class="cont-bg" style="background-image:url('${t.cover}')"></div>` : ''}
+    <div class="cont-art">${cov(t.cover, t._albumKey || t.id)}</div>
+    <div class="cont-text"><p class="eyebrow">Продолжить</p><h2>${esc(t.title)}</h2><p class="cont-sub">${artistLinks(artistsOf(t))}${t.album ? ' · ' + albumLink(t) : ''}</p>
+      <div class="cont-actions"><button class="btn btn-primary" data-action="home-continue" data-id="${esc(t.id)}">${icon('play')}Слушать дальше</button>${g && g.tracks.length > 1 ? `<a class="btn btn-soft" href="${albumHref(g.key)}">${icon('disc')}Открыть альбом</a>` : ''}</div></div></section>`;
+}
+const quickBar = () => `<div class="quick"><button class="qbtn" data-action="shuffle-all">${icon('shuffle')}Перемешать всё</button><a class="qbtn" href="#/liked">${icon('heart-fill')}Понравившееся</a><button class="qbtn" data-action="recent-added">${icon('plus')}Недавно добавленные</button></div>`;
 export function homeView() {
     const d = derived(), mode = state.settings.homeView || 'rail';
     if (!d.all.length)
         return pageHead('Главная', greeting()) + emptyState();
-    let h = pageHead('Главная', greeting(), viewSwitch(mode));
-    const rec = state.recents.map(getTrack).filter(Boolean).slice(0, 18);
-    if (rec.length && state.settings.homeRecents !== false) {
-        const lid = registerList(rec);
-        h += mode === 'list'
-            ? section('Недавно прослушанное', `<div class="tracklist" data-lid="${lid}">${rec.slice(0, 8).map((t, i) => trackRow(t, i, lid, { cover: true })).join('')}</div>`)
-            : block(mode, 'Недавно прослушанное', { cards: rec.map((t, i) => recentCard(t, i, lid)), rows: [] });
-    }
-    const mx = mixes().filter(m => m.tracks.length); // пустые миксы не показываем
-    if (mx.length)
-        h += block(mode, 'Миксы для вас', { cards: mx.map(mixCard), rows: mx.map(mixRow), listMax: 5 });
-    if (d.albums.length)
-        h += block(mode, 'Альбомы', { cards: d.albums.map(albumCard), rows: d.albums.map(g => albumRow(g, false)), href: '#/library/albums' });
-    if (d.singles.length)
-        h += block(mode, 'Синглы', { cards: d.singles.map(singleCard), rows: d.singles.map(g => albumRow(g, true)), href: '#/library/singles' });
-    h += block(mode, 'Плейлисты', { cards: [likedCard(), ...state.playlists.map(playlistCard), newPlaylistCard()], rows: [likedRow(), ...state.playlists.map(playlistRow), newPlaylistRow()], href: '#/library/playlists', railMax: 14, gridMax: 18, listMax: 8 });
-    if (d.artistList.length)
-        h += block(mode, 'Артисты', { cards: d.artistList.map(a => artistCard(a)), rows: d.artistList.map(artistRow), href: '#/library/artists' });
-    return h;
+    const hidden = homeHidden();
+    const artists = d.artistList.filter(a => a.name !== UNKNOWN); // «Неизвестного артиста» на главной не показываем
+    const parts = {
+        continue: () => continueCard(),
+        quick: () => quickBar(),
+        recents: () => {
+            const rec = state.recents.map(getTrack).filter(Boolean).slice(0, 18);
+            if (!rec.length)
+                return '';
+            const lid = registerList(rec);
+            return mode === 'list'
+                ? section('Недавно прослушанное', `<div class="tracklist" data-lid="${lid}">${rec.slice(0, 8).map((t, i) => trackRow(t, i, lid, { cover: true })).join('')}</div>`)
+                : block(mode, 'Недавно прослушанное', { cards: rec.map((t, i) => recentCard(t, i, lid)), rows: [] });
+        },
+        mixes: () => {
+            const mx = mixes().filter(m => m.tracks.length); // пустые миксы не показываем
+            return mx.length ? block(mode, 'Миксы для вас', { cards: mx.map(mixCard), rows: mx.map(mixRow), listMax: 5 }) : '';
+        },
+        albums: () => d.albums.length ? block(mode, 'Альбомы', { cards: d.albums.map(albumCard), rows: d.albums.map(g => albumRow(g, false)), href: '#/library/albums' }) : '',
+        singles: () => d.singles.length ? block(mode, 'Синглы', { cards: d.singles.map(singleCard), rows: d.singles.map(g => albumRow(g, true)), href: '#/library/singles' }) : '',
+        playlists: () => block(mode, 'Плейлисты', { cards: [likedCard(), ...state.playlists.map(playlistCard), newPlaylistCard()], rows: [likedRow(), ...state.playlists.map(playlistRow), newPlaylistRow()], href: '#/library/playlists', railMax: 14, gridMax: 18, listMax: 8 }),
+        artists: () => artists.length ? block(mode, 'Артисты', { cards: artists.map(a => artistCard(a)), rows: artists.map(artistRow), href: '#/library/artists' }) : '',
+    };
+    return pageHead('Главная', greeting(), viewSwitch(mode)) + homeOrder().filter(k => !hidden.has(k)).map(k => parts[k]()).join('');
 }
 const TABS = [['media', 'Медиатека'], ['albums', 'Альбомы'], ['singles', 'Синглы'], ['playlists', 'Плейлисты'], ['artists', 'Артисты'], ['songs', 'Песни']];
 export let songSort = 'title';
@@ -222,7 +250,7 @@ export function libraryView(tab = 'albums') {
     else if (tab === 'singles')
         body = d.singles.length ? `<div class="grid">${d.singles.map(singleCard).join('')}</div>` : emptyState(true);
     else if (tab === 'artists')
-        body = d.artistList.length ? `<div class="grid artists">${d.artistList.map(a => artistCard(a)).join('')}</div>` : emptyState(true);
+        body = d.artistList.length ? `<div class="grid artists">${[...d.artistList.filter(a => a.name !== UNKNOWN), ...d.artistList.filter(a => a.name === UNKNOWN)].map(a => artistCard(a)).join('')}</div>` : emptyState(true);
     else if (tab === 'playlists') {
         body = `<div class="grid">${likedCard()}${state.playlists.map(playlistCard).join('')}${state.smart.map(smartCard).join('')}${newPlaylistCard()}${newSmartCard()}</div>
 `;
@@ -305,8 +333,8 @@ export function artistView(key) {
     const top = topSongs(a), lid = registerList(top);
     const similar = similarArtists(a, d);
     let h = `<section class="artist-hero">
-    ${a.cover ? `<div class="hero-bg" style="background-image:url('${a.cover}')"></div>` : '<div class="hero-bg plain"></div>'}
-    <div class="artist-avatar">${cov(a.cover, a.key, 'round')}</div>
+    ${(a.backdrop || a.cover) ? `<div class="hero-bg" style="background-image:url('${a.backdrop || a.cover}')"></div>` : '<div class="hero-bg plain"></div>'}
+    <div class="artist-avatar">${artistArt(a)}</div>
     <h1 class="artist-name">${esc(a.name)}</h1>
     <div class="artist-actions">
       <button class="icon-btn lg ghost" data-action="shuffle-artist" data-key="${esc(a.key)}" aria-label="Перемешать">${icon('shuffle')}</button>
@@ -512,26 +540,28 @@ export function settingsView() {
         ${srow('Скругление обложек', 'Мягкие или строгие углы.', seg('corners', [['round', 'Мягкие'], ['sharp', 'Острые']], s.corners))}
         ${srow('Плотность списков', 'Компактный режим вмещает больше строк.', seg('density', [['cozy', 'Свободно'], ['compact', 'Компактно']], s.density))}
         ${srow('Анимации интерфейса', 'Выключите, если приложение работает на слабом устройстве.', sw('anim', s.anim))}
-        ${srow('Блок «Недавно прослушанное»', 'Показывать на главной.', sw('homeRecents', s.homeRecents !== false))}
         ${srow('Размер карточек', 'Обложки в рядах и сетках.', seg('cardSize', [['s', 'Мелкие'], ['m', 'Средние'], ['l', 'Крупные']], s.cardSize))}
         ${srow('Язык', 'Язык интерфейса плеера.', seg('lang', [['ru', 'Русский'], ['en', 'English']], s.lang || 'ru'))}
+      </div>
+
+      <h2 class="sg-title">Главная</h2>
+      <div class="settings home-order">
+        <p class="set-note">Порядок разделов на главной: стрелками двигайте выше или ниже, выключателем — скрывайте.</p>
+        ${(() => { const o = homeOrder(), hid = homeHidden(), names = Object.fromEntries(HOME_SECTIONS); return o.map((k, i) => `<div class="setting ho-row"><div><h3>${names[k]}</h3></div><div class="setting-ctl"><button class="icon-btn" data-action="home-move" data-k="${k}" data-d="-1" aria-label="Выше" title="Выше" ${i === 0 ? 'disabled' : ''}>${icon('chev-up')}</button><button class="icon-btn" data-action="home-move" data-k="${k}" data-d="1" aria-label="Ниже" title="Ниже" ${i === o.length - 1 ? 'disabled' : ''}>${icon('chev-down')}</button><button class="switch ${hid.has(k) ? '' : 'on'}" role="switch" aria-checked="${!hid.has(k)}" data-action="home-toggle" data-k="${k}"><i></i></button></div></div>`).join(''); })()}
       </div>
 
       <h2 class="sg-title">Фон</h2>
       <div class="settings">
         ${srow('Фон от обложки', 'Тёмная тема: чёрный фон и мягкое свечение в цвет обложки. Светлая тема: свет от самой обложки.', sw('bgCover', s.bgCover))}
         ${srow('Движение фона', 'Свет от обложки медленно плывёт.', sw('bgAnim', s.bgAnim))}
-        ${srow('Большие ноты', 'Полупрозрачные ноты на заднем плане.', sw('bgNotes2', s.bgNotes2))}
-        ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl2', s.bgVinyl2))}
-        ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgDust', s.bgDust))}
       </div>
 
       <h2 class="sg-title">Воспроизведение</h2>
       <div class="settings">
-        ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).', sw('autoCovers', s.autoCovers !== false))}
+        ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.', sw('autoCovers', s.autoCovers !== false))}
         ${srow('Убирать приписки сайтов', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.', sw('stripSource', s.stripSource !== false))}
-        ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».', sw('autoLyrics', s.autoLyrics))}
-        ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».', `<button class="btn btn-soft sm" data-action="find-lyrics">${icon('lyrics')}Найти</button>`)}
+        ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текст не найден».', sw('autoLyrics', s.autoLyrics))}
+        ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текст не найден».', `<button class="btn btn-soft sm" data-action="find-lyrics">${icon('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}
         ${srow('Свой сервер текстов', s.lyricsProxy ? esc(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${icon('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}

@@ -161,7 +161,7 @@ function renderLyrics(t) {
         const loading = t && t._ly === 'loading';
         lyBox.innerHTML = loading
             ? `<div class="ly-empty"><span class="ly-spin"></span><h3>Ищу текст…</h3></div>`
-            : `<div class="ly-empty">${icon('lyrics')}<h3>Текста нет</h3><button class="btn btn-soft sm" data-ly="edit">${icon('edit')}Добавить текст</button></div>`;
+            : `<div class="ly-empty">${icon('lyrics')}<h3>Текст не найден</h3><button class="btn btn-soft sm" data-ly="edit">${icon('edit')}Добавить текст</button></div>`;
         return;
     }
     lyType = ly.type;

@@ -1,6 +1,6 @@
 import { kvGet, kvSet } from './db.js';
 import { derived, emit, on, registerAutoCovers, state, touchLibrary } from './state.js';
-import { artistMatch, titleMatch } from './lyrics-web.js';
+import { artistMatch, nameEq, titleMatch } from './lyrics-web.js';
 import { UNKNOWN } from './artists.js';
 import { jsonp } from './jsonp.js';
 
@@ -10,7 +10,7 @@ import { jsonp } from './jsonp.js';
 const ITUNES = 'https://itunes.apple.com/search';
 const MB = 'https://musicbrainz.org/ws/2';
 const RETRY = 14 * 864e5; // «не нашлось» — пробуем снова через две недели
-export const auto = { t: {}, a: {}, miss: {} };
+export const auto = { t: {}, a: {}, ar: {}, miss: {} }; // t — песни, a — альбомы, ar — фото артистов
 let loaded = false, running = false, timer = 0;
 async function loadAuto() {
     if (loaded)
@@ -19,7 +19,7 @@ async function loadAuto() {
     try {
         const d = await kvGet('autoCovers');
         if (d && typeof d === 'object')
-            Object.assign(auto, { t: d.t || {}, a: d.a || {}, miss: d.v === 2 ? d.miss || {} : {} }); // v2: прежние «не нашлось» (из-за CORS) забываем
+            Object.assign(auto, { t: d.t || {}, a: d.a || {}, ar: d.ar || {}, miss: d.v === 2 ? d.miss || {} : {} }); // v2: прежние «не нашлось» (из-за CORS) забываем
     }
     catch { /* ignore */ }
 }
@@ -38,7 +38,7 @@ async function getJSON(url) {
     }
 }
 // картинка → data URL 500×500 (чтобы работала без интернета); если сайт не даёт прочитать — сама ссылка
-async function toData(url) {
+async function toData(url, size = 500) {
     try {
         const r = await fetch(url);
         if (!r.ok)
@@ -46,9 +46,9 @@ async function toData(url) {
         const blob = await r.blob();
         const bmp = await createImageBitmap(blob);
         const c = document.createElement('canvas');
-        c.width = c.height = 500;
-        const s = Math.max(500 / bmp.width, 500 / bmp.height);
-        c.getContext('2d').drawImage(bmp, (500 - bmp.width * s) / 2, (500 - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
+        c.width = c.height = size;
+        const s = Math.max(size / bmp.width, size / bmp.height);
+        c.getContext('2d').drawImage(bmp, (size - bmp.width * s) / 2, (size - bmp.height * s) / 2, bmp.width * s, bmp.height * s);
         return c.toDataURL('image/jpeg', .86);
     }
     catch {
@@ -107,6 +107,12 @@ async function findSong(title, artists) {
     const it = (await itunes('song', `${a0} ${name}`)).find(r => same(r.trackName, title) && artistMatch(r.artistName, artists));
     return it?.artworkUrl100 ? big(it.artworkUrl100) : null;
 }
+// фото артиста из каталога Deezer: имя должно совпасть; из тёзок берём самого известного
+async function findArtist(name) {
+    const hits = (await deezer('artist', name)).filter(r => nameEq(r.name, name)).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
+    const pic = hits[0] && (hits[0].picture_xl || hits[0].picture_big);
+    return pic && !/\/artist\/\//.test(pic) ? pic : null; // «/artist//» — заглушка Deezer, фото нет
+}
 // что искать: альбомы без обложки целиком, одиночные песни — по названию
 function todo() {
     const d = derived(), now = Date.now(), jobs = [];
@@ -124,6 +130,9 @@ function todo() {
                 jobs.push({ kind: 't', key: t.id, name: t.title, artists: (t._artists || []).filter(a => a !== UNKNOWN), album: t.album });
         }
     }
+    for (const a of d.artistList)
+        if (a.name !== UNKNOWN && !auto.ar[a.key] && fresh('ar:' + a.key))
+            jobs.push({ kind: 'ar', key: a.key, name: a.name });
     return jobs;
 }
 async function run() {
@@ -136,11 +145,11 @@ async function run() {
         for (const j of todo()) {
             if (state.settings.autoCovers === false)
                 break;
-            let url = j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
+            let url = j.kind === 'ar' ? await findArtist(j.name) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
             if (!url && j.kind === 't' && j.album)
                 url = await findAlbum(j.album, j.artists); // сингл из альбома — обложка альбома
             if (url) {
-                const data = await toData(url);
+                const data = await toData(url, j.kind === 'ar' ? 360 : 500);
                 if (data) {
                     auto[j.kind][j.key] = data;
                     delete auto.miss[j.kind + ':' + j.key];
@@ -172,7 +181,7 @@ export function scheduleAutoCovers(ms = 2500) {
 export async function initAutoCovers() {
     registerAutoCovers(() => auto);
     await loadAuto();
-    if (Object.keys(auto.t).length || Object.keys(auto.a).length) {
+    if (Object.keys(auto.t).length || Object.keys(auto.a).length || Object.keys(auto.ar).length) {
         touchLibrary();
         emit('covers');
     }

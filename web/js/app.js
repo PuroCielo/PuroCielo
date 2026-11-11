@@ -3,8 +3,8 @@ import { P, addNext, addToQueue, audio, current, cycleRepeat, next, playList, pr
 import { filesFromDrop, importFiles, restoreLibrary, syncNativeLibrary } from './importer.js';
 import { forgetFile, isNative, onNativeFetch, pickFiles, pickFolder, rescan, setPlayback } from './native.js';
 import { closeNP, initPlayerUI, isNPOpen, openNP, setPane } from './nowplaying.js';
-import { albumView, artistView, avatarHTML, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
-import { newPlaylistFlow, trackMenu } from './actions.js';
+import { albumView, artistView, avatarHTML, continueCard, homeHidden, homeOrder, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
+import { deleteTrackFlow, newPlaylistFlow, trackMenu } from './actions.js';
 import { closeMenu, closeTopModal, openMenu, openModal, pickImage, toast } from './ui.js';
 import { applySettings, applyTheme, toggleTheme } from './theme.js';
 import { icon } from './icons.js';
@@ -240,6 +240,10 @@ function doAction(el, e) {
             e.stopPropagation();
             toggleLike(d.id);
             break;
+        case 'delete-track':
+            e.stopPropagation();
+            deleteTrackFlow(d.id);
+            break;
         case 'menu':
             e.stopPropagation();
             trackMenu(el, d.id, { pid: d.pid });
@@ -339,6 +343,44 @@ function doAction(el, e) {
         case 'home-view':
             setSetting('homeView', d.v);
             break;
+        case 'home-continue': { // та же песня уже в плеере — просто продолжаем; иначе включаем её (в альбоме — с неё)
+            const t = state.tracks.get(d.id);
+            if (!t)
+                break;
+            if (current()?.id === t.id) {
+                if (audio.paused)
+                    toggle();
+                else
+                    openNP();
+                break;
+            }
+            const g = derived().groups.get(t._albumKey), list = g && g.tracks.length > 1 ? g.tracks : [t];
+            playList(list.map(x => x.id), Math.max(0, list.indexOf(t)));
+            break;
+        }
+        case 'shuffle-all':
+            playIds(shuffleArray(derived().all.slice()), false);
+            break;
+        case 'recent-added':
+            setSongSort('added');
+            location.hash = '#/library/songs';
+            break;
+        case 'home-move': {
+            const o = homeOrder(), i = o.indexOf(d.k), j = i + (+d.d);
+            if (i < 0 || j < 0 || j >= o.length)
+                break;
+            [o[i], o[j]] = [o[j], o[i]];
+            setSetting('homeOrder', o);
+            break;
+        }
+        case 'home-toggle': {
+            const hid = homeHidden();
+            hid.has(d.k) ? hid.delete(d.k) : hid.add(d.k);
+            if (d.k === 'recents')
+                state.settings.homeRecents = true; // старый выключатель больше не используется
+            setSetting('homeHidden', [...hid]);
+            break;
+        }
         case 'set-setting':
             setSetting(d.k, d.k === 'speed' || d.k === 'transition' ? parseFloat(d.v) : d.v);
             break;
@@ -564,7 +606,7 @@ async function findAllLyrics() {
     } };
     await Promise.all([worker(), worker(), worker()]);
     lyBusy = false;
-    toast(`Готово: найдено ${found} из ${list.length}. Остальные — «Текста нет».`, 'ok', 5000);
+    toast(`Готово: найдено ${found} из ${list.length}. Остальные — «Текст не найден».`, 'ok', 5000);
 }
 function setSettings() {
     openModal({ title: 'Сбросить настройки?', html: '<p class="modal-text">Вид, цвета, фон и остальные параметры вернутся к значениям по умолчанию. Музыка, плейлисты и профиль не затрагиваются.</p>',
@@ -832,6 +874,7 @@ async function clearLibrary() {
                             URL.revokeObjectURL(t.cover);
                     }
                     state.tracks.clear();
+                    state.hidden = [];
                     state.recents = [];
                     save();
                     touchLibrary();
@@ -865,6 +908,12 @@ on('library', () => { render({ keepScroll: true }); renderSidePlaylists(); });
 on('playlists', () => { render({ keepScroll: true }); renderSidePlaylists(); });
 on('likes', syncLikes);
 on('track', syncRows);
+// карточка «Продолжить» на главной показывает ту песню, что играет сейчас
+on('track', () => { const el = route().name === 'home' && $('.cont'); if (el && el.dataset.trackId !== current()?.id) {
+    const html = continueCard();
+    if (html)
+        el.outerHTML = html;
+} });
 on('profile', () => { renderSideProfile(); render({ keepScroll: true }); });
 on('theme', () => { render({ keepScroll: true }); syncThemeBtn(); });
 on('settings', k => {
@@ -884,7 +933,7 @@ on('settings', k => {
     }
     if (k === 'speed' || k === 'all')
         setSpeed(state.settings.speed);
-    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgDust', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes2', 'bgVinyl2', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
+    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'homeOrder', 'homeHidden', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
         render({ keepScroll: true });
 });
 on('sleep', () => { if (['profile', 'settings'].includes(route().name))

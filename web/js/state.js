@@ -1,6 +1,6 @@
 import { SESSION_SEED, hash, norm, seededShuffle, stripSource, uid } from './util.js';
 import { artistKey, splitArtists, trackArtists } from './artists.js';
-import { kvGet, kvSet } from './db.js';
+import { delFile, kvGet, kvSet } from './db.js';
 
 const LS = 'puro.state.v1';
 export const DEFAULT_SETTINGS = {
@@ -11,15 +11,12 @@ export const DEFAULT_SETTINGS = {
     lyTranslate: false, // перевод текста песни под строками
     autoLyrics: true, // искать тексты онлайн, если их нет в файле
     bgAnim: true, // плавающие «облака»
-    bgNotes2: false, // большие ноты на фоне (с 1.9.9 выключены по умолчанию)
-    bgVinyl2: false, // пластинка
     splash: true, // заставка при запуске
     visualizer: true, // спектр в Now Playing
     speed: 1, // скорость воспроизведения
     transition: 0, // переход между треками: 0 — обычный, -1 — без пауз, N — плавный переход N секунд
     eq: 'flat', // эквалайзер: готовая настройка или 'custom'
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
-    bgDust: false, // звёздная пыль
     bgCover: true, // свечение от обложки играющего трека
     stripSource: true, // убирать приписки сайтов из названий («(Sefon.Pro)» и т.п.)
     autoCovers: true, // искать обложки онлайн для песен и альбомов без обложки
@@ -30,7 +27,9 @@ export const DEFAULT_SETTINGS = {
     showLyrics: true, // показывать текст справа; выключено — плеер по центру
     lang: 'ru', // ru | en — язык интерфейса
     lyricsProxy: '', // адрес Cloudflare Worker для NetEase / Genius
-    homeRecents: true, // блок «Недавно прослушанное»
+    homeRecents: true, // блок «Недавно прослушанное» (старый выключатель; теперь см. homeHidden)
+    homeOrder: [], // порядок разделов главной (пусто — обычный)
+    homeHidden: [], // скрытые разделы главной
     keepAwake: false, // не гасить экран во время музыки
 };
 export const state = {
@@ -42,6 +41,7 @@ export const state = {
     playlists: [], // {id, name, ids[], created}
     likes: new Set(),
     recents: [], // id[]
+    hidden: [], // песни из папки (Android), которые пользователь удалил: при пересканировании не возвращаются
     plays: {}, // id -> сколько раз прослушан
     profile: { name: 'Слушатель', username: 'listener', avatar: null, banner: null },
     settings: { ...DEFAULT_SETTINGS },
@@ -64,6 +64,8 @@ function apply(s) {
         state.playlists = s.playlists;
     if (Array.isArray(s.likes))
         state.likes = new Set(s.likes);
+    if (Array.isArray(s.hidden))
+        state.hidden = s.hidden;
     if (Array.isArray(s.recents))
         state.recents = s.recents;
     if (s.plays && typeof s.plays === 'object')
@@ -84,7 +86,7 @@ function apply(s) {
         state.tagEdits = s.tagEdits;
 }
 const snapshot = () => ({
-    playlists: state.playlists, likes: [...state.likes], recents: state.recents.slice(0, 30), plays: state.plays, playLog: state.playLog, smart: state.smart, tagEdits: state.tagEdits,
+    playlists: state.playlists, likes: [...state.likes], recents: state.recents.slice(0, 30), hidden: state.hidden, plays: state.plays, playLog: state.playLog, smart: state.smart, tagEdits: state.tagEdits,
     profile: state.profile, settings: state.settings, theme: state.theme, volume: state.volume, savedAt: Date.now(),
 });
 // Состояние хранится дважды: в localStorage (мгновенно) и в IndexedDB (надёжно сбрасывается на диск).
@@ -264,7 +266,12 @@ export function derived() {
         a.own = [...a.own].sort(newest);
         a.collab = [...a.collab].sort(newest);
         a.groups = [...a.own, ...a.collab];
-        a.cover = (a.own.find(g => g.cover) || a.collab.find(g => g.cover))?.cover || a.tracks.find(t => t.cover)?.cover || null;
+        // картинка артиста: его фото (найденное онлайн) или обложка его собственного релиза.
+        // Обложку общего трека не берём — иначе у двух артистов одна и та же картинка.
+        const acA = state.settings.autoCovers !== false ? autoCovers() : null;
+        a.photo = (acA && acA.ar && acA.ar[a.key]) || null;
+        a.cover = a.photo || a.own.find(g => g.cover)?.cover || null;
+        a.backdrop = a.cover || a.collab.find(g => g.cover)?.cover || null;
     }
     const songs = all.slice().sort((a, b) => a.title.localeCompare(b.title, 'ru', { sensitivity: 'base' }));
     cache = { groups, artists, albums, singles, artistList, songs, all };
@@ -273,6 +280,42 @@ export function derived() {
 }
 // ---------- плейлисты / лайки / недавние ----------
 export const getTrack = id => state.tracks.get(id);
+// Удалить песни из медиатеки: из списков, плейлистов, понравившихся. Сам файл на устройстве не трогаем.
+export function removeTracks(ids) {
+    const set = new Set(ids);
+    let covers = false;
+    for (const id of set) {
+        const t = state.tracks.get(id);
+        if (!t)
+            continue;
+        try {
+            if (t.url && !t.url.startsWith('/f/'))
+                URL.revokeObjectURL(t.url);
+        }
+        catch { /* ignore */ }
+        state.tracks.delete(id);
+        delFile(id);
+        state.likes.delete(id);
+        delete state.plays[id];
+        delete state.tagEdits[id];
+        if (state.covers.t[id]) {
+            delete state.covers.t[id];
+            covers = true;
+        }
+        if (String(id).startsWith('n:') && !state.hidden.includes(id))
+            state.hidden.push(id);
+    }
+    for (const p of state.playlists)
+        p.ids = p.ids.filter(id => !set.has(id));
+    state.recents = state.recents.filter(id => !set.has(id));
+    if (covers)
+        kvSet('covers', state.covers);
+    save();
+    touchLibrary();
+    emit('playlists');
+    emit('likes');
+    emit('recents');
+}
 export const playlistTracks = p => p.ids.map(getTrack).filter(Boolean);
 export function createPlaylist(name, ids = []) {
     const p = { id: uid(), name: name.trim() || 'Новый плейлист', ids: [...new Set(ids)], created: Date.now() };
