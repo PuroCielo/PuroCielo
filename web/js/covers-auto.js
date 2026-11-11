@@ -18,11 +18,11 @@ async function loadAuto() {
     try {
         const d = await kvGet('autoCovers');
         if (d && typeof d === 'object')
-            Object.assign(auto, { t: d.t || {}, a: d.a || {}, miss: d.miss || {} });
+            Object.assign(auto, { t: d.t || {}, a: d.a || {}, miss: d.v === 2 ? d.miss || {} : {} }); // v2: прежние «не нашлось» (из-за CORS) забываем
     }
     catch { /* ignore */ }
 }
-const persist = () => kvSet('autoCovers', auto).catch(() => { });
+const persist = () => kvSet('autoCovers', { ...auto, v: 2 }).catch(() => { });
 async function getJSON(url) {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 9000);
     try {
@@ -54,22 +54,70 @@ async function toData(url) {
         return url;
     }
 }
+// iTunes и Deezer не отдают CORS-заголовки, поэтому обычный fetch из браузера/приложения блокируется.
+// Оба умеют JSONP: подключаем ответ как <script> с функцией обратного вызова.
+let seq = 0;
+function jsonp(url, param = 'callback') {
+    return new Promise(res => {
+        const cb = '__puroCov' + (++seq) + '_' + Date.now(), sc = document.createElement('script');
+        let done = false;
+        const end = v => { if (done) return; done = true; clearTimeout(tm); try { delete window[cb]; } catch { window[cb] = undefined; } sc.remove(); res(v); };
+        const tm = setTimeout(() => end(null), 9000);
+        window[cb] = d => end(d);
+        sc.onerror = () => end(null);
+        sc.src = url + (url.includes('?') ? '&' : '?') + param + '=' + cb;
+        document.head.appendChild(sc);
+    });
+}
+// для сравнения убираем «(Deluxe Edition)», «- Single», «[Remastered 2011]», «feat. …» и т.п.
+const EXTRA = /\s*[([](?:[^)\]]*?\b(?:deluxe|remaster(?:ed)?|edition|expanded|anniversary|bonus|version|single|ep|explicit|clean|feat\.?|ft\.?|with|prod\.?|radio edit|original mix)\b[^)\]]*)[)\]]/gi;
+const clean = s => String(s || '').replace(EXTRA, '').replace(/\s+[-–—]\s+(?:single|ep)$/i, '').replace(/\s+(?:feat\.?|ft\.?)\s.+$/i, '').trim();
+const same = (a, b) => titleMatch(clean(a), clean(b)) || titleMatch(a, b);
+const artistOk = (theirs, artists) => !artists.length || artistMatch(theirs, artists);
 const big = u => String(u || '').replace(/\/\d+x\d+bb\./, '/600x600bb.');
-async function findAlbum(album, artists) {
-    const j = await getJSON(`${ITUNES}?${new URLSearchParams({ term: `${artists[0] || ''} ${album}`.trim(), entity: 'album', limit: '15' })}`);
-    const hit = (j?.results || []).find(r => titleMatch(String(r.collectionName || '').replace(/\s*[-–]\s*(single|ep)$/i, ''), album) && (!artists.length || artistMatch(r.artistName, artists)));
-    if (hit?.artworkUrl100)
-        return big(hit.artworkUrl100);
-    const m = await getJSON(`${MB}/release?${new URLSearchParams({ query: `release:"${album}"${artists[0] ? ` AND artist:"${artists[0]}"` : ''}`, fmt: 'json', limit: '8' })}`);
-    const rel = (m?.releases || []).find(r => titleMatch(r.title, album) && (!artists.length || artistMatch((r['artist-credit'] || []).map(a => a.name).join(' '), artists)));
+const q = s => String(s || '').replace(/"/g, '');
+async function deezer(path, query) {
+    const j = await jsonp(`https://api.deezer.com/search/${path}?${new URLSearchParams({ q: query, limit: '25', output: 'jsonp' })}`);
+    return (j && j.data) || [];
+}
+async function itunes(entity, term) {
+    const j = await jsonp(`${ITUNES}?${new URLSearchParams({ term, entity, media: 'music', limit: '25' })}`);
+    return (j && j.results) || [];
+}
+async function findAlbum(album, artists, firstTitle) {
+    const a0 = artists[0] || '', name = clean(album) || album;
+    // 1) Deezer: хорошо знает русскую и независимую музыку
+    for (const query of [a0 ? `artist:"${q(a0)}" album:"${q(name)}"` : `album:"${q(name)}"`, `${a0} ${name}`.trim()]) {
+        const hit = (await deezer('album', query)).find(r => same(r.title, album) && artistOk(r.artist?.name, artists));
+        if (hit && (hit.cover_xl || hit.cover_big))
+            return hit.cover_xl || hit.cover_big;
+    }
+    // 2) iTunes (Apple Music)
+    const it = (await itunes('album', `${a0} ${name}`.trim())).find(r => same(r.collectionName, album) && artistOk(r.artistName, artists));
+    if (it?.artworkUrl100)
+        return big(it.artworkUrl100);
+    // 3) по первой песне альбома: обложка её альбома, если название альбома похоже
+    if (firstTitle && artists.length) {
+        const tr = (await deezer('track', `artist:"${q(a0)}" track:"${q(clean(firstTitle))}"`)).find(r => same(r.title, firstTitle) && artistOk(r.artist?.name, artists) && same(r.album?.title, album));
+        if (tr?.album?.cover_xl)
+            return tr.album.cover_xl;
+    }
+    // 4) MusicBrainz + Cover Art Archive (у них CORS есть)
+    const m = await getJSON(`${MB}/release?${new URLSearchParams({ query: `release:"${q(name)}"${a0 ? ` AND artist:"${q(a0)}"` : ''}`, fmt: 'json', limit: '8' })}`);
+    const rel = (m?.releases || []).find(r => same(r.title, album) && artistOk((r['artist-credit'] || []).map(a => a.name).join(' '), artists));
     return rel ? `https://coverartarchive.org/release/${rel.id}/front-500` : null;
 }
 async function findSong(title, artists) {
     if (!artists.length)
         return null; // без артиста легко подставить чужую обложку — не ищем
-    const j = await getJSON(`${ITUNES}?${new URLSearchParams({ term: `${artists[0]} ${title}`, entity: 'song', limit: '15' })}`);
-    const hit = (j?.results || []).find(r => titleMatch(r.trackName, title) && artistMatch(r.artistName, artists));
-    return hit?.artworkUrl100 ? big(hit.artworkUrl100) : null;
+    const a0 = artists[0], name = clean(title) || title;
+    for (const query of [`artist:"${q(a0)}" track:"${q(name)}"`, `${a0} ${name}`]) {
+        const hit = (await deezer('track', query)).find(r => same(r.title, title) && artistMatch(r.artist?.name, artists));
+        if (hit?.album?.cover_xl || hit?.album?.cover_big)
+            return hit.album.cover_xl || hit.album.cover_big;
+    }
+    const it = (await itunes('song', `${a0} ${name}`)).find(r => same(r.trackName, title) && artistMatch(r.artistName, artists));
+    return it?.artworkUrl100 ? big(it.artworkUrl100) : null;
 }
 // что искать: альбомы без обложки целиком, одиночные песни — по названию
 function todo() {
@@ -81,7 +129,7 @@ function todo() {
             continue;
         const artists = (g.artists || [g.artist]).filter(a => a && a !== UNKNOWN);
         if (g.tracks.length > 1 && g.name && !auto.a[g.key] && fresh('a:' + g.key))
-            jobs.push({ kind: 'a', key: g.key, name: g.name, artists });
+            jobs.push({ kind: 'a', key: g.key, name: g.name, artists, first: g.tracks[0].title });
         else if (g.tracks.length === 1) {
             const t = g.tracks[0];
             if (!auto.t[t.id] && fresh('t:' + t.id))
@@ -100,7 +148,7 @@ async function run() {
         for (const j of todo()) {
             if (state.settings.autoCovers === false)
                 break;
-            let url = j.kind === 'a' ? await findAlbum(j.name, j.artists) : await findSong(j.name, j.artists);
+            let url = j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
             if (!url && j.kind === 't' && j.album)
                 url = await findAlbum(j.album, j.artists); // сингл из альбома — обложка альбома
             if (url) {
