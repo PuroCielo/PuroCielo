@@ -1,4 +1,9 @@
 plugins { id 'com.android.application' }
+
+// Версия одна на весь проект — в web/package.json
+def appVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../web/package.json')).version
+def appVersionCode = appVersion.tokenize('.').collect { it as int }.with { it[0] * 10000 + it[1] * 100 + it[2] }
+
 android {
     namespace 'com.purocielo.player'
     compileSdk 34
@@ -6,8 +11,8 @@ android {
         applicationId 'com.purocielo.player'
         minSdk 26
         targetSdk 34
-        versionCode 19
-        versionName '1.8.1'
+        versionCode appVersionCode
+        versionName appVersion
     }
     buildTypes { release { minifyEnabled false } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

@@ -4,6 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.newPlaylistFlow = newPlaylistFlow;
 exports.addToPlaylistModal = addToPlaylistModal;
 exports.trackMenu = trackMenu;
+const tagedit_js_1 = require("./tagedit.js");
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const ui_js_1 = require("./ui.js");
@@ -60,6 +61,7 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
         { icon: 'playlist', label: 'Добавить в плейлист…', onClick: () => addToPlaylistModal(id) },
         { icon: liked ? 'heart-fill' : 'heart', label: liked ? 'Убрать из понравившихся' : 'Нравится', onClick: () => (0, state_js_1.toggleLike)(id) },
         { sep: true },
+        { icon: 'edit', label: 'Данные трека…', onClick: () => (0, tagedit_js_1.openTrackInfo)(id) },
         { icon: 'search', label: 'Найти на SoundCloud', onClick: () => window.open('https://soundcloud.com/search?q=' + encodeURIComponent(`${(t._artists || [t.artist])[0] || ''} ${t.title}`.trim()), '_blank', 'noopener') },
         { icon: 'disc', label: 'Перейти к альбому', onClick: () => { (0, state_js_1.derived)(); location.hash = '#/album/' + encodeURIComponent(t._albumKey); } },
         { icon: 'user', label: 'Перейти к артисту', onClick: () => { (0, state_js_1.derived)(); location.hash = '#/artist/' + encodeURIComponent(t._artistKey); } },
@@ -121,6 +123,7 @@ const util_js_1 = require("./util.js");
 const m3u_js_1 = require("./m3u.js");
 const db_js_1 = require("./db.js");
 const i18n_js_1 = require("./i18n.js");
+const sync_js_1 = require("./sync.js");
 const view = (0, util_js_1.$)('#view');
 let query = '';
 // ================= роутер =================
@@ -145,6 +148,10 @@ function routeKey(r) {
         return 'playlist/' + r.arg;
     if (r.name === 'mix')
         return 'home';
+    if (r.name === 'smart')
+        return 'smart/' + r.arg;
+    if (r.name === 'stats')
+        return 'stats';
     return r.name;
 }
 function render({ keepScroll = false, restore = null } = {}) {
@@ -168,6 +175,12 @@ function render({ keepScroll = false, restore = null } = {}) {
             break;
         case 'mix':
             html = (0, views_js_1.mixView)(r.arg);
+            break;
+        case 'smart':
+            html = (0, views_js_1.smartView)(r.arg);
+            break;
+        case 'stats':
+            html = (0, views_js_1.statsView)(r.arg || 'month');
             break;
         case 'search':
             html = (0, views_js_1.searchView)(query);
@@ -210,7 +223,7 @@ function renderChrome() {
     (0, util_js_1.$)('#drop-ic').innerHTML = (0, icons_js_1.icon)('upload');
     if (native_js_1.isNative)
         (0, util_js_1.$)('#side-upload').dataset.action = 'add-folder';
-    const nav = [['home', 'home', 'Главная'], ['library/media', 'library', 'Медиатека'], ['library/albums', 'disc', 'Альбомы'], ['library/singles', 'single', 'Синглы'], ['library/playlists', 'playlist', 'Плейлисты'], ['library/artists', 'user', 'Артисты'], ['library/songs', 'note', 'Песни']];
+    const nav = [['home', 'home', 'Главная'], ['library/media', 'library', 'Медиатека'], ['library/albums', 'disc', 'Альбомы'], ['library/singles', 'single', 'Синглы'], ['library/playlists', 'playlist', 'Плейлисты'], ['library/artists', 'user', 'Артисты'], ['library/songs', 'note', 'Песни'], ['stats', 'chart', 'Итоги']];
     (0, util_js_1.$)('#side-nav').innerHTML = nav.map(([k, ic, n]) => `<a class="side-link" href="#/${k}" data-route="${k}">${(0, icons_js_1.icon)(ic)}<span>${n}</span></a>`).join('');
     (0, util_js_1.$)('#tabbar').innerHTML = [['home', 'home', 'Главная', '#/home'], ['search', 'search', 'Поиск', '#/search'], ['library', 'library', 'Библиотека', '#/library/media'], ['profile', 'user', 'Профиль', '#/profile']]
         .map(([k, ic, n, h]) => `<a href="${h}" data-tab="${k}">${(0, icons_js_1.icon)(ic)}<span>${n}</span></a>`).join('');
@@ -361,6 +374,48 @@ function doAction(el, e) {
             e.stopPropagation();
             albumMenu(el, d.key);
             break;
+        case 'play-smart':
+        case 'shuffle-smart': {
+            e.stopPropagation();
+            const p = state_js_1.state.smart.find(x => x.id === d.id);
+            if (p)
+                playIds((0, state_js_1.smartTracks)(p), el.dataset.action === 'shuffle-smart');
+            break;
+        }
+        case 'sync-google':
+            (0, sync_js_1.signInGoogle)();
+            break;
+        case 'sync-email':
+            emailSignIn();
+            break;
+        case 'sync-now':
+            (0, sync_js_1.syncNow)();
+            (0, ui_js_1.toast)('Синхронизирую…', 'info', 1500);
+            break;
+        case 'sync-out':
+            (0, sync_js_1.signOutSync)();
+            break;
+        case 'new-smart':
+            e.stopPropagation();
+            smartEditor();
+            break;
+        case 'smart-menu': {
+            e.stopPropagation();
+            const p = state_js_1.state.smart.find(x => x.id === d.id);
+            if (p)
+                (0, ui_js_1.openMenu)(el, [
+                    { icon: 'edit', label: 'Изменить правила', onClick: () => smartEditor(p) },
+                    { icon: 'download', label: 'Сохранить как обычный плейлист', onClick: () => {
+                            const np = (0, state_js_1.createPlaylist)(p.name);
+                            (0, state_js_1.addToPlaylist)(np.id, (0, state_js_1.smartTracks)(p).map(t => t.id));
+                            (0, ui_js_1.toast)(`Плейлист «${p.name}» создан`);
+                            location.hash = '#/playlist/' + np.id;
+                        } },
+                    { sep: true },
+                    { icon: 'trash', label: 'Удалить плейлист', danger: true, onClick: () => { (0, state_js_1.deleteSmart)(p.id); (0, ui_js_1.toast)(`Плейлист «${p.name}» удалён`); location.hash = '#/library/playlists'; } },
+                ]);
+            break;
+        }
         case 'new-playlist':
             e.stopPropagation();
             (0, actions_js_1.newPlaylistFlow)().then(p => {
@@ -409,7 +464,7 @@ function doAction(el, e) {
             (0, state_js_1.setSetting)('homeView', d.v);
             break;
         case 'set-setting':
-            (0, state_js_1.setSetting)(d.k, d.k === 'speed' ? parseFloat(d.v) : d.v);
+            (0, state_js_1.setSetting)(d.k, d.k === 'speed' || d.k === 'transition' ? parseFloat(d.v) : d.v);
             break;
         case 'toggle-setting':
             (0, state_js_1.setSetting)(d.k, !state_js_1.state.settings[d.k]);
@@ -647,8 +702,99 @@ function setSettings() {
     (0, ui_js_1.openModal)({ title: 'Сбросить настройки?', html: '<p class="modal-text">Вид, цвета, фон и остальные параметры вернутся к значениям по умолчанию. Музыка, плейлисты и профиль не затрагиваются.</p>',
         actions: [{ label: 'Отмена' }, { label: 'Сбросить', primary: true, danger: true, onClick: () => { Object.assign(state_js_1.state.settings, state_js_1.DEFAULT_SETTINGS); (0, state_js_1.save)(); (0, state_js_1.emit)('settings', 'all'); } }] });
 }
+// ползунки своего эквалайзера: звук меняется сразу, без перерисовки страницы
+document.addEventListener('input', e => {
+    const r = e.target.closest && e.target.closest('.eq-slider');
+    if (!r)
+        return;
+    const g = (state_js_1.state.settings.eqCustom || [0, 0, 0, 0, 0, 0]).slice();
+    g[+r.dataset.i] = +r.value;
+    const b = r.parentElement.querySelector('b');
+    if (b)
+        b.textContent = (g[+r.dataset.i] > 0 ? '+' : '') + g[+r.dataset.i];
+    (0, state_js_1.setSetting)('eqCustom', g);
+});
+// ---------- вход по почте для синхронизации ----------
+function emailSignIn() {
+    (0, ui_js_1.openModal)({
+        title: 'Вход в аккаунт Puro Cielo',
+        html: `<div class="sm-form"><label class="sm-field wide"><span>Почта</span><input class="input" type="email" id="em-mail" autocomplete="email"></label>
+      <label class="sm-field wide"><span>Пароль</span><input class="input" type="password" id="em-pass" autocomplete="current-password"></label>
+      <p class="ti-note wide">Тот же аккаунт, что на сайте Puro Cielo. Нет аккаунта — нажмите «Создать».</p><p class="acc-err wide" id="em-err"></p></div>`,
+        actions: [
+            { label: 'Создать', keep: true, onClick: api => go(api, true) },
+            { label: 'Войти', primary: true, keep: true, onClick: api => go(api, false) },
+        ],
+    });
+    async function go(api, create) {
+        const mail = api.el.querySelector('#em-mail').value.trim(), pass = api.el.querySelector('#em-pass').value;
+        if (!mail || !pass)
+            return;
+        api.el.querySelector('#em-err').textContent = '';
+        if (await (0, sync_js_1.signInEmail)(mail, pass, create)) {
+            api.close();
+            (0, ui_js_1.toast)('Вы вошли — синхронизация включена');
+        }
+        else
+            api.el.querySelector('#em-err').textContent = sync_js_1.sync.error;
+    }
+}
+(0, state_js_1.on)('sync', () => {
+    if (route().name === 'settings')
+        render({ keepScroll: true });
+});
+// ---------- редактор умного плейлиста ----------
+function smartEditor(p) {
+    const r = p?.rules || { sort: 'random' };
+    const num = (k, label, ph) => `<label class="sm-field"><span>${label}</span><input class="input" type="number" min="0" step="1" data-r="${k}" value="${r[k] || ''}" placeholder="${ph}"></label>`;
+    const sel = (k, label, opts) => `<label class="sm-field"><span>${label}</span><select class="input" data-r="${k}">${opts.map(([v, n]) => `<option value="${v}" ${String(r[k] || '') === String(v) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`;
+    (0, ui_js_1.openModal)({
+        title: p ? 'Умный плейлист' : 'Новый умный плейлист', wide: true,
+        html: `<div class="sm-form">
+      <label class="sm-field wide"><span>Название</span><input class="input" data-r="name" value="${(0, util_js_1.esc)(p?.name || '')}" placeholder="Например, «Любимое, но забытое»" maxlength="80"></label>
+      <label class="sm-check"><input type="checkbox" data-r="liked" ${r.liked ? 'checked' : ''}><span>Только понравившиеся</span></label>
+      <label class="sm-field"><span>Артист содержит</span><input class="input" data-r="artist" value="${(0, util_js_1.esc)(r.artist || '')}" placeholder="любой"></label>
+      <label class="sm-field"><span>Жанр содержит</span><input class="input" data-r="genre" value="${(0, util_js_1.esc)(r.genre || '')}" placeholder="любой"></label>
+      ${num('minPlays', 'Прослушано не меньше, раз', 'неважно')}
+      ${num('notPlayedDays', 'Не слушали дней', 'неважно')}
+      ${num('addedDays', 'Добавлены за последние дней', 'когда угодно')}
+      ${num('limit', 'Не больше песен', 'без ограничения')}
+      ${sel('sort', 'Порядок', [['random', 'Случайный'], ['plays', 'Чаще слушаю'], ['added', 'Недавно добавленные'], ['title', 'По названию']])}
+      <p class="sm-count" id="sm-count"></p></div>`,
+        actions: [{ label: 'Отмена' }, { label: p ? 'Сохранить' : 'Создать', primary: true, onClick: api => {
+                    const v = read(api.el);
+                    const name = v.name.trim() || 'Умный плейлист';
+                    delete v.name;
+                    const sp = { id: p?.id || 'sm' + Date.now().toString(36), name, rules: v };
+                    (0, state_js_1.saveSmart)(sp);
+                    if (!p)
+                        location.hash = '#/smart/' + sp.id;
+                    else
+                        render({ keepScroll: true });
+                } }],
+        onMount: api => {
+            const upd = () => { const n = (0, state_js_1.smartTracks)({ id: 'preview', rules: read(api.el) }).length; api.el.querySelector('#sm-count').textContent = `Сейчас подходит: ${(0, util_js_1.plural)(n, ['песня', 'песни', 'песен'])}`; };
+            api.el.addEventListener('input', upd);
+            api.el.addEventListener('change', upd);
+            upd();
+        },
+    });
+    function read(root) {
+        const v = {};
+        root.querySelectorAll('[data-r]').forEach(i => {
+            const k = i.dataset.r;
+            if (i.type === 'checkbox')
+                v[k] = i.checked;
+            else if (i.type === 'number')
+                v[k] = Math.max(0, parseInt(i.value, 10) || 0);
+            else
+                v[k] = i.value;
+        });
+        return v;
+    }
+}
 function exportBackup() {
-    const data = { app: 'puro-cielo', v: 1, playlists: state_js_1.state.playlists, likes: [...state_js_1.state.likes], plays: state_js_1.state.plays, profile: state_js_1.state.profile, settings: state_js_1.state.settings, theme: state_js_1.state.theme,
+    const data = { app: 'puro-cielo', v: 1, covers: state_js_1.state.covers, playlists: state_js_1.state.playlists, likes: [...state_js_1.state.likes], plays: state_js_1.state.plays, profile: state_js_1.state.profile, settings: state_js_1.state.settings, theme: state_js_1.state.theme,
         // треки в плейлистах привязаны к id — сохраняем ещё и «имя» для справки
         names: Object.fromEntries([...state_js_1.state.tracks.values()].map(t => [t.id, `${t.artist} — ${t.title}`])) };
     const a = document.createElement('a');
@@ -679,6 +825,8 @@ function exportBackup() {
             Object.assign(state_js_1.state.settings, d.settings);
         if (d.theme)
             state_js_1.state.theme = d.theme;
+        if (d.covers && typeof d.covers === 'object')
+            (0, state_js_1.setCovers)(d.covers);
         (0, state_js_1.save)();
         (0, theme_js_1.applyTheme)(state_js_1.state.theme);
         (0, theme_js_1.applySettings)();
@@ -884,7 +1032,7 @@ addEventListener('drop', async (e) => {
     }
     if (k === 'speed' || k === 'all')
         (0, player_js_1.setSpeed)(state_js_1.state.settings.speed);
-    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed'].includes(k))
+    if (['all', 'corners', 'density', 'anim', 'homeRecents', 'bgParticles', 'bgCover', 'seekStep', 'keepAwake', 'homeView', 'cardSize', 'accent', 'lyricsSize', 'bgAnim', 'bgNotes', 'bgVinyl', 'splash', 'autoLyrics', 'visualizer', 'speed', 'transition', 'eq'].includes(k))
         render({ keepScroll: true });
 });
 (0, state_js_1.on)('sleep', () => {
@@ -1037,6 +1185,7 @@ document.addEventListener('visibilitychange', () => {
 (async () => {
     await (0, state_js_1.load)();
     (0, i18n_js_1.initI18n)(state_js_1.state.settings.lang);
+    (0, sync_js_1.initSync)();
     (0, theme_js_1.applyTheme)(state_js_1.state.theme);
     (0, theme_js_1.applySettings)();
     (0, player_js_1.setVolume)(state_js_1.state.volume);
@@ -1255,6 +1404,20 @@ exports.lyGet = safe(k => tx('lyrics', 'readonly', s => s.get(k)));
 exports.lySet = safe((k, v) => tx('lyrics', 'readwrite', s => s.put(v, k)));
 
 };
+defs["firebase-config.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.firebaseConfig = void 0;
+// Настройки веб-приложения Firebase (apiKey у веб-приложений не секретный: доступ защищают правила и список доменов).
+exports.firebaseConfig = {
+    apiKey: 'AIzaSyAxlmsUjoNW3zAdKXno0eX_KxyGCoF1pEQ',
+    authDomain: 'purocielo-player.firebaseapp.com',
+    projectId: 'purocielo-player',
+    storageBucket: 'purocielo-player.firebasestorage.app',
+    messagingSenderId: '502147686007',
+    appId: '1:502147686007:web:8e981772bf940207ceb072',
+};
+
+};
 defs["i18n.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EN_PLURAL = exports.isEn = exports.getLang = void 0;
@@ -1361,6 +1524,34 @@ const D = {
     'Скрыть очередь': 'Hide queue', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
+    // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
+    'Аккаунт': 'Account', 'Синхронизация между устройствами': 'Sync between devices', 'Войти по почте': 'Sign in with email', 'Выйти': 'Sign out', 'Сейчас': 'Now',
+    'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.': 'Sign in with the same account as on the website — likes, playlists, plays, covers and settings become shared between your phone and computer. Music stays on each device.',
+    'Вход в аккаунт Puro Cielo': 'Sign in to Puro Cielo', 'Почта': 'Email', 'Пароль': 'Password', 'Войти': 'Sign in',
+    'Тот же аккаунт, что на сайте Puro Cielo. Нет аккаунта — нажмите «Создать».': 'The same account as on the Puro Cielo website. No account yet? Press “Create”.',
+    'Вы вошли — синхронизация включена': 'Signed in — sync is on', 'Синхронизирую…': 'Syncing…', 'Аккаунт Puro Cielo': 'Puro Cielo account',
+    'Неверная почта или пароль': 'Wrong email or password', 'Такого аккаунта нет': 'No such account', 'Эта почта уже зарегистрирована — войдите': 'This email is already registered — sign in',
+    'Пароль слишком короткий (нужно от 6 символов)': 'Password is too short (6+ characters)', 'Неверный адрес почты': 'Invalid email address', 'Окно входа закрыто': 'Sign-in window closed',
+    'Нет интернета': 'No internet connection', 'Здесь этот способ входа не работает — войдите по почте': 'This sign-in method doesn’t work here — use email', 'Этот адрес не разрешён в настройках Firebase': 'This address isn’t allowed in Firebase settings',
+    'Переход между треками': 'Track transitions', 'Плавный: конец песни затихает, следующая нарастает. «Без пауз» — для альбомов, где песни перетекают одна в другую.': 'Crossfade: one song fades out while the next fades in. “Gapless” is for albums where songs flow into each other.',
+    'Обычный': 'Normal', 'Без пауз': 'Gapless', 'Эквалайзер': 'Equalizer', 'Подстройка звука: готовая настройка или своя.': 'Shape the sound: a preset or your own.',
+    'Без изменений': 'Flat', 'Больше баса': 'Bass boost', 'Голос': 'Vocal', 'Больше высоких': 'Treble boost', 'Громко и ярко': 'Loud & bright', 'Мягко': 'Soft', 'Своя': 'Custom',
+    'Итоги': 'Stats', 'Что и сколько вы слушали': 'What and how much you listened to', 'Неделя': 'Week', 'Месяц': 'Month', 'Год': 'Year', 'Всё время': 'All time',
+    'музыки': 'of music', 'прослушиваний': 'plays', 'разных песен': 'different songs', 'артистов': 'artists', 'Самые прослушиваемые песни': 'Most played songs', 'По дням недели': 'By day of week',
+    'Пн': 'Mon', 'Вт': 'Tue', 'Ср': 'Wed', 'Чт': 'Thu', 'Пт': 'Fri', 'Сб': 'Sat', 'Вс': 'Sun', 'Пока нечего считать': 'Nothing to count yet',
+    'Прослушивание засчитывается после 30 секунд песни. Послушайте музыку — итоги появятся здесь.': 'A play counts after 30 seconds of a song. Listen to some music — your stats will appear here.',
+    'Умный плейлист': 'Smart playlist', 'Новый умный плейлист': 'New smart playlist', 'Собирается сам по правилам': 'Builds itself from rules', 'Только понравившиеся': 'Liked songs only',
+    'Артист содержит': 'Artist contains', 'Жанр содержит': 'Genre contains', 'Прослушано не меньше, раз': 'Played at least, times', 'Не слушали дней': 'Not played for days',
+    'Добавлены за последние дней': 'Added in the last days', 'Не больше песен': 'At most songs', 'Порядок': 'Order', 'Случайный': 'Random', 'Чаще слушаю': 'Most played', 'По названию': 'By title',
+    'любой': 'any', 'неважно': 'any', 'когда угодно': 'any time', 'без ограничения': 'no limit', 'Например, «Любимое, но забытое»': 'For example, “Loved but forgotten”',
+    'Изменить правила': 'Edit rules', 'Сохранить как обычный плейлист': 'Save as a regular playlist', 'Под правила пока ничего не подходит': 'Nothing matches the rules yet',
+    'Измените правила в меню «⋯» — плейлист обновится сам.': 'Change the rules in the «⋯» menu — the playlist updates itself.', 'Все песни библиотеки': 'All songs in the library',
+    'Данные трека…': 'Track info…', 'Данные трека': 'Track info', 'Найти в MusicBrainz': 'Find on MusicBrainz', 'Ищу…': 'Searching…',
+    'Выберите подходящий вариант:': 'Pick the matching one:', 'Ничего не найдено — попробуйте изменить название или артиста.': 'Nothing found — try changing the title or artist.',
+    'MusicBrainz сейчас недоступен — попробуйте позже.': 'MusicBrainz is unavailable right now — try later.', 'Вернуть из файла': 'Restore from file', 'Данные трека — снова из файла': 'Track info restored from file',
+    'Данные трека сохранены': 'Track info saved', 'Файл не меняется — данные хранятся в плеере. Поиск текста песни пойдёт уже по новым данным.': 'The file isn’t changed — the info is stored in the player. Lyrics will be searched with the new info.',
+    'Перевод текста': 'Translate lyrics', 'Скрыть перевод': 'Hide translation', 'Перевод сейчас недоступен (лимит бесплатного сервиса — несколько песен в день)': 'Translation is unavailable right now (the free service allows a few songs per day)',
+    'Резервная копия': 'Backup', 'Плейлисты, лайки, настройки и профиль — в один файл.': 'Playlists, likes, settings and profile in one file.',
 };
 // Строки с подставленными значениями
 const R = [
@@ -1369,6 +1560,15 @@ const R = [
     [/^Скорость: (.+)$/, (m, v) => `Speed: ${v.replace(',', '.')}`],
     [/^([\d,.]+)×$/, (m, v) => `${v.replace(',', '.')}×`],
     [/^Повтор: (выкл|все|один)$/, (m, v) => `Repeat: ${{ выкл: 'off', все: 'all', один: 'one' }[v]}`],
+    [/^Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах\.(?: Последний раз: (.+)\.)?$/, (m, w) => `Sync is on: likes, playlists, plays, covers and settings are the same on all your devices.${w ? ` Last synced: ${w}.` : ''}`],
+    [/^Сейчас подходит: (.+)$/, (m, n) => `Matching now: ${n}`],
+    [/^Обложку — на весь альбом «(.+)»$/, (m, n) => `Use the cover for the whole album “${n}”`],
+    [/^Не удалось войти: (.+)$/, (m, e) => `Couldn’t sign in: ${e}`],
+    [/^(\d+) мин$/, (m, n) => `${n} min`],
+    [/^(\d+) ч$/, (m, n) => `${n} h`],
+    [/^(\d+) Гц$/, (m, n) => `${n} Hz`],
+    [/^Умный · (.+)$/, (m, n) => `Smart · ${n}`],
+    [/^(.+)$/, (m, x) => (/^(понравившиеся|артист: |жанр: |прослушано от |не слушали |добавлены за |не больше )/.test(x) ? x.split(' · ').map(p => p === 'понравившиеся' ? 'liked' : p.replace(/^артист: /, 'artist: ').replace(/^жанр: /, 'genre: ').replace(/^прослушано от (\d+) раз$/, 'played $1+ times').replace(/^не слушали (\d+) дн\.$/, 'not played for $1 days').replace(/^добавлены за (\d+) дн\.$/, 'added in $1 days').replace(/^не больше (\d+)$/, 'at most $1')).join(' · ') : undefined)],
     [/^Далее · (\d+)$/, (m, n) => `Up next · ${n}`],
     [/^(\d+) с$/, (m, n) => `${n} s`],
     [/^([\d,.]+) кГц$/, (m, v) => `${v.replace(',', '.')} kHz`],
@@ -1400,7 +1600,7 @@ const R = [
     [/^(?:(?:добавлено|удалено|уже были|не удалось прочитать|текстов \.lrc): \d+(?: · )?)+$/, m => m.replace(/добавлено/g, 'added').replace(/удалено/g, 'removed').replace(/уже были/g, 'already there').replace(/не удалось прочитать/g, 'unreadable').replace(/текстов \.lrc/g, '.lrc lyrics')],
 ];
 // Формы множественного числа для plural()
-exports.EN_PLURAL = { 'песня': ['song', 'songs'], 'трек': ['track', 'tracks'], 'альбом': ['album', 'albums'], 'сингл': ['single', 'singles'], 'файл': ['file', 'files'] };
+exports.EN_PLURAL = { 'песня': ['song', 'songs'], 'трек': ['track', 'tracks'], 'альбом': ['album', 'albums'], 'сингл': ['single', 'singles'], 'файл': ['file', 'files'], 'раз': ['time', 'times'], 'прослушивание': ['play', 'plays'] };
 function tr(s) {
     if (lang !== 'en' || !s || !/[А-Яа-яЁё]/.test(s))
         return s;
@@ -1409,8 +1609,9 @@ function tr(s) {
     if (out === undefined)
         for (const [re, f] of R) {
             const x = re.exec(core);
-            if (x) {
-                out = f(...x);
+            const r = x ? f(...x) : undefined;
+            if (r !== undefined) {
+                out = r;
                 break;
             }
         }
@@ -1568,6 +1769,9 @@ const ICONS = {
     'view-list': S('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.500" cy="6" r="1" fill="currentColor"/><circle cx="4.500" cy="12" r="1" fill="currentColor"/><circle cx="4.500" cy="18" r="1" fill="currentColor"/>'),
     settings: S('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
     speed: S('<path d="M4.5 17a8.500 8.500 0 1 1 15 0"/><path d="m12 13 4-5"/><circle cx="12" cy="13" r="1.300" fill="currentColor"/>'),
+    translate: S('<path d="M4 5h9M8.500 3v2c0 4-2.500 7-5 8.500M6 9c1.500 2.500 4 4.500 6.500 5.500"/><path d="m13 21 4-9 4 9M14.300 18h5.400"/>'),
+    chart: S('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    smart: S('<path d="M4 6h10M4 12h7M4 18h6"/><path d="m17 11 1.200 2.800L21 15l-2.800 1.200L17 19l-1.200-2.800L13 15l2.800-1.200z"/>'),
     mix: S('<path d="M3 7h3.500c2 0 3.200.900 4.300 2.600l2.400 4.800c1.100 1.700 2.300 2.600 4.300 2.600H21"/><path d="M3 17h3.500c1.400 0 2.400-.400 3.200-1.200M14.300 8.200c.800-.800 1.800-1.200 3.200-1.200H21"/><path d="m18.500 4.500 2.500 2.500-2.500 2.500M18.500 14.500l2.500 2.500-2.500 2.500"/>'),
     tower: F('<path fill-rule=\"evenodd\" d=\"M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z\"/>'),
 };
@@ -2696,6 +2900,7 @@ exports.setPane = setPane;
 exports.openNP = openNP;
 exports.closeNP = closeNP;
 exports.initPlayerUI = initPlayerUI;
+const translate_js_1 = require("./translate.js");
 const player_js_1 = require("./player.js");
 const state_js_1 = require("./state.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
@@ -2868,14 +3073,20 @@ function renderLyrics(t) {
         return;
     }
     lyType = ly.type;
+    // перевод строчкой под оригиналом (если включён и уже загружен)
+    const trOn = state_js_1.state.settings.lyTranslate && (0, translate_js_1.canTranslate)(ly);
+    const tr = trOn ? (0, translate_js_1.cachedTranslation)(t) : null;
+    if (trOn && !tr)
+        (0, translate_js_1.loadTranslation)(t);
+    const trLine = i => (tr && tr[i] ? `<span class="ly-tr">${(0, util_js_1.esc)(tr[i])}</span>` : '');
     if (ly.type === 'plain') {
         lyBox.classList.add('plain');
-        lyBox.innerHTML = `<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map(l => l.trim() ? `<p>${l}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
     lyBox.innerHTML = `<div class="ly-pad"></div>${lines.map((l, i) => l.text
-        ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}</p>`
+        ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
 }
@@ -3260,7 +3471,15 @@ function initPlayerUI() {
         if (!t)
             return;
         const qOpen = np.dataset.pane === 'queue';
-        (0, actions_js_1.trackMenu)(e.currentTarget, t.id, { np: true, extra: [{ icon: 'queue', label: qOpen ? 'Скрыть очередь' : 'Очередь', onClick: () => setPane(qOpen ? (isDesktop() && lyricsOn() ? 'lyrics' : 'player') : 'queue') }] });
+        const extra = [{ icon: 'queue', label: qOpen ? 'Скрыть очередь' : 'Очередь', onClick: () => setPane(qOpen ? (isDesktop() && lyricsOn() ? 'lyrics' : 'player') : 'queue') }];
+        if ((0, translate_js_1.canTranslate)(t.lyrics))
+            extra.push({ icon: 'translate', label: state_js_1.state.settings.lyTranslate ? 'Скрыть перевод' : 'Перевод текста', onClick: () => {
+                    state_js_1.state.settings.lyTranslate = !state_js_1.state.settings.lyTranslate;
+                    (0, state_js_1.save)();
+                    renderLyrics(t);
+                    updateLyrics(player_js_1.audio.currentTime, true);
+                } });
+        (0, actions_js_1.trackMenu)(e.currentTarget, t.id, { np: true, extra });
     });
     // свайп вниз по Now Playing на мобильных
     let y0 = null;
@@ -3271,11 +3490,24 @@ function initPlayerUI() {
         y0 = null;
     }, { passive: true });
     (0, state_js_1.on)('track', renderTrack);
+    // перевод загрузился — перерисовываем текст, если это всё ещё та же песня
+    (0, state_js_1.on)('translation', t => {
+        if ((0, player_js_1.current)()?.id === t.id) {
+            renderLyrics(t);
+            updateLyrics(player_js_1.audio.currentTime, true);
+        }
+    });
+    (0, state_js_1.on)('translation-error', () => (0, ui_js_1.toast)('Перевод сейчас недоступен (лимит бесплатного сервиса — несколько песен в день)', 'warn'));
     // своя обложка поменялась — обновляем плеер, фон и мини-плеер
     (0, state_js_1.on)('covers', () => {
         (0, state_js_1.derived)();
         const t = (0, player_js_1.current)();
         if (t)
+            (0, state_js_1.emit)('track', t);
+    });
+    (0, state_js_1.on)('track-meta', t => {
+        (0, state_js_1.derived)();
+        if ((0, player_js_1.current)()?.id === t.id)
             (0, state_js_1.emit)('track', t);
     });
     (0, state_js_1.on)('state', syncPlay);
@@ -3301,7 +3533,7 @@ function initPlayerUI() {
 };
 defs["player.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sleepState = exports.isPlaying = exports.current = exports.getAnalyser = exports.P = exports.audio = void 0;
+exports.sleepState = exports.isPlaying = exports.current = exports.eqGains = exports.EQ_PRESETS = exports.EQ_BANDS = exports.getAnalyser = exports.P = exports.audio = void 0;
 exports.playList = playList;
 exports.playTrackInQueue = playTrackInQueue;
 exports.toggle = toggle;
@@ -3333,9 +3565,25 @@ exports.P = {
     repeat: 'off', // off | all | one
     muted: false,
 };
-let actx, analyser;
+let actx, analyser, fadeGain, eqNodes = [];
 const getAnalyser = () => analyser;
 exports.getAnalyser = getAnalyser;
+// ---------- эквалайзер: 6 полос ----------
+exports.EQ_BANDS = [60, 230, 910, 3600, 9000, 14000];
+exports.EQ_PRESETS = {
+    flat: { name: 'Без изменений', g: [0, 0, 0, 0, 0, 0] },
+    bass: { name: 'Больше баса', g: [6, 4, 1, 0, 0, 0] },
+    vocal: { name: 'Голос', g: [-2, -1, 2, 4, 2, 0] },
+    treble: { name: 'Больше высоких', g: [0, 0, 0, 1, 4, 6] },
+    loud: { name: 'Громко и ярко', g: [5, 2, -1, 0, 3, 5] },
+    soft: { name: 'Мягко', g: [1, 1, 0, -2, -3, -4] },
+};
+const eqGains = () => (state_js_1.state.settings.eq === 'custom' ? state_js_1.state.settings.eqCustom : (exports.EQ_PRESETS[state_js_1.state.settings.eq] || exports.EQ_PRESETS.flat).g) || exports.EQ_PRESETS.flat.g;
+exports.eqGains = eqGains;
+function applyEq() {
+    const g = (0, exports.eqGains)();
+    eqNodes.forEach((n, i) => { n.gain.value = g[i] || 0; });
+}
 const current = () => (0, state_js_1.getTrack)(exports.P.queue[exports.P.idx]) || null;
 exports.current = current;
 const isPlaying = () => !exports.audio.paused && !exports.audio.ended;
@@ -3352,8 +3600,24 @@ function ensureGraph() {
         analyser.fftSize = 512;
         analyser.smoothingTimeConstant = 0.8;
         const src = actx.createMediaElementSource(exports.audio);
-        src.connect(analyser);
+        // звук → эквалайзер → громкость перехода → анализатор (спектр) → колонки
+        eqNodes = exports.EQ_BANDS.map((f, i) => {
+            const n = actx.createBiquadFilter();
+            n.type = i === 0 ? 'lowshelf' : i === exports.EQ_BANDS.length - 1 ? 'highshelf' : 'peaking';
+            n.frequency.value = f;
+            n.Q.value = 1.1;
+            return n;
+        });
+        fadeGain = actx.createGain();
+        let node = src;
+        for (const n of eqNodes) {
+            node.connect(n);
+            node = n;
+        }
+        node.connect(fadeGain);
+        fadeGain.connect(analyser);
         analyser.connect(actx.destination);
+        applyEq();
         if (actx.state === 'suspended')
             actx.resume();
     }
@@ -3362,11 +3626,109 @@ function ensureGraph() {
         actx = null;
     }
 }
+(0, state_js_1.on)('settings', k => {
+    if (k === 'eq' || k === 'eqCustom' || k === 'all') {
+        if ((0, exports.eqGains)().some(Boolean))
+            ensureGraph();
+        applyEq();
+    }
+});
+// ---------- переход между треками ----------
+// Плавный: старый трек доигрывает в отдельном «призрачном» плеере и затихает, новый — нарастает.
+// «Без пауз»: следующий трек заранее подгружается и включается ровно в момент окончания текущего.
+let fading = null, preload = null, lastLoadAt = 0;
+// пауза от пользователя останавливает и затихающий трек (смена src сама вызывает pause — её пропускаем)
+exports.audio.addEventListener('pause', () => {
+    if (performance.now() - lastLoadAt > 400)
+        stopFade();
+});
+function nextIndex() {
+    if (exports.P.repeat === 'one')
+        return -1;
+    if (exports.P.idx + 1 < exports.P.queue.length)
+        return exports.P.idx + 1;
+    return exports.P.repeat === 'all' && exports.P.queue.length > 1 ? 0 : -1;
+}
+function stopFade() {
+    if (!fading)
+        return;
+    clearInterval(fading.timer);
+    fading.ghost.pause();
+    fading.ghost.removeAttribute('src');
+    fading = null;
+    if (fadeGain && actx)
+        fadeGain.gain.cancelScheduledValues(actx.currentTime), fadeGain.gain.value = 1;
+}
+function crossfade(sec) {
+    const ni = nextIndex();
+    if (ni < 0)
+        return false;
+    stopFade();
+    const ghost = new Audio(exports.audio.currentSrc || exports.audio.src);
+    ghost.playbackRate = exports.audio.playbackRate;
+    ghost.currentTime = exports.audio.currentTime;
+    const vol = exports.P.muted ? 0 : state_js_1.state.volume;
+    ghost.volume = vol;
+    ghost.play().catch(() => { });
+    const t0 = performance.now(), ms = sec * 1000;
+    fading = { ghost, timer: setInterval(() => {
+            const k = Math.min(1, (performance.now() - t0) / ms);
+            ghost.volume = Math.max(0, vol * (1 - k));
+            if (k >= 1 || ghost.ended)
+                stopFade();
+        }, 50) };
+    const ghostRef = fading;
+    exports.P.idx = ni;
+    load(true, { fadeIn: sec });
+    if (fading !== ghostRef) // load() не должен гасить только что запущенный переход
+        fading = ghostRef;
+    return true;
+}
+function warmNext() {
+    const ni = nextIndex(), t = ni >= 0 ? (0, state_js_1.getTrack)(exports.P.queue[ni]) : null;
+    if (!t || (preload && preload.id === t.id))
+        return;
+    preload = { id: t.id, el: new Audio() };
+    preload.el.preload = 'auto';
+    preload.el.src = t.url;
+}
+let gapRaf = 0;
+function gaplessWatch() {
+    cancelAnimationFrame(gapRaf);
+    const tick = () => {
+        if (exports.audio.paused || !isFinite(exports.audio.duration))
+            return;
+        const left = (exports.audio.duration - exports.audio.currentTime) / (exports.audio.playbackRate || 1);
+        if (left <= 0.06 && nextIndex() >= 0 && !sleepEndOfTrack) {
+            exports.P.idx = nextIndex();
+            load();
+            return;
+        }
+        gapRaf = requestAnimationFrame(tick);
+    };
+    gapRaf = requestAnimationFrame(tick);
+}
+exports.audio.addEventListener('timeupdate', () => {
+    const tr = +state_js_1.state.settings.transition || 0;
+    if (!tr || exports.audio.paused || !isFinite(exports.audio.duration) || fading)
+        return;
+    const left = (exports.audio.duration - exports.audio.currentTime) / (exports.audio.playbackRate || 1);
+    if (left < 20)
+        warmNext();
+    if (tr === -1 && left < 1.2)
+        gaplessWatch();
+    else if (tr > 0 && left <= tr && exports.audio.duration > tr * 3 && !sleepEndOfTrack)
+        crossfade(tr);
+});
 let counted = false;
-function load(autoplay = true) {
+function load(autoplay = true, { fadeIn = 0 } = {}) {
     const t = (0, exports.current)();
     if (!t)
         return;
+    if (!fadeIn)
+        stopFade();
+    cancelAnimationFrame(gapRaf);
+    lastLoadAt = performance.now();
     counted = false;
     exports.audio.src = t.url;
     exports.audio.defaultPlaybackRate = exports.audio.playbackRate = state_js_1.state.settings.speed || 1;
@@ -3375,6 +3737,12 @@ function load(autoplay = true) {
     (0, state_js_1.emit)('queue');
     if (autoplay) {
         ensureGraph();
+        if (fadeGain && actx) {
+            fadeGain.gain.cancelScheduledValues(actx.currentTime);
+            fadeGain.gain.setValueAtTime(fadeIn ? 0.0001 : 1, actx.currentTime);
+            if (fadeIn)
+                fadeGain.gain.linearRampToValueAtTime(1, actx.currentTime + fadeIn);
+        }
         exports.audio.play().catch(err => {
             if (err.name !== 'AbortError')
                 console.warn(err);
@@ -3685,6 +4053,7 @@ exports.playlistTracks = exports.getTrack = exports.hasAlbumCover = exports.hasO
 exports.load = load;
 exports.setTrackCover = setTrackCover;
 exports.setAlbumCover = setAlbumCover;
+exports.setCovers = setCovers;
 exports.save = save;
 exports.flushSave = flushSave;
 exports.setSetting = setSetting;
@@ -3698,6 +4067,11 @@ exports.deletePlaylist = deletePlaylist;
 exports.toggleLike = toggleLike;
 exports.pushRecent = pushRecent;
 exports.bumpPlay = bumpPlay;
+exports.setTagEdit = setTagEdit;
+exports.saveSmart = saveSmart;
+exports.deleteSmart = deleteSmart;
+exports.lastPlayed = lastPlayed;
+exports.smartTracks = smartTracks;
 exports.likedTracks = likedTracks;
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
@@ -3708,6 +4082,7 @@ exports.DEFAULT_SETTINGS = {
     cardSize: 'm', // s | m | l
     homeView: 'rail', // rail | grid | list
     lyricsSize: 'm', // s | m | l
+    lyTranslate: false, // перевод текста песни под строками
     autoLyrics: true, // искать тексты онлайн, если их нет в файле
     bgAnim: true, // плавающие «облака»
     bgNotes: true, // большие ноты на фоне
@@ -3715,6 +4090,9 @@ exports.DEFAULT_SETTINGS = {
     splash: true, // заставка при запуске
     visualizer: true, // спектр в Now Playing
     speed: 1, // скорость воспроизведения
+    transition: 0, // переход между треками: 0 — обычный, -1 — без пауз, N — плавный переход N секунд
+    eq: 'flat', // эквалайзер: готовая настройка или 'custom'
+    eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
     bgParticles: true, // поднимающиеся частицы
     bgCover: true, // свечение от обложки играющего трека
     corners: 'round', // round | sharp — скругление обложек
@@ -3728,6 +4106,9 @@ exports.DEFAULT_SETTINGS = {
     keepAwake: false, // не гасить экран во время музыки
 };
 exports.state = {
+    playLog: [], // [id, когда, длительность] — журнал прослушиваний
+    smart: [], // умные плейлисты: { id, name, rules }
+    tagEdits: {}, // свои данные трека: id → { title, artist, album, year }
     covers: { t: {}, a: {} }, // свои обложки: t — трек → картинка, a — альбом → картинка
     tracks: new Map(), // id -> track
     playlists: [], // {id, name, ids[], created}
@@ -3771,9 +4152,15 @@ function apply(s) {
         exports.state.theme = s.theme;
     if (typeof s.volume === 'number')
         exports.state.volume = s.volume;
+    if (Array.isArray(s.playLog))
+        exports.state.playLog = s.playLog;
+    if (Array.isArray(s.smart))
+        exports.state.smart = s.smart;
+    if (s.tagEdits && typeof s.tagEdits === 'object')
+        exports.state.tagEdits = s.tagEdits;
 }
 const snapshot = () => ({
-    playlists: exports.state.playlists, likes: [...exports.state.likes], recents: exports.state.recents.slice(0, 30), plays: exports.state.plays,
+    playlists: exports.state.playlists, likes: [...exports.state.likes], recents: exports.state.recents.slice(0, 30), plays: exports.state.plays, playLog: exports.state.playLog, smart: exports.state.smart, tagEdits: exports.state.tagEdits,
     profile: exports.state.profile, settings: exports.state.settings, theme: exports.state.theme, volume: exports.state.volume, savedAt: Date.now(),
 });
 // Состояние хранится дважды: в localStorage (мгновенно) и в IndexedDB (надёжно сбрасывается на диск).
@@ -3820,6 +4207,7 @@ function setAlbumCover(key, url) {
 }
 const hasOwnCover = id => !!exports.state.covers.t[id];
 exports.hasOwnCover = hasOwnCover;
+function setCovers(c) { exports.state.covers = { t: { ...(c.t || {}) }, a: { ...(c.a || {}) } }; saveCovers(); }
 const hasAlbumCover = key => !!exports.state.covers.a[key];
 exports.hasAlbumCover = hasAlbumCover;
 let idbTimer = 0;
@@ -3854,6 +4242,12 @@ function derived() {
         return cache;
     const groups = new Map(), artists = new Map();
     const all = [...exports.state.tracks.values()];
+    // 0) свои правки данных трека (название, артист, альбом, год) поверх тегов из файла
+    for (const t of all) {
+        if (!t._orig)
+            t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
+        Object.assign(t, t._orig, exports.state.tagEdits[t.id] || {});
+    }
     // 1) артисты каждого трека: «A & B», «A; B», «A feat. B» → отдельные артисты
     for (const t of all) {
         t._artists = (0, artists_js_1.trackArtists)(t);
@@ -4002,8 +4396,544 @@ function pushRecent(id) {
     save();
     (0, exports.emit)('recents');
 }
-function bumpPlay(id) { exports.state.plays[id] = (exports.state.plays[id] || 0) + 1; save(); (0, exports.emit)('plays', id); }
+// прослушивание: счётчик + запись в журнал (для «Итогов» и умных плейлистов); журнал — последние 5000 записей
+function bumpPlay(id) {
+    exports.state.plays[id] = (exports.state.plays[id] || 0) + 1;
+    const t = (0, exports.getTrack)(id);
+    exports.state.playLog.push([id, Date.now(), Math.round(t?.duration || 0)]);
+    if (exports.state.playLog.length > 5000)
+        exports.state.playLog.splice(0, exports.state.playLog.length - 5000);
+    save();
+    (0, exports.emit)('plays', id);
+}
+// ---------- умные плейлисты: собираются сами по правилам ----------
+function setTagEdit(id, edit) {
+    if (edit && Object.keys(edit).length)
+        exports.state.tagEdits[id] = edit;
+    else
+        delete exports.state.tagEdits[id];
+    save();
+    touchLibrary();
+    const t = (0, exports.getTrack)(id);
+    if (t)
+        (0, exports.emit)('track-meta', t);
+}
+function saveSmart(p) {
+    const i = exports.state.smart.findIndex(x => x.id === p.id);
+    if (i >= 0)
+        exports.state.smart[i] = p;
+    else
+        exports.state.smart.push(p);
+    save();
+    (0, exports.emit)('playlists');
+}
+function deleteSmart(id) { exports.state.smart = exports.state.smart.filter(x => x.id !== id); save(); (0, exports.emit)('playlists'); }
+function lastPlayed() {
+    const m = new Map();
+    for (const [id, at] of exports.state.playLog)
+        m.set(id, at);
+    return m;
+}
+function smartTracks(p) {
+    const r = p.rules || {}, now = Date.now(), DAY = 864e5, last = lastPlayed();
+    const has = (s, q) => String(s || '').toLowerCase().includes(String(q).toLowerCase().trim());
+    let list = derived().all.filter(t => (!r.liked || exports.state.likes.has(t.id))
+        && (!r.artist || has(t.artist, r.artist) || has(t.albumArtist, r.artist))
+        && (!r.genre || has(t.genre, r.genre))
+        && (!r.minPlays || (exports.state.plays[t.id] || 0) >= r.minPlays)
+        && (!r.notPlayedDays || !last.has(t.id) || now - last.get(t.id) > r.notPlayedDays * DAY)
+        && (!r.addedDays || now - (t.addedAt || 0) <= r.addedDays * DAY));
+    const sorts = {
+        random: () => (0, util_js_1.seededShuffle)(list, (0, util_js_1.hash)('smart:' + p.id) ^ util_js_1.SESSION_SEED),
+        plays: () => list.sort((a, b) => (exports.state.plays[b.id] || 0) - (exports.state.plays[a.id] || 0)),
+        added: () => list.sort((a, b) => b.addedAt - a.addedAt),
+        title: () => list.sort((a, b) => a.title.localeCompare(b.title, 'ru', { sensitivity: 'base' })),
+    };
+    list = (sorts[r.sort] || sorts.random)();
+    return r.limit ? list.slice(0, r.limit) : list;
+}
 function likedTracks() { return [...exports.state.likes].map(exports.getTrack).filter(Boolean); }
+
+};
+defs["sync.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.syncNow = exports.canGoogle = exports.pkeyOf = exports.sync = void 0;
+exports.payload = payload;
+exports.initSync = initSync;
+exports.signInGoogle = signInGoogle;
+exports.signInEmail = signInEmail;
+exports.signOutSync = signOutSync;
+const firebase_config_js_1 = require("./firebase-config.js");
+const state_js_1 = require("./state.js");
+const util_js_1 = require("./util.js");
+const native_js_1 = require("./native.js");
+// Синхронизация через аккаунт Puro Cielo (тот же Firebase, что и вход на сайте).
+// Между устройствами переносятся лайки, плейлисты (обычные и умные), счётчики прослушиваний, свои данные треков,
+// свои обложки, профиль, тема и настройки. Сама музыка остаётся на каждом устройстве.
+// Песня узнаётся по «имени файла + размеру» — одинаковый файл на телефоне и компьютере считается одной песней.
+//
+// Firestore:  sync/{uid}                 — всё, кроме картинок (+ индекс картинок blobs: {docId: hash})
+//             sync/{uid}/blobs/{docId}   — по одной картинке: { kind: 'ct'|'ca'|'avatar'|'banner', key, data }
+const FB = '10.12.2', G = `https://www.gstatic.com/firebasejs/${FB}`;
+const importUrl = new Function('u', 'return import(u)'); // настоящий import() (сборка не должна превращать его в require)
+const DEVICE = (() => {
+    try {
+        let d = localStorage.getItem('puro-device');
+        if (!d)
+            localStorage.setItem('puro-device', d = Math.random().toString(36).slice(2, 10));
+        return d;
+    }
+    catch {
+        return 'dev';
+    }
+})();
+// не переносим то, что относится к конкретному устройству
+const LOCAL_SETTINGS = ['keepAwake', 'lyricsProxy'];
+exports.sync = { status: 'off', user: null, lastAt: 0, error: '' };
+let F = null, A = null, auth = null, db = null, unsub = null, timer = 0, applying = false, uidNow = '';
+const set = patch => { Object.assign(exports.sync, patch); (0, state_js_1.emit)('sync'); };
+const metaKey = uid => 'puro-sync-' + uid;
+const readMeta = uid => {
+    try {
+        return JSON.parse(localStorage.getItem(metaKey(uid)) || '{}');
+    }
+    catch {
+        return {};
+    }
+};
+const writeMeta = (uid, m) => {
+    try {
+        localStorage.setItem(metaKey(uid), JSON.stringify(m));
+    }
+    catch { /* ignore */ }
+};
+// ---------- переносимые ключи песен ----------
+const pkeyOf = t => `${t.name}|${t.size}`;
+exports.pkeyOf = pkeyOf;
+function keyMaps() {
+    const toP = new Map(), toId = new Map();
+    for (const t of state_js_1.state.tracks.values()) {
+        const p = (0, exports.pkeyOf)(t);
+        toP.set(t.id, p);
+        toId.set(p, t.id);
+    }
+    return { P: id => toP.get(id) || id, I: p => toId.get(p) || p };
+}
+const mapKeys = (o, f) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [f(k), v]));
+// ---------- что отправляем ----------
+function payload() {
+    const { P } = keyMaps();
+    const settings = { ...state_js_1.state.settings };
+    for (const k of LOCAL_SETTINGS)
+        delete settings[k];
+    return {
+        likes: [...state_js_1.state.likes].map(P).sort(),
+        playlists: state_js_1.state.playlists.map(p => ({ id: p.id, name: p.name, created: p.created || 0, ids: p.ids.map(P) })),
+        smart: state_js_1.state.smart,
+        plays: mapKeys(Object.fromEntries(Object.entries(state_js_1.state.plays).filter(([, n]) => n > 0)), P),
+        tagEdits: mapKeys(state_js_1.state.tagEdits, P),
+        settings, theme: state_js_1.state.theme,
+        profile: { name: state_js_1.state.profile.name, username: state_js_1.state.profile.username },
+    };
+}
+// картинки: docId → { kind, key, data }
+function localBlobs() {
+    const { P } = keyMaps(), out = {};
+    for (const [id, data] of Object.entries(state_js_1.state.covers.t))
+        out['ct_' + (0, util_js_1.hash)(P(id)).toString(36)] = { kind: 'ct', key: P(id), data };
+    for (const [key, data] of Object.entries(state_js_1.state.covers.a))
+        out['ca_' + (0, util_js_1.hash)(key).toString(36)] = { kind: 'ca', key, data };
+    if (state_js_1.state.profile.avatar)
+        out.avatar = { kind: 'avatar', key: '', data: state_js_1.state.profile.avatar };
+    if (state_js_1.state.profile.banner)
+        out.banner = { kind: 'banner', key: '', data: state_js_1.state.profile.banner };
+    return out;
+}
+const blobIndex = blobs => Object.fromEntries(Object.entries(blobs).map(([id, b]) => [id, (0, util_js_1.hash)(b.data).toString(36)]));
+const fingerprint = () => (0, util_js_1.hash)(JSON.stringify(payload()) + JSON.stringify(blobIndex(localBlobs()))).toString(36);
+// ---------- слияние, когда менялись оба устройства ----------
+// Списки (лайки, плейлисты, прослушивания) объединяются. Профиль, тема и настройки: на новом устройстве (первая
+// синхронизация) берутся из аккаунта, иначе — с этого устройства, как более свежие.
+function merge(L, R, firstTime) {
+    const byId = new Map();
+    for (const p of [...(R.playlists || []), ...L.playlists]) {
+        const o = byId.get(p.id);
+        byId.set(p.id, o ? { ...p, ids: [...new Set([...o.ids, ...p.ids])] } : p);
+    }
+    const smart = new Map([...(R.smart || []), ...L.smart].map(p => [p.id, p]));
+    const plays = { ...(R.plays || {}) };
+    for (const [k, n] of Object.entries(L.plays))
+        plays[k] = Math.max(plays[k] || 0, n);
+    const scalars = firstTime ? { settings: R.settings || L.settings, theme: R.theme || L.theme, profile: R.profile || L.profile } : {};
+    return { ...R, ...L, ...scalars,
+        likes: [...new Set([...(R.likes || []), ...L.likes])].sort(),
+        playlists: [...byId.values()], smart: [...smart.values()], plays,
+        tagEdits: { ...(R.tagEdits || {}), ...L.tagEdits } };
+}
+// ---------- применить пришедшее ----------
+async function applyRemote(R, uid) {
+    applying = true;
+    try {
+        const { I } = keyMaps();
+        if (Array.isArray(R.likes))
+            state_js_1.state.likes = new Set(R.likes.map(I));
+        if (Array.isArray(R.playlists))
+            state_js_1.state.playlists = R.playlists.map(p => ({ ...p, ids: (p.ids || []).map(I) }));
+        if (Array.isArray(R.smart))
+            state_js_1.state.smart = R.smart;
+        if (R.plays)
+            state_js_1.state.plays = mapKeys(R.plays, I);
+        if (R.tagEdits)
+            state_js_1.state.tagEdits = mapKeys(R.tagEdits, I);
+        if (R.settings) {
+            const keep = Object.fromEntries(LOCAL_SETTINGS.map(k => [k, state_js_1.state.settings[k]]));
+            Object.assign(state_js_1.state.settings, R.settings, keep);
+        }
+        if (R.theme)
+            state_js_1.state.theme = R.theme;
+        if (R.profile) {
+            if (R.profile.name)
+                state_js_1.state.profile.name = R.profile.name;
+            if (R.profile.username)
+                state_js_1.state.profile.username = R.profile.username;
+        }
+        // картинки: скачиваем только изменившиеся
+        if (R.blobs) {
+            const mine = blobIndex(localBlobs());
+            const covers = { t: {}, a: {} };
+            const { I: I2 } = keyMaps();
+            let avatar = null, banner = null;
+            const have = localBlobs();
+            for (const [id, h] of Object.entries(R.blobs)) {
+                let b = mine[id] === h ? have[id] : null;
+                if (!b) {
+                    const snap = await F.getDoc(F.doc(db, 'sync', uid, 'blobs', id)).catch(() => null);
+                    b = snap && snap.exists() ? snap.data() : null;
+                }
+                if (!b)
+                    continue;
+                if (b.kind === 'ct')
+                    covers.t[I2(b.key)] = b.data;
+                else if (b.kind === 'ca')
+                    covers.a[b.key] = b.data;
+                else if (b.kind === 'avatar')
+                    avatar = b.data;
+                else if (b.kind === 'banner')
+                    banner = b.data;
+            }
+            state_js_1.state.covers = covers;
+            state_js_1.state.profile.avatar = avatar;
+            state_js_1.state.profile.banner = banner;
+        }
+        (0, state_js_1.save)();
+        (0, state_js_1.touchLibrary)();
+        (0, state_js_1.emit)('covers');
+        (0, state_js_1.emit)('likes');
+        (0, state_js_1.emit)('playlists');
+        (0, state_js_1.emit)('settings', 'all');
+    }
+    finally {
+        applying = false;
+    }
+}
+// ---------- отправить ----------
+async function push(uid, data) {
+    const blobs = localBlobs(), index = blobIndex(blobs);
+    const m = readMeta(uid), sent = m.blobs || {};
+    for (const [id, b] of Object.entries(blobs))
+        if (sent[id] !== index[id])
+            await F.setDoc(F.doc(db, 'sync', uid, 'blobs', id), b);
+    for (const id of Object.keys(sent))
+        if (!index[id])
+            await F.deleteDoc(F.doc(db, 'sync', uid, 'blobs', id)).catch(() => { });
+    const at = Date.now();
+    await F.setDoc(F.doc(db, 'sync', uid), { ...data, blobs: index, v: 1, updatedAt: at, device: DEVICE });
+    writeMeta(uid, { fp: fingerprint(), at, blobs: index });
+    set({ lastAt: at, error: '' });
+}
+// ---------- сверка: при входе, при изменениях здесь и при изменениях на другом устройстве ----------
+let busy = false, again = false;
+async function reconcile(remote) {
+    const uid = uidNow;
+    if (!uid || !F)
+        return;
+    if (busy) {
+        again = true;
+        return;
+    }
+    busy = true;
+    try {
+        const m = readMeta(uid);
+        const R = remote !== undefined ? remote : await F.getDoc(F.doc(db, 'sync', uid)).then(s => (s.exists() ? s.data() : null));
+        const dirty = fingerprint() !== m.fp;
+        const remoteNew = R && R.updatedAt && R.updatedAt !== m.at && R.device !== DEVICE;
+        if (!R)
+            await push(uid, payload());
+        else if (remoteNew && !dirty) {
+            await applyRemote(R, uid);
+            writeMeta(uid, { fp: fingerprint(), at: R.updatedAt, blobs: R.blobs || {} });
+            set({ lastAt: R.updatedAt });
+        }
+        else if (remoteNew && dirty) {
+            await applyRemote({ ...merge(payload(), R, !m.fp), blobs: { ...(R.blobs || {}), ...blobIndex(localBlobs()) } }, uid);
+            await push(uid, payload());
+        }
+        else if (dirty)
+            await push(uid, payload());
+    }
+    catch (e) {
+        set({ error: String(e && (e.code || e.message) || e) });
+    }
+    finally {
+        busy = false;
+        if (again) {
+            again = false;
+            reconcile();
+        }
+    }
+}
+// ---------- вход ----------
+async function loadFirebase() {
+    if (F)
+        return true;
+    if (!firebase_config_js_1.firebaseConfig.apiKey)
+        return false;
+    const mock = typeof window !== 'undefined' && window.__puroFirebase; // для проверок
+    const [app, au, fs] = mock ? mock : await Promise.all([importUrl(`${G}/firebase-app.js`), importUrl(`${G}/firebase-auth.js`), importUrl(`${G}/firebase-firestore.js`)]);
+    const a = app.initializeApp(firebase_config_js_1.firebaseConfig, 'puro-player');
+    A = au;
+    F = fs;
+    auth = au.getAuth(a);
+    db = fs.getFirestore(a);
+    au.onAuthStateChanged(auth, user => onUser(user));
+    return true;
+}
+function onUser(user) {
+    if (unsub) {
+        unsub();
+        unsub = null;
+    }
+    clearInterval(timer);
+    if (!user) {
+        uidNow = '';
+        set({ status: 'off', user: null });
+        return;
+    }
+    uidNow = user.uid;
+    set({ status: 'in', user: { email: user.email || '', name: user.displayName || '' }, lastAt: readMeta(user.uid).at || 0 });
+    reconcile();
+    // изменения с другого устройства приходят сразу
+    unsub = F.onSnapshot(F.doc(db, 'sync', user.uid), s => {
+        if (!applying && s.exists() && s.data().device !== DEVICE)
+            reconcile(s.data());
+    }, () => { });
+    // свои изменения отправляем раз в несколько секунд, если что-то поменялось
+    timer = setInterval(() => {
+        if (!applying && fingerprint() !== readMeta(user.uid).fp)
+            reconcile();
+    }, 5000);
+    // ник, занятый на сайте, — в профиль
+    F.getDoc(F.doc(db, 'users', user.uid)).then(s => {
+        const n = s.exists() && s.data().username;
+        if (n && state_js_1.state.profile.username !== n) {
+            state_js_1.state.profile.username = n;
+            (0, state_js_1.save)();
+            (0, state_js_1.emit)('settings', 'profile');
+        }
+    }).catch(() => { });
+}
+// на Android, когда файлы появились после синхронизации, привязываем к ним лайки и плейлисты
+(0, state_js_1.on)('library', () => {
+    if (applying || !uidNow)
+        return;
+    const { I } = keyMaps();
+    let changed = false;
+    const fix = id => {
+        const n = I(id);
+        if (n !== id)
+            changed = true;
+        return n;
+    };
+    state_js_1.state.likes = new Set([...state_js_1.state.likes].map(fix));
+    for (const p of state_js_1.state.playlists)
+        p.ids = p.ids.map(fix);
+    if (changed)
+        (0, state_js_1.save)();
+});
+async function initSync() {
+    try {
+        // если раньше входили на этом устройстве — поднимаем Firebase сразу
+        if (Object.keys(localStorage).some(k => k.startsWith('puro-sync-')))
+            await loadFirebase();
+    }
+    catch { /* без интернета — синхронизации просто нет */ }
+}
+const canGoogle = () => !native_js_1.isNative; // во встроенном браузере Android вход через Google запрещён самим Google
+exports.canGoogle = canGoogle;
+async function signInGoogle() {
+    set({ status: 'loading', error: '' });
+    try {
+        await loadFirebase();
+        await A.signInWithPopup(auth, new A.GoogleAuthProvider());
+    }
+    catch (e) {
+        set({ status: exports.sync.user ? 'in' : 'off', error: authError(e) });
+    }
+}
+async function signInEmail(email, pass, create = false) {
+    set({ status: 'loading', error: '' });
+    try {
+        await loadFirebase();
+        await (create ? A.createUserWithEmailAndPassword : A.signInWithEmailAndPassword)(auth, email, pass);
+        return true;
+    }
+    catch (e) {
+        set({ status: exports.sync.user ? 'in' : 'off', error: authError(e) });
+        return false;
+    }
+}
+async function signOutSync() {
+    if (auth)
+        await A.signOut(auth);
+}
+const syncNow = () => reconcile();
+exports.syncNow = syncNow;
+function authError(e) {
+    const c = String(e && e.code || e && e.message || e);
+    return ({
+        'auth/invalid-credential': 'Неверная почта или пароль', 'auth/wrong-password': 'Неверная почта или пароль', 'auth/user-not-found': 'Такого аккаунта нет',
+        'auth/email-already-in-use': 'Эта почта уже зарегистрирована — войдите', 'auth/weak-password': 'Пароль слишком короткий (нужно от 6 символов)',
+        'auth/invalid-email': 'Неверный адрес почты', 'auth/popup-closed-by-user': 'Окно входа закрыто', 'auth/network-request-failed': 'Нет интернета',
+        'auth/operation-not-supported-in-this-environment': 'Здесь этот способ входа не работает — войдите по почте',
+        'auth/unauthorized-domain': 'Этот адрес не разрешён в настройках Firebase',
+    })[c] || 'Не удалось войти: ' + c;
+}
+
+};
+defs["tagedit.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mbSearch = mbSearch;
+exports.openTrackInfo = openTrackInfo;
+const state_js_1 = require("./state.js");
+const ui_js_1 = require("./ui.js");
+const util_js_1 = require("./util.js");
+const icons_js_1 = require("./icons.js");
+// «Данные трека»: своё название, артист, альбом, год + поиск в MusicBrainz (открытая база музыки) с обложкой
+// из Cover Art Archive. Файл не меняется — правки хранятся в плеере поверх тегов.
+const MB = 'https://musicbrainz.org/ws/2';
+const CAA = 'https://coverartarchive.org/release';
+const q = s => String(s || '').replace(/["\\]/g, ' ').trim();
+async function mbSearch(title, artist) {
+    const parts = [`recording:"${q(title)}"`];
+    if (q(artist))
+        parts.push(`artist:"${q(artist)}"`);
+    const r = await fetch(`${MB}/recording?${new URLSearchParams({ query: parts.join(' AND '), fmt: 'json', limit: '10' })}`, { headers: { Accept: 'application/json' } });
+    if (!r.ok)
+        throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const out = [];
+    for (const rec of d.recordings || []) {
+        const artistName = (rec['artist-credit'] || []).map(a => (a.name || a.artist?.name || '') + (a.joinphrase || '')).join('').trim();
+        const rels = (rec.releases || []).slice().sort((a, b) => String(a.date || '9999').localeCompare(String(b.date || '9999')));
+        const rel = rels.find(x => x.status === 'Official') || rels[0];
+        out.push({ id: rec.id, title: rec.title, artist: artistName, album: rel?.title || '', year: (rel?.date || rec['first-release-date'] || '').slice(0, 4),
+            length: rec.length ? Math.round(rec.length / 1000) : 0, releaseId: rel?.id || '', score: rec.score || 0 });
+    }
+    return out;
+}
+// обложка → data URL (чтобы работала и без интернета); если браузер не дал прочитать — просто ссылка
+async function coverData(releaseId) {
+    const url = `${CAA}/${releaseId}/front-500`;
+    try {
+        const r = await fetch(url);
+        if (!r.ok)
+            return null;
+        const b = await r.blob();
+        return await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(url); fr.readAsDataURL(b); });
+    }
+    catch {
+        return url;
+    }
+}
+function openTrackInfo(id) {
+    const t = (0, state_js_1.getTrack)(id);
+    if (!t)
+        return;
+    const g = (0, state_js_1.derived)().groups.get(t._albumKey);
+    const inAlbum = g && g.tracks.length > 1;
+    let pickedRelease = '';
+    const field = (k, label) => `<label class="sm-field ${k === 'title' ? 'wide' : ''}"><span>${label}</span><input class="input" data-f="${k}" value="${(0, util_js_1.esc)(t[k] || '')}"></label>`;
+    (0, ui_js_1.openModal)({
+        title: 'Данные трека', wide: true,
+        html: `<div class="sm-form">
+      ${field('title', 'Название')}${field('artist', 'Артист')}${field('album', 'Альбом')}${field('year', 'Год')}
+      <p class="ti-note wide">Файл не меняется — данные хранятся в плеере. Поиск текста песни пойдёт уже по новым данным.</p>
+      <div class="ti-mb wide"><button class="btn btn-soft sm" id="ti-search">${(0, icons_js_1.icon)('search')}Найти в MusicBrainz</button><span id="ti-status"></span></div>
+      <div class="ti-results wide" id="ti-results"></div>
+      ${inAlbum ? `<label class="sm-check wide" id="ti-album-wrap" hidden><input type="checkbox" id="ti-album-cover" checked><span>Обложку — на весь альбом «${(0, util_js_1.esc)(g.name)}»</span></label>` : ''}
+    </div>`,
+        actions: [
+            ...(state_js_1.state.tagEdits[id] ? [{ label: 'Вернуть из файла', onClick: () => { (0, state_js_1.setTagEdit)(id, null); (0, ui_js_1.toast)('Данные трека — снова из файла'); } }] : []),
+            { label: 'Отмена' },
+            { label: 'Сохранить', primary: true, onClick: async (api) => {
+                    const v = {};
+                    api.el.querySelectorAll('[data-f]').forEach(i => {
+                        const k = i.dataset.f, val = i.value.trim();
+                        if (val !== String(t._orig?.[k] || ''))
+                            v[k] = val;
+                    });
+                    (0, state_js_1.setTagEdit)(id, v);
+                    if (pickedRelease) {
+                        const url = await coverData(pickedRelease);
+                        if (url) {
+                            const all = api.el.querySelector('#ti-album-cover');
+                            if (all && all.checked && g)
+                                (0, state_js_1.setAlbumCover)(g.key, url);
+                            else
+                                (0, state_js_1.setTrackCover)(id, url);
+                        }
+                    }
+                    t.lyrics = null; // текст поищется заново по новым данным
+                    t._ly = undefined;
+                    (0, ui_js_1.toast)('Данные трека сохранены');
+                } },
+        ],
+        onMount: api => {
+            const $ = s => api.el.querySelector(s);
+            $('#ti-search').addEventListener('click', async () => {
+                const title = $('[data-f="title"]').value, artist = $('[data-f="artist"]').value;
+                $('#ti-status').textContent = 'Ищу…';
+                $('#ti-results').innerHTML = '';
+                try {
+                    const res = await mbSearch(title, artist);
+                    $('#ti-status').textContent = res.length ? 'Выберите подходящий вариант:' : 'Ничего не найдено — попробуйте изменить название или артиста.';
+                    $('#ti-results').innerHTML = res.map((r, i) => `<button class="ti-res" data-i="${i}">
+              <span class="ti-cov">${r.releaseId ? `<img src="${CAA}/${r.releaseId}/front-250" alt="" loading="lazy" onerror="this.remove()">` : ''}${(0, icons_js_1.icon)('disc')}</span>
+              <span class="ti-txt"><b>${(0, util_js_1.esc)(r.title)}</b><span>${(0, util_js_1.esc)(r.artist)}${r.album ? ' · ' + (0, util_js_1.esc)(r.album) : ''}${r.year ? ' · ' + r.year : ''}</span></span>
+              <span class="ti-len">${r.length ? (0, util_js_1.fmtTime)(r.length) : ''}</span></button>`).join('');
+                    $('#ti-results').onclick = e => {
+                        const b = e.target.closest('.ti-res');
+                        if (!b)
+                            return;
+                        const r = res[+b.dataset.i];
+                        api.el.querySelectorAll('.ti-res').forEach(x => x.classList.toggle('on', x === b));
+                        $('[data-f="title"]').value = r.title;
+                        $('[data-f="artist"]').value = r.artist;
+                        $('[data-f="album"]').value = r.album;
+                        $('[data-f="year"]').value = r.year;
+                        pickedRelease = r.releaseId;
+                        const w = $('#ti-album-wrap');
+                        if (w)
+                            w.hidden = !pickedRelease;
+                    };
+                }
+                catch {
+                    $('#ti-status').textContent = 'MusicBrainz сейчас недоступен — попробуйте позже.';
+                }
+            });
+        },
+    });
+}
 
 };
 defs["tags.js"]=function(module,exports,require){"use strict";
@@ -4684,6 +5614,134 @@ function applySettings() {
 }
 
 };
+defs["translate.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.targetLang = void 0;
+exports.detectLang = detectLang;
+exports.canTranslate = canTranslate;
+exports.cachedTranslation = cachedTranslation;
+exports.loadTranslation = loadTranslation;
+const db_js_1 = require("./db.js");
+const state_js_1 = require("./state.js");
+const i18n_js_1 = require("./i18n.js");
+// Перевод текста песни строчкой под оригиналом.
+// Сервис — MyMemory (бесплатно, без ключа, можно прямо из браузера). Лимит у него ~5000 символов в день
+// на пользователя — это несколько песен; готовые переводы запоминаются и повторно не запрашиваются.
+const API = 'https://api.mymemory.translated.net/get';
+const CHUNK = 450; // MyMemory принимает до 500 байт за запрос
+// Язык песни по буквам (автоопределение у MyMemory не работает)
+function detectLang(text) {
+    const s = String(text || '');
+    const count = re => (s.match(re) || []).length;
+    const cyr = count(/[а-яё]/gi), lat = count(/[a-z]/gi), ko = count(/[가-힯]/g), ja = count(/[぀-ヿ]/g), zh = count(/[一-鿿]/g);
+    const max = Math.max(cyr, lat, ko, ja, zh);
+    if (!max)
+        return '';
+    if (max === ko)
+        return 'ko';
+    if (max === ja || (zh && ja))
+        return 'ja';
+    if (max === zh)
+        return 'zh-CN';
+    if (max === cyr)
+        return /[їієґ]/i.test(s) ? 'uk' : 'ru';
+    if (/[ñ¿¡]/i.test(s))
+        return 'es';
+    if (/[ãõ]/i.test(s) || /\b(você|não)\b/i.test(s))
+        return 'pt';
+    if (/[äöüß]/i.test(s))
+        return 'de';
+    if (/[èêëçàâœ]/i.test(s) && /\b(je|tu|le|la|les|et|est|pas)\b/i.test(s))
+        return 'fr';
+    return 'en';
+}
+const targetLang = () => ((0, i18n_js_1.isEn)() ? 'en' : 'ru');
+exports.targetLang = targetLang;
+const lyricLines = ly => ly.type === 'synced' ? ly.lines.map(l => l.text || '') : String(ly.text || '').split('\n');
+function canTranslate(ly) {
+    if (!ly)
+        return false;
+    const src = detectLang(lyricLines(ly).join('\n'));
+    return !!src && src !== (0, exports.targetLang)();
+}
+const mem = new Map(); // ключ → массив переводов строк (по индексу строки)
+const keyOf = (t, ly) => `tr|${(0, exports.targetLang)()}|${t.id}|${lyricLines(ly).length}`;
+function cachedTranslation(t) {
+    const ly = t && t.lyrics;
+    return ly ? mem.get(keyOf(t, ly)) || null : null;
+}
+const pending = new Set();
+async function ask(q, pair) {
+    const r = await fetch(`${API}?${new URLSearchParams({ q, langpair: pair })}`);
+    if (!r.ok)
+        throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.responseStatus && +d.responseStatus !== 200)
+        throw new Error(String(d.responseDetails || d.responseStatus));
+    return String(d.responseData?.translatedText || '');
+}
+// Переводит строки кусками; если сервис склеил строки — переводит этот кусок построчно
+async function translateLines(lines, pair) {
+    const out = new Array(lines.length).fill('');
+    const idx = lines.map((l, i) => (l.trim() ? i : -1)).filter(i => i >= 0);
+    let group = [];
+    const flush = async () => {
+        if (!group.length)
+            return;
+        const res = (await ask(group.map(i => lines[i].trim()).join('\n'), pair)).split('\n');
+        if (res.length === group.length)
+            group.forEach((i, k) => { out[i] = res[k].trim(); });
+        else
+            for (const i of group)
+                out[i] = (await ask(lines[i].trim(), pair)).trim();
+        group = [];
+    };
+    let size = 0;
+    for (const i of idx) {
+        const len = new TextEncoder().encode(lines[i]).length + 1;
+        if (size + len > CHUNK) {
+            await flush();
+            size = 0;
+        }
+        group.push(i);
+        size += len;
+    }
+    await flush();
+    return out;
+}
+async function loadTranslation(t) {
+    const ly = t && t.lyrics;
+    if (!ly || !canTranslate(ly))
+        return null;
+    const key = keyOf(t, ly);
+    if (mem.has(key))
+        return mem.get(key);
+    if (pending.has(key))
+        return null;
+    pending.add(key);
+    try {
+        const saved = await (0, db_js_1.lyGet)(key).catch(() => null);
+        let tr = saved && Array.isArray(saved.tr) ? saved.tr : null;
+        if (!tr) {
+            const lines = lyricLines(ly);
+            tr = await translateLines(lines, `${detectLang(lines.join('\n'))}|${(0, exports.targetLang)()}`);
+            if (tr.some(Boolean))
+                (0, db_js_1.lySet)(key, { tr, at: Date.now() });
+        }
+        mem.set(key, tr);
+        (0, state_js_1.emit)('translation', t);
+        return tr;
+    }
+    catch (e) {
+        (0, state_js_1.emit)('translation-error', String(e && e.message || e));
+        return null;
+    }
+    finally {
+        pending.delete(key);
+    }
+}
+
+};
 defs["ui.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.topModal = void 0;
@@ -5004,6 +6062,9 @@ exports.albumView = albumView;
 exports.artistView = artistView;
 exports.playlistView = playlistView;
 exports.likedView = likedView;
+exports.smartView = smartView;
+exports.smartRulesText = smartRulesText;
+exports.statsView = statsView;
 exports.searchView = searchView;
 exports.searchResults = searchResults;
 exports.profileView = profileView;
@@ -5013,6 +6074,8 @@ const state_js_1 = require("./state.js");
 const icons_js_1 = require("./icons.js");
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
+const sync_js_1 = require("./sync.js");
+const i18n_js_1 = require("./i18n.js");
 const player_js_1 = require("./player.js");
 const native_js_1 = require("./native.js");
 // ---------- реестр списков (для воспроизведения «в контексте») ----------
@@ -5076,6 +6139,14 @@ const playlistCard = p => {
 const likedCard = () => `<article class="card" tabindex="0" role="link" data-nav="#/liked">
   <div class="card-art"><div class="cov liked-cov">${(0, icons_js_1.icon)('heart-fill')}</div><button class="play-fab" data-action="play-liked" aria-label="Играть">${(0, icons_js_1.icon)('play')}</button></div>
   <h3 class="card-title">Понравившееся</h3><p class="card-sub">${(0, util_js_1.plural)(state_js_1.state.likes.size, ['песня', 'песни', 'песен'])}</p></article>`;
+const smartCard = p => {
+    const ts = (0, state_js_1.smartTracks)(p);
+    return `<article class="card" tabindex="0" role="link" data-nav="#/smart/${p.id}">
+  <div class="card-art"><div class="smart-art">${(0, exports.mosaic)(ts, p.id)}<span class="smart-badge">${(0, icons_js_1.icon)('smart')}</span></div><button class="play-fab" data-action="play-smart" data-id="${p.id}" aria-label="Играть">${(0, icons_js_1.icon)('play')}</button></div>
+  <h3 class="card-title">${(0, util_js_1.esc)(p.name)}</h3><p class="card-sub">Умный · ${(0, util_js_1.plural)(ts.length, ['песня', 'песни', 'песен'])}</p></article>`;
+};
+const newSmartCard = () => `<article class="card card-new" tabindex="0" role="button" data-action="new-smart">
+  <div class="card-art"><div class="cov new-cov">${(0, icons_js_1.icon)('smart')}</div></div><h3 class="card-title">Умный плейлист</h3><p class="card-sub">Собирается сам по правилам</p></article>`;
 const newPlaylistCard = () => `<article class="card card-new" tabindex="0" role="button" data-action="new-playlist">
   <div class="card-art"><div class="cov new-cov">${(0, icons_js_1.icon)('plus')}</div></div><h3 class="card-title">Новый плейлист</h3><p class="card-sub">Создать</p></article>`;
 const recentCard = (t, i, lid) => `<article class="card" tabindex="0" role="button" data-track="${(0, util_js_1.esc)(t.id)}" data-list="${lid}" data-i="${i}">
@@ -5203,8 +6274,9 @@ function homeView() {
             ? section('Недавно прослушанное', `<div class="tracklist" data-lid="${lid}">${rec.slice(0, 8).map((t, i) => trackRow(t, i, lid, { cover: true })).join('')}</div>`)
             : block(mode, 'Недавно прослушанное', { cards: rec.map((t, i) => recentCard(t, i, lid)), rows: [] });
     }
-    const mx = mixes();
-    h += block(mode, 'Миксы для вас', { cards: mx.map(mixCard), rows: mx.map(mixRow), listMax: 5 });
+    const mx = mixes().filter(m => m.tracks.length); // пустые миксы не показываем
+    if (mx.length)
+        h += block(mode, 'Миксы для вас', { cards: mx.map(mixCard), rows: mx.map(mixRow), listMax: 5 });
     if (d.albums.length)
         h += block(mode, 'Альбомы', { cards: d.albums.map(albumCard), rows: d.albums.map(g => albumRow(g, false)), href: '#/library/albums' });
     if (d.singles.length)
@@ -5237,7 +6309,7 @@ function libraryView(tab = 'albums') {
     else if (tab === 'artists')
         body = d.artistList.length ? `<div class="grid artists">${d.artistList.map(a => artistCard(a)).join('')}</div>` : emptyState(true);
     else if (tab === 'playlists') {
-        body = `<div class="grid">${likedCard()}${state_js_1.state.playlists.map(playlistCard).join('')}${newPlaylistCard()}</div>
+        body = `<div class="grid">${likedCard()}${state_js_1.state.playlists.map(playlistCard).join('')}${state_js_1.state.smart.map(smartCard).join('')}${newPlaylistCard()}${newSmartCard()}</div>
 `;
     }
     else {
@@ -5370,6 +6442,81 @@ function likedView() {
         emptyHTML: `<div class="empty compact"><div class="empty-icon">${(0, icons_js_1.icon)('heart')}</div><h2>Пока ничего нет</h2><p>Нажмите на сердечко рядом с треком — он появится здесь.</p></div>` })
         .replace('data-action="play-playlist"', 'data-action="play-liked"').replace('data-action="shuffle-playlist"', 'data-action="shuffle-liked"');
 }
+// ---------- умный плейлист ----------
+function smartView(id) {
+    const p = state_js_1.state.smart.find(x => x.id === id);
+    if (!p)
+        return notFound();
+    const tracks = (0, state_js_1.smartTracks)(p), total = tracks.reduce((s, t) => s + t.duration, 0);
+    return hero({ art: `<div class="smart-art">${(0, exports.mosaic)(tracks, p.id)}<span class="smart-badge">${(0, icons_js_1.icon)('smart')}</span></div>`, eyebrow: 'Умный плейлист', title: p.name, bg: tracks.find(t => t.cover)?.cover,
+        subHTML: (0, util_js_1.esc)(smartRulesText(p.rules)),
+        meta: `${(0, util_js_1.plural)(tracks.length, ['песня', 'песни', 'песен'])}${tracks.length ? ', ' + (0, util_js_1.fmtTotal)(total) : ''}`,
+        actions: (tracks.length ? playBtns('play-smart', 'shuffle-smart', `data-id="${p.id}"`) : '') + `<button class="icon-btn lg" data-action="smart-menu" data-id="${p.id}" aria-label="Ещё">${(0, icons_js_1.icon)('more')}</button>` })
+        + `<div class="detail">${tracks.length ? trackList(tracks, {}) : `<div class="empty compact"><div class="empty-icon">${(0, icons_js_1.icon)('smart')}</div><h2>Под правила пока ничего не подходит</h2><p>Измените правила в меню «⋯» — плейлист обновится сам.</p></div>`}</div>`;
+}
+function smartRulesText(r = {}) {
+    const p = [];
+    if (r.liked)
+        p.push('понравившиеся');
+    if (r.artist)
+        p.push(`артист: ${r.artist}`);
+    if (r.genre)
+        p.push(`жанр: ${r.genre}`);
+    if (r.minPlays)
+        p.push(`прослушано от ${r.minPlays} раз`);
+    if (r.notPlayedDays)
+        p.push(`не слушали ${r.notPlayedDays} дн.`);
+    if (r.addedDays)
+        p.push(`добавлены за ${r.addedDays} дн.`);
+    if (r.limit)
+        p.push(`не больше ${r.limit}`);
+    return p.length ? p.join(' · ') : 'Все песни библиотеки';
+}
+// ---------- итоги ----------
+const PERIODS = [['week', 'Неделя', 7], ['month', 'Месяц', 30], ['year', 'Год', 365], ['all', 'Всё время', 0]];
+function statsView(period = 'month') {
+    const per = PERIODS.find(x => x[0] === period) || PERIODS[1], since = per[2] ? Date.now() - per[2] * 864e5 : 0;
+    const log = state_js_1.state.playLog.filter(x => x[1] >= since);
+    // «Всё время» — ещё и прослушивания до появления журнала (из счётчиков)
+    const counts = new Map();
+    if (per[0] === 'all')
+        for (const [id, n] of Object.entries(state_js_1.state.plays))
+            counts.set(id, n);
+    else
+        for (const [id] of log)
+            counts.set(id, (counts.get(id) || 0) + 1);
+    const plays = [...counts.values()].reduce((a, b) => a + b, 0);
+    const secs = per[0] === 'all' ? [...counts].reduce((s, [id, n]) => s + n * ((0, state_js_1.getTrack)(id)?.duration || 0), 0) : log.reduce((s, x) => s + (x[2] || 0), 0);
+    const topTracks = [...counts].map(([id, n]) => [(0, state_js_1.getTrack)(id), n]).filter(x => x[0]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const art = new Map();
+    for (const [id, n] of counts) {
+        const t = (0, state_js_1.getTrack)(id);
+        if (t)
+            for (const a of (0, artists_js_1.trackArtists)(t))
+                art.set(a, (art.get(a) || 0) + n);
+    }
+    const topArtists = [...art].sort((a, b) => b[1] - a[1]).slice(0, 6);
+    // по дням недели
+    const days = [0, 0, 0, 0, 0, 0, 0];
+    for (const x of log)
+        days[(new Date(x[1]).getDay() + 6) % 7]++;
+    const dmax = Math.max(1, ...days);
+    const tabs = `<div class="seg stats-tabs">${PERIODS.map(([k, n]) => `<button class="${k === per[0] ? 'on' : ''}" data-nav="#/stats/${k}">${n}</button>`).join('')}</div>`;
+    let h = pageHead('Итоги', 'Что и сколько вы слушали') + tabs;
+    if (!plays)
+        return h + `<div class="empty compact"><div class="empty-icon">${(0, icons_js_1.icon)('chart')}</div><h2>Пока нечего считать</h2><p>Прослушивание засчитывается после 30 секунд песни. Послушайте музыку — итоги появятся здесь.</p></div>`;
+    const mins = Math.round(secs / 60);
+    h += `<div class="stats-kpis"><div class="kpi"><b>${mins < 600 ? mins + ' мин' : Math.round(mins / 60) + ' ч'}</b><span>музыки</span></div><div class="kpi"><b>${plays}</b><span>прослушиваний</span></div><div class="kpi"><b>${counts.size}</b><span>разных песен</span></div><div class="kpi"><b>${art.size}</b><span>артистов</span></div></div>`;
+    if (topArtists.length)
+        h += `<section class="section"><div class="section-head"><h2>Любимые артисты</h2></div><div class="stats-artists">${topArtists.map(([a, n], i) => `<a class="stats-artist" href="#/artist/${(0, util_js_1.enc)((0, artists_js_1.artistKey)(a))}"><span class="rank">${i + 1}</span><span class="name">${(0, util_js_1.esc)(a)}</span><span class="n">${(0, util_js_1.plural)(n, ['раз', 'раза', 'раз'])}</span></a>`).join('')}</div></section>`;
+    if (topTracks.length) {
+        const lid = (0, exports.registerList)(topTracks.map(x => x[0]));
+        h += `<section class="section"><div class="section-head"><h2>Самые прослушиваемые песни</h2></div><div class="tracklist" data-lid="${lid}">${topTracks.map(([t, n], i) => trackRow(t, i, lid, { cover: true }).replace(/<div class="row-album">[\s\S]*?<\/div>\n/, `<div class="row-album stats-n">${(0, util_js_1.plural)(n, ['прослушивание', 'прослушивания', 'прослушиваний'])}</div>\n`)).join('')}</div></section>`;
+    }
+    if (log.length)
+        h += `<section class="section"><div class="section-head"><h2>По дням недели</h2></div><div class="stats-days">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d, i) => `<div class="day"><i style="height:${Math.round(days[i] / dmax * 100)}%" title="${days[i]}"></i><span>${d}</span></div>`).join('')}</div></section>`;
+    return h;
+}
 function notFound() { return `<div class="empty"><div class="empty-icon">${(0, icons_js_1.icon)('disc')}</div><h2>Не найдено</h2><p>Возможно, библиотека была очищена.</p><a class="btn btn-primary" href="#/home">На главную</a></div>`; }
 // ---------- поиск ----------
 function searchView(q = '') {
@@ -5423,11 +6570,25 @@ function profileView() {
 
     </div></section>`;
 }
+// аккаунт и синхронизация между устройствами
+function accountSection() {
+    const u = sync_js_1.sync.user;
+    const when = sync_js_1.sync.lastAt ? new Date(sync_js_1.sync.lastAt).toLocaleString((0, i18n_js_1.isEn)() ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const err = sync_js_1.sync.error ? `<p class="acc-err">${(0, util_js_1.esc)(sync_js_1.sync.error)}</p>` : '';
+    if (sync_js_1.sync.status === 'in' && u)
+        return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
+        ${srow((0, util_js_1.esc)(u.email || u.name || 'Аккаунт Puro Cielo'), `Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах.${when ? ` Последний раз: ${when}.` : ''}`, `<button class="btn btn-soft sm" data-action="sync-now">${(0, icons_js_1.icon)('refresh')}Сейчас</button><button class="btn btn-soft sm" data-action="sync-out">Выйти</button>`)}
+      </div>${err}`;
+    return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
+        ${srow('Синхронизация между устройствами', 'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.', sync_js_1.sync.status === 'loading' ? '<span class="ly-spin"></span>' : `${(0, sync_js_1.canGoogle)() ? `<button class="btn btn-soft sm" data-action="sync-google">Google</button>` : ''}<button class="btn btn-primary sm" data-action="sync-email">Войти по почте</button>`)}
+      </div>${err}`;
+}
 function settingsView() {
     const s = state_js_1.state.settings;
     const sleepOpts = [[0, 'Выкл'], [15, '15'], [30, '30'], [45, '45'], [60, '60'], ['track', 'Трек']];
     const sleepCur = player_js_1.sleepState.endOfTrack ? 'track' : player_js_1.sleepState.until ? Math.round((player_js_1.sleepState.until - Date.now()) / 60000 / 15) * 15 : 0;
     return `<div class="settings-page"><header class="page-head"><div><h1>Настройки</h1><p class="page-sub">Подстройте плеер под себя</p></div></header>
+      ${accountSection()}
       <h2 class="sg-title">Внешний вид</h2>
       <div class="settings">
         ${srow('Тема оформления', 'Тёмная по умолчанию, светлая — для яркого дня.', `<div class="seg"><button class="${state_js_1.state.theme === 'dark' ? 'on' : ''}" data-action="set-theme" data-v="dark">${(0, icons_js_1.icon)('moon')}Тёмная</button><button class="${state_js_1.state.theme === 'light' ? 'on' : ''}" data-action="set-theme" data-v="light">${(0, icons_js_1.icon)('sun')}Светлая</button></div>`)}
@@ -5457,6 +6618,9 @@ function settingsView() {
         ${srow('Свой сервер текстов', s.lyricsProxy ? (0, util_js_1.esc)(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${(0, icons_js_1.icon)('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}
         ${srow('Таймер сна', `Музыка плавно затихнет и остановится. Сейчас: ${sleepLabel()}.`, `<div class="seg">${sleepOpts.map(([v, n]) => `<button class="${String(sleepCur) === String(v) ? 'on' : ''}" data-action="sleep" data-v="${v}">${n}</button>`).join('')}</div>`)}
+        ${srow('Переход между треками', 'Плавный: конец песни затихает, следующая нарастает. «Без пауз» — для альбомов, где песни перетекают одна в другую.', seg('transition', [[0, 'Обычный'], [-1, 'Без пауз'], [3, '3 с'], [6, '6 с'], [10, '10 с']], s.transition || 0))}
+        ${srow('Эквалайзер', 'Подстройка звука: готовая настройка или своя.', seg('eq', [...Object.entries(player_js_1.EQ_PRESETS).map(([k, p]) => [k, p.name]), ['custom', 'Своя']], s.eq || 'flat'))}
+        ${s.eq === 'custom' ? `<div class="setting eq-row">${player_js_1.EQ_BANDS.map((f, i) => `<label class="eq-band"><input type="range" class="eq-slider" min="-12" max="12" step="1" value="${(s.eqCustom || [])[i] || 0}" data-i="${i}" aria-label="${f < 1000 ? f + ' Гц' : f / 1000 + ' кГц'}"><b>${(s.eqCustom || [])[i] > 0 ? '+' : ''}${(s.eqCustom || [])[i] || 0}</b><span>${f < 1000 ? f + ' Гц' : f / 1000 + ' кГц'}</span></label>`).join('')}</div>` : ''}
         ${srow('Шаг перемотки', 'Стрелки ← / → на клавиатуре.', seg('seekStep', [[5, '5 с'], [10, '10 с'], [15, '15 с'], [30, '30 с']], s.seekStep))}
         ${srow('Спектр в Now Playing', 'Анимация звука рядом с обложкой.', sw('visualizer', s.visualizer))}
       </div>
@@ -5478,6 +6642,8 @@ function sidebarPlaylists() {
     const items = [`<a class="side-link sub" href="#/liked" data-route="liked"><span class="mini-cov liked">${(0, icons_js_1.icon)('heart-fill')}</span><span>Понравившееся</span></a>`];
     for (const p of state_js_1.state.playlists)
         items.push(`<a class="side-link sub" href="#/playlist/${p.id}" data-route="playlist/${p.id}">${(0, exports.mosaic)((0, state_js_1.playlistTracks)(p).slice(0, 4), p.id, 'mini-cov')}<span>${(0, util_js_1.esc)(p.name)}</span></a>`);
+    for (const p of state_js_1.state.smart)
+        items.push(`<a class="side-link sub" href="#/smart/${p.id}" data-route="smart/${p.id}"><span class="mini-cov smart-mini">${(0, icons_js_1.icon)('smart')}</span><span>${(0, util_js_1.esc)(p.name)}</span></a>`);
     return items.join('');
 }
 

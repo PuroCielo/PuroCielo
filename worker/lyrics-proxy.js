@@ -48,10 +48,22 @@ async function netease(artist, title, dur) {
   }
   return null;
 }
+// /fetch?url=… — отдаёт HTML страницы с текстом песни (для поиска по сайтам из браузера, где их нельзя открыть напрямую).
+// Только сайты с текстами из этого списка — чтобы Worker не стал открытым прокси для чего угодно.
+const FETCH_HOSTS = ['genius.com', 'www.azlyrics.com', 'search.azlyrics.com', 'www.lyrics.com', 'text-pesni.com', 'vse-pesni.com'];
+async function proxyPage(raw) {
+  let target;
+  try { target = new URL(raw); } catch { return json({ error: 'url' }, 400); }
+  if (target.protocol !== 'https:' || !FETCH_HOSTS.includes(target.hostname)) return json({ error: 'host' }, 403);
+  const r = await fetch(target.toString(), { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36', 'Accept-Language': 'ru,en;q=0.8' }, redirect: 'follow' });
+  const body = await r.text();
+  return new Response(body.length > 3e6 ? '' : body, { status: r.ok ? 200 : r.status, headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
+}
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: { ...CORS, 'Access-Control-Allow-Headers': '*' } });
     const u = new URL(req.url);
+    if (u.pathname === '/fetch') return proxyPage(u.searchParams.get('url'));
     if (u.pathname !== '/lyrics') return json({ ok: true });
     const artist = u.searchParams.get('artist') || '', title = u.searchParams.get('title') || '', dur = +u.searchParams.get('duration') || 0;
     if (!title) return json({ error: 'title' }, 400);

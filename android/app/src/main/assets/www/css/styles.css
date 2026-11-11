@@ -730,3 +730,65 @@ kbd { font: 600 12.5px var(--font); padding: 4px 9px; border-radius: 7px; backgr
 .pane-lyrics.plain { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 90%, transparent 100%); }
 .pane-lyrics.plain .ly-plain { padding: 8px 0 90px; }
 .hero-actions .icon-btn.lg { width: 48px; height: 48px; background: var(--hover); }
+
+/* ===== v1.9: эквалайзер ===== */
+.eq-row { display: flex; justify-content: space-between; gap: 10px; padding: 18px 20px 14px; }
+.eq-band { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.eq-band b { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+.eq-slider { writing-mode: vertical-lr; direction: rtl; width: 28px; height: 120px; accent-color: var(--text); cursor: pointer; }
+
+/* ===== v1.9: итоги ===== */
+.stats-tabs { margin: 0 0 22px; }
+.stats-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 30px; }
+.kpi { background: var(--card); border-radius: 18px; padding: 18px 20px; display: flex; flex-direction: column; gap: 4px; }
+.kpi b { font-size: 30px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.kpi span { color: var(--text-2); font-size: 13px; }
+.stats-artists { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.stats-artist { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--card); border-radius: 14px; color: var(--text); text-decoration: none; }
+.stats-artist:hover { background: var(--hover); }
+.stats-artist .rank { font-weight: 800; color: var(--text-3); width: 18px; }
+.stats-artist .name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-artist .n { color: var(--text-2); font-size: 13px; }
+.row-album.stats-n { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.stats-days { display: flex; align-items: flex-end; gap: 12px; height: 160px; padding: 10px 4px 0; max-width: 520px; }
+.stats-days .day { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 8px; }
+.stats-days .day i { width: 100%; min-height: 3px; border-radius: 8px 8px 3px 3px; background: var(--text); opacity: .85; }
+.stats-days .day span { font-size: 12px; color: var(--text-2); }
+/* умные плейлисты */
+.smart-art { position: relative; width: 100%; height: 100%; border-radius: inherit; overflow: hidden; }
+.smart-art > .cov { width: 100%; height: 100%; }
+.smart-badge { position: absolute; right: 8px; bottom: 8px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; backdrop-filter: blur(8px); }
+.smart-badge .ic { width: 17px; height: 17px; }
+.mini-cov.smart-mini { display: grid; place-items: center; background: var(--card-2); }
+.sm-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.sm-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); }
+.sm-field.wide, .sm-check, .sm-count { grid-column: 1 / -1; }
+.sm-check { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); cursor: pointer; }
+.sm-check input { width: 18px; height: 18px; accent-color: var(--text); }
+.sm-count { margin: 4px 0 0; font-weight: 700; color: var(--text); }
+select.input { appearance: auto; }
+@media (max-width: 560px) { .sm-form { grid-template-columns: 1fr; } }
+/* перевод под строкой текста */
+.ly-tr { display: block; font-size: .62em; font-weight: 600; line-height: 1.3; margin-top: 4px; opacity: .7; letter-spacing: 0; }
+.ly-plain .ly-tr { font-size: .82em; opacity: .6; margin-top: 2px; }
+/* данные трека / MusicBrainz */
+.sm-form .wide { grid-column: 1 / -1; }
+.ti-note { margin: 0; font-size: 13px; color: var(--text-2); }
+.ti-mb { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-2); }
+.ti-results { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow: auto; }
+.ti-res { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; background: none; border: 1.5px solid transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.ti-res:hover { background: var(--hover); }
+.ti-res.on { border-color: var(--text); background: var(--hover); }
+.ti-cov { position: relative; width: 44px; height: 44px; border-radius: 8px; background: var(--card-2); display: grid; place-items: center; flex: none; overflow: hidden; color: var(--text-3); }
+.ti-cov img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ti-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ti-txt b, .ti-txt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ti-txt span { font-size: 13px; color: var(--text-2); }
+.ti-len { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* аккаунт */
+.acc-err { color: #ff8a8a; font-size: 13px; margin: 8px 4px 0; min-height: 0; }
+.acc-err:empty { display: none; }
+.setting-ctl .btn + .btn { margin-left: 8px; }
+/* пустая обложка плейлиста в боковой панели не растягивается на всю ширину */
+.cov.mini-cov { width: 30px; height: 30px; display: grid; }
+.pl-pick .cov.mini-cov { width: 48px; height: 48px; }

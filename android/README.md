@@ -3,13 +3,12 @@
 Оболочка (WebView) вокруг плеера: вся медиатека грузится из ОДНОЙ папки (как в Poweramp), музыка играет в фоне.
 
 ## Как получить APK
-1. Создайте пустой репозиторий на GitHub, загрузите в него содержимое этой папки.
-2. Вкладка **Actions → Build APK → Run workflow**.
-3. Через 3–5 минут скачайте артефакт **PuroCielo-apk** → `app-debug.apk`, установите на телефон (разрешите «установку из неизвестных источников»).
+APK собирается сам при каждом пуше (Actions → **Build**) и выкладывается в Releases:
+https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk
 
-Либо откройте папку в Android Studio и нажмите Build → Build APK(s).
+Либо откройте папку в Android Studio и нажмите Build → Build APK(s). Версия берётся из `web/package.json`.
 
 ## Использование
 Первый запуск → «Выбрать папку с музыкой» → выберите папку. Новые файлы подхватываются при каждом запуске, кнопка «Обновить» — в Настройках.
 
-Сайт лежит в `app/src/main/assets/www` (копия `music-player`; после правок сайта выполните `node build.js` и скопируйте файлы заново).
+Плеер лежит в `app/src/main/assets/www` — это сборка из `web/` (`node web/build.js`), руками его не правьте.

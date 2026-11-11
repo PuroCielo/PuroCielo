@@ -1,0 +1,160 @@
+// Тексты с сайтов: Genius, Lyrics.com, AZLyrics, Text-pesni, Vse-pesni.
+// Браузер не может читать эти сайты напрямую (CORS), поэтому страницу скачивает «посредник»:
+//  • приложение для Windows — главный процесс Electron;  • APK — нативный мост;  • сайт/PWA — свой Cloudflare Worker (/fetch).
+// Здесь только разбор HTML и выбор нужной песни; функции чистые, их можно проверять без сети.
+export const norm = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, '');
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", '#x27': "'" };
+export const decodeEntities = s => String(s).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+        const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return n ? String.fromCodePoint(n) : m;
+    }
+    return ENT[e.toLowerCase()] ?? m;
+});
+export const htmlToText = h => decodeEntities(String(h).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->/gi, '')
+    .replace(/<br\s*\/?>[ \t]*\r?\n?/gi, '\n').replace(/<\/(p|div|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+// ---- Genius ----
+export function extractGenius(html) {
+    const out = [];
+    const re = /<div[^>]*data-lyrics-container="true"[^>]*>/g;
+    let m;
+    while ((m = re.exec(html))) {
+        let i = re.lastIndex, depth = 1;
+        const tag = /<(\/?)div\b[^>]*>/g;
+        tag.lastIndex = i;
+        let t;
+        while (depth > 0 && (t = tag.exec(html)))
+            depth += t[1] ? -1 : 1;
+        out.push(html.slice(i, t ? t.index : html.length));
+    }
+    if (!out.length)
+        return '';
+    return htmlToText(out.join('\n').replace(/<div[^>]*data-exclude-from-selection="true"[\s\S]*?<\/div>/g, ''));
+}
+const sameSong = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+export function pickGeniusHit(json, artist, title) {
+    const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameSong(h.result.primary_artist && h.result.primary_artist.name, artist)));
+    return h ? h.result.url : '';
+}
+// ---- Lyrics.com ----
+export function pickLyricsCom(html, artist, title) {
+    const re = /href="(\/lyric\/\d+\/[^"]+)"[^>]*>([^<]*)</g;
+    let m;
+    const want = norm(title);
+    while ((m = re.exec(html))) {
+        const slug = decodeURIComponent(m[1]).toLowerCase();
+        if (norm(m[2]).includes(want) || norm(slug).includes(want)) {
+            if (!artist || norm(slug).includes(norm(artist).slice(0, 5)))
+                return 'https://www.lyrics.com' + m[1];
+        }
+    }
+    return '';
+}
+export function extractLyricsCom(html) { const m = /<pre[^>]*id="lyric-body-text"[^>]*>([\s\S]*?)<\/pre>/i.exec(html); return m ? htmlToText(m[1]) : ''; }
+// ---- AZLyrics (адрес собирается из имён, только латиница) ----
+export const azUrl = (artist, title) => {
+    const f = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const a = f(artist), t = f(title);
+    return a && t ? `https://www.azlyrics.com/lyrics/${a}/${t}.html` : '';
+};
+export function extractAz(html) { const m = /Sorry about that\.\s*-->([\s\S]*?)<\/div>/i.exec(html); return m ? htmlToText(m[1]) : ''; }
+// ---- общий разбор для русскоязычных сайтов: ссылка по тексту → страница → самый «похожий на стихи» блок ----
+export function linksByText(html, origin, title, artist) {
+    const want = norm(title), who = norm(artist);
+    const out = [];
+    const re = /<a\b[^>]*href="([^"#]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = re.exec(html))) {
+        const text = norm(htmlToText(m[2]));
+        if (!text || !text.includes(want))
+            continue;
+        let href = m[1];
+        if (href.startsWith('//'))
+            href = 'https:' + href;
+        else if (href.startsWith('/'))
+            href = origin + href;
+        else if (!/^https?:/.test(href))
+            continue;
+        if (!href.startsWith(origin))
+            continue;
+        out.push({ href, score: (who && text.includes(who) ? 2 : 0) + (text === want ? 1 : 0) });
+    }
+    return out.sort((a, b) => b.score - a.score).map(x => x.href);
+}
+export function bestTextBlock(html) {
+    const cleaned = String(html).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->|<nav[\s\S]*?<\/nav>|<header[\s\S]*?<\/header>|<footer[\s\S]*?<\/footer>|<form[\s\S]*?<\/form>/gi, '');
+    let best = '', bestScore = 0;
+    const re = /<(div|article|pre|section|p|td)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let m;
+    while ((m = re.exec(cleaned))) {
+        const inner = m[2];
+        if (/<(div|article|section|table)\b/i.test(inner))
+            continue; // только самые вложенные блоки
+        const links = (inner.match(/<a\b/gi) || []).length;
+        const text = htmlToText(inner), lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length < 6 || lines.length > 220)
+            continue;
+        const avg = text.length / lines.length;
+        if (avg > 90 || avg < 8)
+            continue;
+        const score = lines.length * 2 - links * 3 - Math.max(0, avg - 50);
+        if (score > bestScore) {
+            bestScore = score;
+            best = text;
+        }
+    }
+    return best;
+}
+const BAD = /cookie|javascript|реклама|все права защищены|войти|регистрац/i;
+export const looksLikeLyrics = t => !!t && t.split('\n').filter(l => l.trim()).length >= 6 && !BAD.test(t.slice(0, 400));
+const SITES = [
+    { id: 'text-pesni', origin: 'https://text-pesni.com', search: q => [`https://text-pesni.com/search/?q=${q}`, `https://text-pesni.com/?s=${q}`] },
+    { id: 'vse-pesni', origin: 'https://vse-pesni.com', search: q => [`https://vse-pesni.com/?s=${q}`, `https://vse-pesni.com/search/?q=${q}`] },
+];
+// fetchText(url) → строка HTML/JSON или '' при ошибке. Возвращает { text, source } или null.
+export async function webLyrics(artist, title, fetchText, { skip = [] } = {}) {
+    const tryRun = async (id, fn) => { if (skip.includes(id))
+        return null; try {
+        const text = await fn();
+        return text && text.length > 40 ? { text, source: id } : null;
+    }
+    catch {
+        return null;
+    } };
+    const q = encodeURIComponent(`${artist} ${title}`.trim()), cyr = /[а-яё]/i.test(artist + title);
+    const jobs = [
+        ['genius', async () => {
+                const j = JSON.parse(await fetchText('https://genius.com/api/search/multi?per_page=5&q=' + q) || 'null');
+                const url = pickGeniusHit(j, artist, title);
+                return url ? extractGenius(await fetchText(url)) : '';
+            }],
+        ['lyricscom', async () => {
+                if (cyr)
+                    return '';
+                const url = pickLyricsCom(await fetchText(`https://www.lyrics.com/serp.php?st=${q}&qtype=2`), artist, title);
+                return url ? extractLyricsCom(await fetchText(url)) : '';
+            }],
+        ['azlyrics', async () => { const url = cyr ? '' : azUrl(artist, title); return url ? extractAz(await fetchText(url)) : ''; }],
+        ...SITES.map(s => [s.id, async () => {
+                for (const su of s.search(q)) {
+                    const links = linksByText(await fetchText(su), s.origin, title, artist).slice(0, 2);
+                    for (const l of links) {
+                        const t = bestTextBlock(await fetchText(l));
+                        if (looksLikeLyrics(t))
+                            return t;
+                    }
+                }
+                return '';
+            }]),
+    ];
+    // русские песни — сначала русскоязычные сайты, остальные — как есть
+    if (cyr)
+        jobs.sort((a, b) => (['text-pesni', 'vse-pesni'].includes(b[0]) ? 1 : 0) - (['text-pesni', 'vse-pesni'].includes(a[0]) ? 1 : 0));
+    for (const [id, fn] of jobs) {
+        const r = await tryRun(id, fn);
+        if (r)
+            return r;
+    }
+    return null;
+}

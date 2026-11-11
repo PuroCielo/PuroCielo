@@ -36,9 +36,21 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
       allow update, delete: if false;
     }
+    // Синхронизация плеера: каждый читает и пишет только свои данные.
+    match /sync/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      match /blobs/{id} {
+        allow read, write: if request.auth != null && request.auth.uid == uid
+          && (request.resource == null || request.resource.data.data.size() < 900000);
+      }
+    }
   }
 }
 ```
+
+> **Обновление 1.9 — синхронизация в плеере.** Если правила уже были опубликованы раньше, замените их целиком
+> текстом выше (добавился блок `match /sync/{uid}`) и снова нажмите **Publish**. Без этого вход в плеере сработает,
+> но синхронизация покажет ошибку `permission-denied`.
 
 Так два человека не смогут занять одинаковый ник даже одновременно.
 
