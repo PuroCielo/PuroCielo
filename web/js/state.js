@@ -1,4 +1,4 @@
-import { SESSION_SEED, hash, norm, seededShuffle, uid } from './util.js';
+import { SESSION_SEED, hash, norm, seededShuffle, stripSource, uid } from './util.js';
 import { artistKey, splitArtists, trackArtists } from './artists.js';
 import { kvGet, kvSet } from './db.js';
 
@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = {
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
     bgParticles: true, // поднимающиеся частицы
     bgCover: true, // свечение от обложки играющего трека
+    stripSource: true, // убирать приписки сайтов из названий («(Sefon.Pro)» и т.п.)
+    autoCovers: true, // искать обложки онлайн для песен и альбомов без обложки
     corners: 'round', // round | sharp — скругление обложек
     density: 'cozy', // cozy | compact — плотность списков
     anim: true, // анимации интерфейса
@@ -128,6 +130,10 @@ export function setAlbumCover(key, url) {
     saveCovers();
 }
 export const hasOwnCover = id => !!state.covers.t[id];
+// найденные онлайн обложки (модуль covers-auto.js регистрирует их здесь, чтобы state не зависел от сети)
+let autoSrc = null;
+export const autoCovers = () => (autoSrc ? autoSrc() : null);
+export function registerAutoCovers(fn) { autoSrc = fn; }
 export function setCovers(c) { state.covers = { t: { ...(c.t || {}) }, a: { ...(c.a || {}) } }; saveCovers(); }
 export const hasAlbumCover = key => !!state.covers.a[key];
 let idbTimer = 0;
@@ -161,7 +167,15 @@ export function derived() {
     for (const t of all) {
         if (!t._orig)
             t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
-        Object.assign(t, t._orig, state.tagEdits[t.id] || {});
+        const own = state.tagEdits[t.id] || {};
+        Object.assign(t, t._orig, own);
+        // убираем приписки сайтов, откуда скачан трек (кроме полей, которые пользователь задал сам)
+        if (state.settings.stripSource !== false)
+            for (const k of ['title', 'artist', 'album', 'albumArtist'])
+                if (!(k in own) && t[k]) {
+                    const v = stripSource(t[k]);
+                    t[k] = v || (k === 'title' ? t[k] : '');
+                }
     }
     // 1) артисты каждого трека: «A & B», «A; B», «A feat. B» → отдельные артисты
     for (const t of all) {
@@ -182,7 +196,8 @@ export function derived() {
         g.tracks.push(t);
         if (t._tagCover === undefined)
             t._tagCover = t.cover || null; // обложка из самого файла
-        t.cover = state.covers.t[t.id] || state.covers.a[key] || t._tagCover;
+        const ac = state.settings.autoCovers !== false ? autoCovers() : null;
+        t.cover = state.covers.t[t.id] || state.covers.a[key] || t._tagCover || (ac && (ac.a[key] || ac.t[t.id])) || null;
         if (!g.cover && t.cover)
             g.cover = t.cover;
         if (!g.year && t.year)

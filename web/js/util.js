@@ -65,3 +65,30 @@ export function seededShuffle(arr, seed) {
     }
     return a;
 }
+
+// ---------- приписки сайтов, откуда скачан трек: «Династия (Sefon.Pro)» → «Династия» ----------
+const TLD = '(?:pro|net|ru|com|me|fm|org|cc|to|club|info|biz|su|io|top|xyz|online|site|mobi|tv|kz|ua|by|uz|in|cx|ws|la|cloud|music|space)';
+const SITES = '(?:sefon(?:\\s?pro)?|hitmo(?:top)?|muzofond|zaycev(?:\\s?net)?|mp3party|muzmo|drivemusic|lightaudio|mp3uks?|bidgar|muzlome|musify|z1\\.fm|patefon|ipleer|playvk|xitmuzon|mp3-?xa|rus\\.?mp3|primemusic|trekson|music7s|muzati|mp3cc|mp3bob|mixkit|newtunes|topmuzon)';
+const SRC_RES = [
+    // в скобках: (Sefon.Pro), [zaycev.net], {www.site.ru}, (скачано с muzofond.fm), (Hitmo)
+    new RegExp(`\\s*[(\\[{][^)\\]}]*(?:\\b(?:www\\.)?[\\w-]+\\.${TLD}\\b|\\b${SITES}\\b|скача(?:но|ть)|download(?:ed)?\\s+(?:from|at)|free\\s+download)[^)\\]}]*[)\\]}]`, 'gi'),
+    // после разделителя: «… - Sefon.Pro», «… | www.site.ru», «… _ Hitmo»
+    new RegExp(`\\s*(?:[-–—|_~/]|::)\\s*(?:www\\.)?(?:[\\w-]+\\.${TLD}|${SITES})\\s*$`, 'gi'),
+    new RegExp(`^\\s*(?:www\\.)?(?:[\\w-]+\\.${TLD}|${SITES})\\s*(?:[-–—|_~/]|::)\\s*`, 'gi'),
+    // голый адрес сайта в конце или начале: «Династия Sefon.Pro», «www.site.ru Династия»
+    new RegExp(`\\s+(?:www\\.)?[\\w-]+\\.${TLD}\\s*$`, 'gi'),
+    new RegExp(`^\\s*(?:www\\.)?[\\w-]+\\.${TLD}\\s+`, 'gi'),
+];
+export function stripSource(s) {
+    let t = String(s || '');
+    if (!t)
+        return t;
+    for (let i = 0; i < 2; i++)
+        for (const re of SRC_RES)
+            t = t.replace(re, '');
+    t = t.replace(/\s{2,}/g, ' ').replace(/^[\s\-–—|_.,]+|[\s\-–—|_,]+$/g, '').trim();
+    // поле целиком было адресом сайта (например, альбом «zaycev.net») → пусто
+    if (new RegExp(`^(?:www\\.)?(?:[\\w-]+\\.${TLD}|${SITES})$`, 'i').test(t))
+        return '';
+    return t;
+}

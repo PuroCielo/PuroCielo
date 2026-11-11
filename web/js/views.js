@@ -528,6 +528,8 @@ export function settingsView() {
 
       <h2 class="sg-title">Воспроизведение</h2>
       <div class="settings">
+        ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).', sw('autoCovers', s.autoCovers !== false))}
+        ${srow('Убирать приписки сайтов', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.', sw('stripSource', s.stripSource !== false))}
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текста нет».', sw('autoLyrics', s.autoLyrics))}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текста нет».', `<button class="btn btn-soft sm" data-action="find-lyrics">${icon('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}

@@ -14,6 +14,7 @@ import { $, $$, debounce, esc, plural, shuffleArray } from './util.js';
 import { buildM3U } from './m3u.js';
 import { clearFiles } from './db.js';
 import { initI18n, setLang } from './i18n.js';
+import { initAutoCovers } from './covers-auto.js';
 import { initSync, signInEmail, signInGoogle, signOutSync, sync, syncNow } from './sync.js';
 
 const view = $('#view');
@@ -868,6 +869,12 @@ on('profile', () => { renderSideProfile(); render({ keepScroll: true }); });
 on('theme', () => { render({ keepScroll: true }); syncThemeBtn(); });
 on('settings', k => {
     applySettings();
+    if (k === 'stripSource') {
+        touchLibrary();
+        const t = current();
+        if (t)
+            emit('track', t);
+    }
     if (k === 'lang' || k === 'all') {
         setLang(state.settings.lang);
         renderChrome();
@@ -1015,6 +1022,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
     await load();
     initI18n(state.settings.lang);
     initSync();
+    initAutoCovers();
     applyTheme(state.theme);
     applySettings();
     setVolume(state.volume);
