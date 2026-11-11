@@ -1,0 +1,26 @@
+name: Release Windows
+# Выкладывает установщик для Windows в отдельный релиз (не «последний» — последним всегда идёт APK).
+# Запуск: вкладка Actions → Release Windows → Run workflow, указать версию и путь к .exe в репозитории.
+on:
+  workflow_dispatch:
+    inputs:
+      version: { description: 'Версия, например 1.7.0', required: true, default: '1.7.0' }
+      file: { description: 'Путь к установщику в репозитории', required: true, default: 'downloads/PuroCielo-Setup.exe' }
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release-windows.yml']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp "${{ inputs.file || 'downloads/PuroCielo-Setup.exe' }}" PuroCielo-Setup.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-${{ inputs.version || '1.7.0' }}
+          name: Puro Cielo для Windows ${{ inputs.version || '1.7.0' }}
+          body: Установщик для Windows.
+          make_latest: false
+          files: PuroCielo-Setup.exe
