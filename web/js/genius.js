@@ -9,6 +9,9 @@ import { artistMatch, extractGenius, htmlToText, titleMatch } from './lyrics-web
 const PUBLIC = [
     u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
     u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+    u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+    u => 'https://api.cors.lol/?url=' + encodeURIComponent(u),
+    u => 'https://cors.eu.org/' + u,
 ];
 async function get(u, ms = 9000) {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
@@ -55,7 +58,7 @@ export function pickGenius(json, artists, title, skip = []) {
     const sections = (json && json.response && json.response.sections) || [];
     const hits = [].concat(...sections.map(s => s.hits || [])).filter(h => h && h.result && (h.type === 'song' || h.index === 'song'));
     const ok = h => {
-        const r = h.result, by = `${r.artist_names || ''} ${r.primary_artist ? r.primary_artist.name : ''}`;
+        const r = h.result, by = `${r.artist_names || ''}, ${r.primary_artist ? r.primary_artist.name : ''}`;
         if (skip.includes('genius:' + r.id))
             return false;
         if (NOT_SONG.test(by) || NOT_SONG.test(r.title || ''))

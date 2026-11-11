@@ -104,7 +104,7 @@ async function findAlbum(album, artists, firstTitle) {
     }
     // 4) MusicBrainz + Cover Art Archive (у них CORS есть)
     const m = await getJSON(`${MB}/release?${new URLSearchParams({ query: `release:"${q(name)}"${a0 ? ` AND artist:"${q(a0)}"` : ''}`, fmt: 'json', limit: '8' })}`);
-    const rel = (m?.releases || []).find(r => same(r.title, album) && artistOk((r['artist-credit'] || []).map(a => a.name).join(' '), artists));
+    const rel = (m?.releases || []).find(r => same(r.title, album) && artistOk((r['artist-credit'] || []).map(a => a.name).join(', '), artists));
     return rel ? `https://coverartarchive.org/release/${rel.id}/front-500` : null;
 }
 async function findSong(title, artists) {

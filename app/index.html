@@ -1024,6 +1024,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1191,7 +1224,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2545,7 +2578,7 @@ async function findAlbum(album, artists, firstTitle) {
     }
     // 4) MusicBrainz + Cover Art Archive (у них CORS есть)
     const m = await getJSON(`${MB}/release?${new URLSearchParams({ query: `release:"${q(name)}"${a0 ? ` AND artist:"${q(a0)}"` : ''}`, fmt: 'json', limit: '8' })}`);
-    const rel = (m?.releases || []).find(r => same(r.title, album) && artistOk((r['artist-credit'] || []).map(a => a.name).join(' '), artists));
+    const rel = (m?.releases || []).find(r => same(r.title, album) && artistOk((r['artist-credit'] || []).map(a => a.name).join(', '), artists));
     return rel ? `https://coverartarchive.org/release/${rel.id}/front-500` : null;
 }
 async function findSong(title, artists) {
@@ -2733,6 +2766,9 @@ const lyrics_web_js_1 = require("./lyrics-web.js");
 const PUBLIC = [
     u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
     u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+    u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+    u => 'https://api.cors.lol/?url=' + encodeURIComponent(u),
+    u => 'https://cors.eu.org/' + u,
 ];
 async function get(u, ms = 9000) {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
@@ -2779,7 +2815,7 @@ function pickGenius(json, artists, title, skip = []) {
     const sections = (json && json.response && json.response.sections) || [];
     const hits = [].concat(...sections.map(s => s.hits || [])).filter(h => h && h.result && (h.type === 'song' || h.index === 'song'));
     const ok = h => {
-        const r = h.result, by = `${r.artist_names || ''} ${r.primary_artist ? r.primary_artist.name : ''}`;
+        const r = h.result, by = `${r.artist_names || ''}, ${r.primary_artist ? r.primary_artist.name : ''}`;
         if (skip.includes('genius:' + r.id))
             return false;
         if (NOT_SONG.test(by) || NOT_SONG.test(r.title || ''))
@@ -3735,7 +3771,7 @@ const genius_js_1 = require("./genius.js");
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
 // Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
 const API = 'https://lrclib.net/api';
-const MISS_TTL = 14 * 24 * 3600 * 1000; // «не найдено» помним две недели
+const MISS_TTL = 3 * 24 * 3600 * 1000; // «не найдено» помним три дня, потом ищем снова
 // Название без «мусора»: (скобки), [скобки], prod./feat. в конце, @ники, 160bpm, адреса сайтов (Sefon.Pro, zaycev.net…)
 function cleanTitle(s) {
     const raw = String(s || '').trim();
@@ -3781,7 +3817,7 @@ function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v5|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v6|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -3813,25 +3849,29 @@ async function getJSON(url, ms = 9000) {
 const sameTitle = (x, title) => (0, lyrics_web_js_1.titleMatch)(cleanTitle(x.trackName || x.name), title);
 // и название, и артист: сверяем со ВСЕМИ артистами трека (у «perubaby, boolymon» подходит любой из двух)
 const sameTrack = (x, title, artists) => sameTitle(x, title) && (0, lyrics_web_js_1.artistMatch)(x.artistName, artists);
-// латиница ↔ кириллица: имя артиста могло быть записано другим алфавитом — тогда сравнить его нельзя
-const otherScript = (a, b) => /[а-яё]/i.test(a) !== /[а-яё]/i.test(b);
 // Выбор версии: сначала с метками времени и почти той же длины, потом обычный текст.
 // Версия другой длины (другой монтаж) с метками разъедется со звуком — такую не берём.
 function pickBest(list, dur) {
     const diff = x => (dur && x.duration ? Math.abs(x.duration - dur) : 0);
     const ok = list.filter(Boolean);
     const by = arr => arr.sort((a, b) => diff(a) - diff(b))[0] || null;
+    // та же песня того же артиста, но другой длины (другое издание): метки времени не подойдут, а сам текст — да
+    const asPlain = x => x && { ...x, syncedLyrics: null, plainLyrics: (x.plainLyrics || String(x.syncedLyrics || '').replace(/^\s*(?:\[[^\]]*\])+\s?/gm, '')).trim() };
     return by(ok.filter(x => x.syncedLyrics && diff(x) <= 4))
         || by(ok.filter(x => x.plainLyrics && diff(x) <= 6))
+        || asPlain(by(ok.filter(x => x._sure && (x.plainLyrics || x.syncedLyrics))))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
 async function lookup(t, bad = []) {
     const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
+    // test → 2: совпали и название, и артист; 1: подходит только при той же длине; 0: не то
     const take = (list, test) => {
-        for (const x of list || [])
-            if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) && test(x))
-                found.push(x);
+        for (const x of list || []) {
+            const ok = x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) ? Number(test(x)) : 0;
+            if (ok)
+                found.push(ok === 2 ? { ...x, _sure: true } : x);
+        }
     };
     for (const c of cands) {
         if (!c.artist)
@@ -3844,12 +3884,12 @@ async function lookup(t, bad = []) {
             q.set('duration', String(dur));
         const r = await getJSON(`${API}/get?${q}`);
         if (r.data)
-            take([r.data], () => true);
+            take([r.data], x => (sameTrack(x, c.title, arts) ? 2 : 0)); // ответ тоже проверяем: бывает чужая песня
         if (synced())
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => sameTrack(x, c.title, arts));
+        take(s.data, x => (sameTrack(x, c.title, arts) ? 2 : 0));
         if (synced())
             break;
     }
@@ -3858,12 +3898,18 @@ async function lookup(t, bad = []) {
     if (!synced() && cands.length) {
         const c = cands[0];
         const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
-        const loose = x => (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && exactLen(x) && (!arts.length || otherScript(x.artistName, arts.join(' ')));
-        const s = await getJSON(`${API}/search?${new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })}`);
-        take(s.data, x => sameTrack(x, c.title, arts) || loose(x));
+        // у файла вообще нет артиста: берём, только если название и длина совпали точно и такой исполнитель в ответе один
+        const twin = x => (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && exactLen(x);
+        const judge = list => { const one = !arts.length && (0, lyrics_web_js_1.norm)(c.title).length >= 4 && new Set((list || []).filter(twin).map(x => (0, lyrics_web_js_1.norm)(x.artistName))).size === 1; return x => (arts.length && sameTrack(x, c.title, arts) ? 2 : one && twin(x) ? 1 : 0); };
+        for (const q of [...new Set(cands.slice(0, 3).map(k => `${k.artist} ${k.title}`.trim()))]) {
+            const s = await getJSON(`${API}/search?${new URLSearchParams({ q })}`);
+            take(s.data, judge(s.data));
+            if (synced())
+                break;
+        }
         if (!synced()) {
             const s2 = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title })}`);
-            take(s2.data, x => sameTrack(x, c.title, arts) || loose(x));
+            take(s2.data, judge(s2.data));
         }
     }
     return pickBest(found, dur);
@@ -4073,8 +4119,10 @@ function ensureLyrics(t) {
                 if (c0 && c0.artist)
                     try {
                         const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(c0.artist)}/${encodeURIComponent(c0.title)}`, 8000);
-                        const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
-                        if (txt) {
+                        const txt = r.data && r.data.lyrics && String(r.data.lyrics).replace(/^Paroles de la chanson[^\n]*\n/i, '').trim();
+                        // сервис не сообщает, чью песню вернул, — берём, только если в тексте встречается само название
+                        const nt = (0, lyrics_web_js_1.norm)(c0.title);
+                        if (txt && nt.length >= 4 && (0, lyrics_web_js_1.norm)(txt).includes(nt)) {
                             const l2 = { type: 'plain', text: txt, source: 'online' };
                             t.lyrics = l2;
                             t._ly = undefined;
@@ -4115,9 +4163,10 @@ function ensureLyrics(t) {
 };
 defs["lyrics-web.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.looksLikeLyrics = exports.azUrl = exports.htmlToText = exports.decodeEntities = exports.norm = void 0;
+exports.looksLikeLyrics = exports.azUrl = exports.artistParts = exports.htmlToText = exports.decodeEntities = exports.norm = void 0;
 exports.extractGenius = extractGenius;
 exports.titleMatch = titleMatch;
+exports.nameEq = nameEq;
 exports.artistMatch = artistMatch;
 exports.pickGeniusHit = pickGeniusHit;
 exports.pickLyricsCom = pickLyricsCom;
@@ -4173,18 +4222,54 @@ function titleMatch(a, b) {
     const [s, l] = a.length < b.length ? [a, b] : [b, a];
     return l.includes(s) && s.length >= 4 && s.length / l.length >= 0.85;
 }
-// Артист совпадает, если хотя бы один из наших артистов есть в их записи (или наоборот)
-function artistMatch(theirs, ours) {
-    const t = (0, exports.norm)(theirs);
-    if (!t)
+// ---- сравнение артистов ----
+// Раньше хватало вхождения букв («Aria» находилась внутри «Mariah Carey») — отсюда чужие тексты.
+// Теперь сравниваются имена целиком: «perubaby, boolymon» → два имени, подходит любое из них.
+// Имя, записанное другим алфавитом («Скриптонит» / «Skryptonite»), сравнивается после транслитерации.
+const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya', і: 'i', ї: 'i', є: 'e', ґ: 'g' };
+const fold = n => n.replace(/(.)\1+/g, '$1').replace(/[а-яіїєґ]/g, c => TR[c] ?? c).replace(/kh/g, 'h').replace(/ph/g, 'f').replace(/[yj]/g, 'i').replace(/w/g, 'v').replace(/x/g, 'ks').replace(/ck/g, 'k').replace(/c(?![h])/g, 'k').replace(/(.)\1+/g, '$1');
+function lev(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++)
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = cur;
+    }
+    return prev[b.length];
+}
+function nameEq(a, b) {
+    const sx = v => (0, exports.norm)(String(v || '').replace(/\$/g, 's'));
+    const x = sx(a), y = sx(b);
+    if (!x || !y)
         return false;
-    return [].concat(ours).some(a => { a = (0, exports.norm)(a); return a.length >= 2 && (t.includes(a) || (a.includes(t) && t.length >= 3)); });
+    if (x === y)
+        return true;
+    const cross = /[а-яіїєґ]/.test(x) !== /[а-яіїєґ]/.test(y);
+    const fx = fold(x), fy = fold(y);
+    if (cross && fx === fy && fx.length >= 3)
+        return true;
+    if (Math.min(fx.length, fy.length) < 5)
+        return false;
+    const sim = 1 - lev(fx, fy) / Math.max(fx.length, fy.length);
+    return sim >= (cross ? 0.78 : 0.86);
+}
+const SEP_HARD = /\s*(?:[,;/]|&|\bfeat\.?|\bft\.?|\bfeaturing\b)\s*/i;
+const SEP_SOFT = /\s*(?:[,;/+×]|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\s(?:x|and|и|with|vs\.?)\s)\s*/i;
+const artistParts = s => { const raw = String(s || ''); return [...new Set([raw, ...raw.split(SEP_HARD), ...raw.split(SEP_SOFT)].map(x => x.trim()).filter(Boolean))]; };
+exports.artistParts = artistParts;
+// Артист совпадает, если хотя бы одно из наших имён равно одному из их имён
+function artistMatch(theirs, ours) {
+    const T = (0, exports.artistParts)(theirs);
+    if (!T.length)
+        return false;
+    return [].concat(ours).some(o => (0, exports.artistParts)(o).some(a => T.some(t => nameEq(a, t))));
 }
 const sameSong = (a, b) => titleMatch(a, b);
 const sameArtist = (a, b) => artistMatch(a, b);
 function pickGeniusHit(json, artist, title) {
     const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
-    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ' ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ', ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
     return h ? h.result.url : '';
 }
 // ---- Lyrics.com ----
@@ -7526,6 +7611,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -7537,7 +7655,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

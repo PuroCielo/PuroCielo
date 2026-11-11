@@ -42,18 +42,53 @@ export function titleMatch(a, b) {
     const [s, l] = a.length < b.length ? [a, b] : [b, a];
     return l.includes(s) && s.length >= 4 && s.length / l.length >= 0.85;
 }
-// Артист совпадает, если хотя бы один из наших артистов есть в их записи (или наоборот)
-export function artistMatch(theirs, ours) {
-    const t = norm(theirs);
-    if (!t)
+// ---- сравнение артистов ----
+// Раньше хватало вхождения букв («Aria» находилась внутри «Mariah Carey») — отсюда чужие тексты.
+// Теперь сравниваются имена целиком: «perubaby, boolymon» → два имени, подходит любое из них.
+// Имя, записанное другим алфавитом («Скриптонит» / «Skryptonite»), сравнивается после транслитерации.
+const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya', і: 'i', ї: 'i', є: 'e', ґ: 'g' };
+const fold = n => n.replace(/(.)\1+/g, '$1').replace(/[а-яіїєґ]/g, c => TR[c] ?? c).replace(/kh/g, 'h').replace(/ph/g, 'f').replace(/[yj]/g, 'i').replace(/w/g, 'v').replace(/x/g, 'ks').replace(/ck/g, 'k').replace(/c(?![h])/g, 'k').replace(/(.)\1+/g, '$1');
+function lev(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++)
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = cur;
+    }
+    return prev[b.length];
+}
+export function nameEq(a, b) {
+    const sx = v => norm(String(v || '').replace(/\$/g, 's'));
+    const x = sx(a), y = sx(b);
+    if (!x || !y)
         return false;
-    return [].concat(ours).some(a => { a = norm(a); return a.length >= 2 && (t.includes(a) || (a.includes(t) && t.length >= 3)); });
+    if (x === y)
+        return true;
+    const cross = /[а-яіїєґ]/.test(x) !== /[а-яіїєґ]/.test(y);
+    const fx = fold(x), fy = fold(y);
+    if (cross && fx === fy && fx.length >= 3)
+        return true;
+    if (Math.min(fx.length, fy.length) < 5)
+        return false;
+    const sim = 1 - lev(fx, fy) / Math.max(fx.length, fy.length);
+    return sim >= (cross ? 0.78 : 0.86);
+}
+const SEP_HARD = /\s*(?:[,;/]|&|\bfeat\.?|\bft\.?|\bfeaturing\b)\s*/i;
+const SEP_SOFT = /\s*(?:[,;/+×]|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\s(?:x|and|и|with|vs\.?)\s)\s*/i;
+export const artistParts = s => { const raw = String(s || ''); return [...new Set([raw, ...raw.split(SEP_HARD), ...raw.split(SEP_SOFT)].map(x => x.trim()).filter(Boolean))]; };
+// Артист совпадает, если хотя бы одно из наших имён равно одному из их имён
+export function artistMatch(theirs, ours) {
+    const T = artistParts(theirs);
+    if (!T.length)
+        return false;
+    return [].concat(ours).some(o => artistParts(o).some(a => T.some(t => nameEq(a, t))));
 }
 const sameSong = (a, b) => titleMatch(a, b);
 const sameArtist = (a, b) => artistMatch(a, b);
 export function pickGeniusHit(json, artist, title) {
     const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
-    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ' ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ', ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
     return h ? h.result.url : '';
 }
 // ---- Lyrics.com ----

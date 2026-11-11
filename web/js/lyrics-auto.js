@@ -11,7 +11,7 @@ import { geniusLyrics } from './genius.js';
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
 // Если текст не найден — в плеере показывается «Текста нет». Само аудио приложение не «распознаёт».
 const API = 'https://lrclib.net/api';
-const MISS_TTL = 14 * 24 * 3600 * 1000; // «не найдено» помним две недели
+const MISS_TTL = 3 * 24 * 3600 * 1000; // «не найдено» помним три дня, потом ищем снова
 // Название без «мусора»: (скобки), [скобки], prod./feat. в конце, @ники, 160bpm, адреса сайтов (Sefon.Pro, zaycev.net…)
 export function cleanTitle(s) {
     const raw = String(s || '').trim();
@@ -57,7 +57,7 @@ export function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v5|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v6|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -89,24 +89,28 @@ async function getJSON(url, ms = 9000) {
 const sameTitle = (x, title) => titleMatch(cleanTitle(x.trackName || x.name), title);
 // и название, и артист: сверяем со ВСЕМИ артистами трека (у «perubaby, boolymon» подходит любой из двух)
 const sameTrack = (x, title, artists) => sameTitle(x, title) && artistMatch(x.artistName, artists);
-// латиница ↔ кириллица: имя артиста могло быть записано другим алфавитом — тогда сравнить его нельзя
-const otherScript = (a, b) => /[а-яё]/i.test(a) !== /[а-яё]/i.test(b);
 // Выбор версии: сначала с метками времени и почти той же длины, потом обычный текст.
 // Версия другой длины (другой монтаж) с метками разъедется со звуком — такую не берём.
 export function pickBest(list, dur) {
     const diff = x => (dur && x.duration ? Math.abs(x.duration - dur) : 0);
     const ok = list.filter(Boolean);
     const by = arr => arr.sort((a, b) => diff(a) - diff(b))[0] || null;
+    // та же песня того же артиста, но другой длины (другое издание): метки времени не подойдут, а сам текст — да
+    const asPlain = x => x && { ...x, syncedLyrics: null, plainLyrics: (x.plainLyrics || String(x.syncedLyrics || '').replace(/^\s*(?:\[[^\]]*\])+\s?/gm, '')).trim() };
     return by(ok.filter(x => x.syncedLyrics && diff(x) <= 4))
         || by(ok.filter(x => x.plainLyrics && diff(x) <= 6))
+        || asPlain(by(ok.filter(x => x._sure && (x.plainLyrics || x.syncedLyrics))))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
 async function lookup(t, bad = []) {
     const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
-    const take = (list, test) => { for (const x of list || [])
-        if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) && test(x))
-            found.push(x); };
+    // test → 2: совпали и название, и артист; 1: подходит только при той же длине; 0: не то
+    const take = (list, test) => { for (const x of list || []) {
+        const ok = x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) ? Number(test(x)) : 0;
+        if (ok)
+            found.push(ok === 2 ? { ...x, _sure: true } : x);
+    } };
     for (const c of cands) {
         if (!c.artist)
             continue;
@@ -118,12 +122,12 @@ async function lookup(t, bad = []) {
             q.set('duration', String(dur));
         const r = await getJSON(`${API}/get?${q}`);
         if (r.data)
-            take([r.data], () => true);
+            take([r.data], x => (sameTrack(x, c.title, arts) ? 2 : 0)); // ответ тоже проверяем: бывает чужая песня
         if (synced())
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => sameTrack(x, c.title, arts));
+        take(s.data, x => (sameTrack(x, c.title, arts) ? 2 : 0));
         if (synced())
             break;
     }
@@ -132,12 +136,18 @@ async function lookup(t, bad = []) {
     if (!synced() && cands.length) {
         const c = cands[0];
         const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
-        const loose = x => norm_LyricsWeb(cleanTitle(x.trackName)) === norm_LyricsWeb(c.title) && exactLen(x) && (!arts.length || otherScript(x.artistName, arts.join(' ')));
-        const s = await getJSON(`${API}/search?${new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })}`);
-        take(s.data, x => sameTrack(x, c.title, arts) || loose(x));
+        // у файла вообще нет артиста: берём, только если название и длина совпали точно и такой исполнитель в ответе один
+        const twin = x => norm_LyricsWeb(cleanTitle(x.trackName)) === norm_LyricsWeb(c.title) && exactLen(x);
+        const judge = list => { const one = !arts.length && norm_LyricsWeb(c.title).length >= 4 && new Set((list || []).filter(twin).map(x => norm_LyricsWeb(x.artistName))).size === 1; return x => (arts.length && sameTrack(x, c.title, arts) ? 2 : one && twin(x) ? 1 : 0); };
+        for (const q of [...new Set(cands.slice(0, 3).map(k => `${k.artist} ${k.title}`.trim()))]) {
+            const s = await getJSON(`${API}/search?${new URLSearchParams({ q })}`);
+            take(s.data, judge(s.data));
+            if (synced())
+                break;
+        }
         if (!synced()) {
             const s2 = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title })}`);
-            take(s2.data, x => sameTrack(x, c.title, arts) || loose(x));
+            take(s2.data, judge(s2.data));
         }
     }
     return pickBest(found, dur);
@@ -341,8 +351,10 @@ export function ensureLyrics(t) {
                 const c0 = candidates(t)[0];
                 if (c0 && c0.artist) try {
                     const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(c0.artist)}/${encodeURIComponent(c0.title)}`, 8000);
-                    const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
-                    if (txt) {
+                    const txt = r.data && r.data.lyrics && String(r.data.lyrics).replace(/^Paroles de la chanson[^\n]*\n/i, '').trim();
+                    // сервис не сообщает, чью песню вернул, — берём, только если в тексте встречается само название
+                    const nt = norm_LyricsWeb(c0.title);
+                    if (txt && nt.length >= 4 && norm_LyricsWeb(txt).includes(nt)) {
                         const l2 = { type: 'plain', text: txt, source: 'online' };
                         t.lyrics = l2;
                         t._ly = undefined;
