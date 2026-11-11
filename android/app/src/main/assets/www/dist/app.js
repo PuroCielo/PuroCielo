@@ -88,39 +88,6 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -288,7 +255,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
+                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -6883,39 +6850,6 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6927,7 +6861,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = __importStar(require("./i18n.js"));
+const i18n = require("./i18n.js");
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
