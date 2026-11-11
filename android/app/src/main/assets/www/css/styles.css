@@ -872,3 +872,11 @@ select.input { appearance: auto; }
   .cont-text h2 { font-size: 20px; } .cont-sub { font-size: 13.5px; margin-bottom: 12px; } .cont-actions .btn-soft { display: none; }
   .quick { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 20px; padding: 0 16px; scrollbar-width: none; } .quick::-webkit-scrollbar { display: none; } .qbtn { flex: none; height: 38px; padding: 0 14px; font-size: 13.5px; }
 }
+
+/* ---------- 1.10.2: главная, тёмная тема — «цвет сверху» ---------- */
+@property --h1 { syntax: '<color>'; inherits: true; initial-value: #5b5d66; }
+@property --h2 { syntax: '<color>'; inherits: true; initial-value: #3d3f47; }
+:root { transition: --c1 2.2s ease, --h1 1.6s ease, --h2 1.6s ease; }
+.bg-top { position: absolute; left: 0; right: 0; top: 0; height: 64vh; opacity: 0; transition: opacity 1.2s; background: var(--h1); -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); } /* один цвет: два разных оттенка в середине давали грязный тон */
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-top { opacity: .5; }
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-glow { opacity: 0; }

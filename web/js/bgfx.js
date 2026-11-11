@@ -1,4 +1,4 @@
-import { on, state } from './state.js';
+import { getTrack, on, state } from './state.js';
 import { audio, current } from './player.js';
 import { icon } from './icons.js';
 // Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
@@ -85,6 +85,33 @@ export function initBgFx() {
         if (url === lastUrl)
             setPalette(cols);
     };
+    // Главная, тёмная тема: верх страницы мягко окрашен в цвет песни из карточки «Продолжить»
+    // (та, что играет, или последняя прослушанная) и плавно уходит в чёрный.
+    let topUrl;
+    const paintTop = async () => {
+        root.classList.toggle('is-home', /^#?\/?(home)?$/.test(location.hash));
+        const t = current() || getTrack(state.recents[0]);
+        const url = state.settings.bgCover !== false ? t?.cover || null : null;
+        if (url === topUrl)
+            return;
+        topUrl = url;
+        const cols = await paletteFrom(url);
+        if (url !== topUrl)
+            return;
+        if (cols) {
+            root.style.setProperty('--h1', cols[0]);
+            root.style.setProperty('--h2', cols[1]);
+        }
+        root.classList.toggle('has-top', !!cols);
+    };
+    addEventListener('hashchange', paintTop);
+    for (const e of ['track', 'library', 'recents', 'covers'])
+        on(e, paintTop);
+    on('settings', k => { if (k === 'bgCover' || k === 'all') {
+        topUrl = undefined;
+        paintTop();
+    } });
+    paintTop();
     setPalette(null);
     on('track', paintCover);
     on('state', sync);

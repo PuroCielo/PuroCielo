@@ -886,12 +886,20 @@ select.input { appearance: auto; }
   .cont-text h2 { font-size: 20px; } .cont-sub { font-size: 13.5px; margin-bottom: 12px; } .cont-actions .btn-soft { display: none; }
   .quick { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 20px; padding: 0 16px; scrollbar-width: none; } .quick::-webkit-scrollbar { display: none; } .qbtn { flex: none; height: 38px; padding: 0 14px; font-size: 13.5px; }
 }
+
+/* ---------- 1.10.2: главная, тёмная тема — «цвет сверху» ---------- */
+@property --h1 { syntax: '<color>'; inherits: true; initial-value: #5b5d66; }
+@property --h2 { syntax: '<color>'; inherits: true; initial-value: #3d3f47; }
+:root { transition: --c1 2.2s ease, --h1 1.6s ease, --h2 1.6s ease; }
+.bg-top { position: absolute; left: 0; right: 0; top: 0; height: 64vh; opacity: 0; transition: opacity 1.2s; background: var(--h1); -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); } /* один цвет: два разных оттенка в середине давали грязный тон */
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-top { opacity: .5; }
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-glow { opacity: 0; }
 </style>
 </head>
 <body>
 <div id="splash" class="splash"><div class="splash-in"><div class="splash-mark" id="splash-mark"></div><div class="splash-name">Puro Cielo</div><div class="splash-hi" id="splash-hi"></div></div></div>
 <div class="bg-fx" aria-hidden="true">
-  <div class="bg-cover" id="bg-cover"></div><i class="bg-glow"></i>
+  <div class="bg-cover" id="bg-cover"></div><i class="bg-glow"></i><i class="bg-top"></i>
   <i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><i class="blob b4"></i>
   <i class="bg-vignette"></i><i class="bg-grain"></i>
 </div>
@@ -1090,6 +1098,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1257,7 +1298,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2442,6 +2483,35 @@ function initBgFx() {
         if (url === lastUrl)
             setPalette(cols);
     };
+    // Главная, тёмная тема: верх страницы мягко окрашен в цвет песни из карточки «Продолжить»
+    // (та, что играет, или последняя прослушанная) и плавно уходит в чёрный.
+    let topUrl;
+    const paintTop = async () => {
+        root.classList.toggle('is-home', /^#?\/?(home)?$/.test(location.hash));
+        const t = (0, player_js_1.current)() || (0, state_js_1.getTrack)(state_js_1.state.recents[0]);
+        const url = state_js_1.state.settings.bgCover !== false ? t?.cover || null : null;
+        if (url === topUrl)
+            return;
+        topUrl = url;
+        const cols = await paletteFrom(url);
+        if (url !== topUrl)
+            return;
+        if (cols) {
+            root.style.setProperty('--h1', cols[0]);
+            root.style.setProperty('--h2', cols[1]);
+        }
+        root.classList.toggle('has-top', !!cols);
+    };
+    addEventListener('hashchange', paintTop);
+    for (const e of ['track', 'library', 'recents', 'covers'])
+        (0, state_js_1.on)(e, paintTop);
+    (0, state_js_1.on)('settings', k => {
+        if (k === 'bgCover' || k === 'all') {
+            topUrl = undefined;
+            paintTop();
+        }
+    });
+    paintTop();
     setPalette(null);
     (0, state_js_1.on)('track', paintCover);
     (0, state_js_1.on)('state', sync);
@@ -7823,6 +7893,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -7834,7 +7937,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
