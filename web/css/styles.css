@@ -816,17 +816,3 @@ select.input { appearance: auto; }
 :root.no-bg-anim .bg-fx .blob, :root.no-bg-anim .bg-grain, :root.no-bg-particles .bg-dust { display: none; }
 .bg-parts { display: none; }
 @media (prefers-reduced-motion: reduce) { .bg-fx .b4 { animation: none; } }
-/* лучи света и пульс */
-.bg-fx { --beat: 0; }
-.bg-rays { position: absolute; left: 50%; top: -95vmax; width: 190vmax; height: 190vmax; margin-left: -95vmax; border-radius: 50%; opacity: .38;
-  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--c3) 22%, transparent) 0deg 3.5deg, transparent 3.5deg 13deg);
-  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, rgba(0, 0, 0, .55) 34%, transparent 52%); mask-image: radial-gradient(circle at 50% 50%, #000 0%, rgba(0, 0, 0, .55) 34%, transparent 52%);
-  filter: blur(10px); animation: raysTurn 140s linear infinite; }
-:root.is-playing .bg-rays { opacity: calc(.42 + var(--beat) * .4); }
-:root[data-theme="light"] .bg-rays { opacity: .28; }
-@keyframes raysTurn { to { transform: rotate(360deg); } }
-:root:not(.no-bg-pulse) .bg-fx .blob { opacity: calc(.42 + var(--beat) * .35); }
-:root.is-playing:not(.no-bg-pulse) .bg-fx .blob { opacity: calc(.55 + var(--beat) * .35); }
-:root[data-theme="light"]:not(.no-bg-pulse) .bg-fx .blob { opacity: calc(.3 + var(--beat) * .2); }
-:root.no-bg-rays .bg-rays { display: none; }
-@media (prefers-reduced-motion: reduce) { .bg-rays { animation: none; } }

@@ -65,9 +65,7 @@ export function paletteFrom(url) {
 function initDust(cv) {
     const ctx = cv.getContext('2d');
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0, cols = GRAPHITE, meteors = [], nextMeteor = 4000;
-    const root = document.documentElement, fx = cv.parentElement;
-    const off = c => root.classList.contains(c);
+    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0;
     // мягкая светящаяся точка — рисуется один раз, дальше только копируется
     const sprite = document.createElement('canvas');
     const paintSprite = () => {
@@ -102,7 +100,7 @@ function initDust(cv) {
     };
     const frame = (t) => {
         raf = requestAnimationFrame(frame);
-        if (document.hidden)
+        if (document.hidden || document.documentElement.classList.contains('no-bg-particles'))
             return;
         if (t - last < 28)
             return; // ~35 кадров в секунду хватает
@@ -112,65 +110,6 @@ function initDust(cv) {
         energy += ((playing ? level() : 0) - energy) * .18;
         const light = document.documentElement.dataset.theme === 'light';
         ctx.clearRect(0, 0, W, H);
-        // пульс: градиент «дышит» в такт басам
-        if (fx)
-            fx.style.setProperty('--beat', off('no-bg-pulse') ? '0' : energy.toFixed(3));
-        // звуковые волны: три светящиеся ленты внизу
-        if (!off('no-bg-waves')) {
-            ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
-            const base = H * .8, amp = H * (.025 + energy * .07) * (playing ? 1 : .45);
-            for (let i = 0; i < 3; i++) {
-                const k = (2 + i * .9) / W * Math.PI, ph = t / (2600 - i * 500) + i * 1.7;
-                ctx.beginPath();
-                for (let x = 0; x <= W; x += 12 * dpr) {
-                    const y = base + i * 18 * dpr + Math.sin(x * k + ph) * amp + Math.sin(x * k * 2.3 - ph * 1.4) * amp * .35;
-                    x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-                }
-                const g = ctx.createLinearGradient(0, 0, W, 0);
-                g.addColorStop(0, 'transparent');
-                g.addColorStop(.25, cols[i % cols.length]);
-                g.addColorStop(.75, cols[(i + 1) % cols.length]);
-                g.addColorStop(1, 'transparent');
-                ctx.strokeStyle = g;
-                ctx.lineWidth = (1.4 + energy * 2.5) * dpr;
-                ctx.globalAlpha = (light ? .35 : .55) - i * .12;
-                ctx.shadowColor = cols[i % cols.length];
-                ctx.shadowBlur = light ? 0 : 14 * dpr;
-                ctx.stroke();
-            }
-            ctx.shadowBlur = 0;
-            ctx.globalAlpha = 1;
-        }
-        // падающие звёзды
-        if (!off('no-bg-meteors')) {
-            nextMeteor -= dt * 16.7 * (playing ? 1 + energy * 2 : .5);
-            if (nextMeteor <= 0) {
-                nextMeteor = 5000 + Math.random() * 9000;
-                const a = Math.PI * (.72 + Math.random() * .12);
-                meteors.push({ x: W * (.35 + Math.random() * .65), y: -20 * dpr, vx: Math.cos(a) * 14 * dpr, vy: Math.sin(a) * 14 * dpr, life: 1 });
-            }
-            ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
-            for (const m of meteors) {
-                m.x += m.vx * dt;
-                m.y += m.vy * dt;
-                m.life -= .018 * dt;
-                const tail = 18, g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * tail, m.y - m.vy * tail);
-                g.addColorStop(0, light ? 'rgba(40,40,60,.55)' : `rgba(255,255,255,${(.9 * m.life).toFixed(3)})`);
-                g.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.strokeStyle = g;
-                ctx.lineWidth = 1.6 * dpr;
-                ctx.lineCap = 'round';
-                ctx.globalAlpha = Math.max(0, m.life);
-                ctx.beginPath();
-                ctx.moveTo(m.x, m.y);
-                ctx.lineTo(m.x - m.vx * tail, m.y - m.vy * tail);
-                ctx.stroke();
-            }
-            meteors = meteors.filter(m => m.life > 0 && m.y < H + 200);
-            ctx.globalAlpha = 1;
-        }
-        if (off('no-bg-particles'))
-            return;
         ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
         const speed = (playing ? 1 : .35) * (1 + energy * 2.2) * dpr;
         for (const p of parts) {
@@ -195,7 +134,6 @@ function initDust(cv) {
     else
         frame(1000);
     return {
-        setColors(c) { cols = c || GRAPHITE; },
         setTint(css) { // искры чуть окрашены в главный цвет обложки
             const m = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(css || '');
             if (!m) {
@@ -223,7 +161,6 @@ export function initBgFx() {
         const c = cols || GRAPHITE;
         c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
         dust?.setTint(cols ? cols[0] : null);
-        dust?.setColors(cols ? cols.map(v => v.replace(/(\d+)%\)$/, (m, l) => Math.min(75, +l + 22) + '%)')) : null);
     };
     const paintCover = async () => {
         const t = current(), url = state.settings.bgCover !== false ? t?.cover || null : null;

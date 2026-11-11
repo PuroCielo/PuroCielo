@@ -21,9 +21,5 @@ export function applySettings() {
     r.classList.toggle('no-bg-vinyl', !s.bgVinyl);
     r.classList.toggle('no-bg-particles', !s.bgParticles);
     r.classList.toggle('no-bg-cover', !s.bgCover);
-    r.classList.toggle('no-bg-rays', !s.bgRays);
-    r.classList.toggle('no-bg-waves', !s.bgWaves);
-    r.classList.toggle('no-bg-pulse', !s.bgPulse);
-    r.classList.toggle('no-bg-meteors', !s.bgMeteors);
     r.classList.toggle('no-anim', !s.anim);
 }
