@@ -14,7 +14,7 @@ import { $, $$, debounce, esc, plural, shuffleArray } from './util.js';
 import { buildM3U } from './m3u.js';
 import { clearFiles } from './db.js';
 import { initI18n, setLang } from './i18n.js';
-import { initAutoCovers } from './covers-auto.js';
+import { initAutoCovers, setArtistPhoto } from './covers-auto.js';
 import { initSync, signInEmail, signInGoogle, signOutSync, sync, syncNow } from './sync.js';
 
 const view = $('#view');
@@ -240,6 +240,15 @@ function doAction(el, e) {
             e.stopPropagation();
             toggleLike(d.id);
             break;
+        case 'artist-photo': {
+            e.stopPropagation();
+            const key = d.key, a = derived().artists.get(key);
+            openMenu(el, [
+                { icon: 'edit', label: 'Выбрать фото…', onClick: async () => { const img = await pickImage(360, 360); if (img) { await setArtistPhoto(key, img); toast('Фото артиста обновлено'); } } },
+                ...(a && a.photo ? [{ icon: 'trash', label: 'Убрать фото', danger: true, onClick: async () => { await setArtistPhoto(key, null); toast('Фото убрано'); } }] : []),
+            ]);
+            break;
+        }
         case 'delete-track':
             e.stopPropagation();
             deleteTrackFlow(d.id);

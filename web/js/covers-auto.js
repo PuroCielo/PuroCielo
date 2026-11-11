@@ -10,7 +10,7 @@ import { jsonp } from './jsonp.js';
 const ITUNES = 'https://itunes.apple.com/search';
 const MB = 'https://musicbrainz.org/ws/2';
 const RETRY = 14 * 864e5; // «не нашлось» — пробуем снова через две недели
-export const auto = { t: {}, a: {}, ar: {}, miss: {} }; // t — песни, a — альбомы, ar — фото артистов
+export const auto = { t: {}, a: {}, ar: {}, own: {}, miss: {} }; // t — песни, a — альбомы, ar — фото артистов, own — артисты, чьё фото задал сам пользователь
 let loaded = false, running = false, timer = 0;
 async function loadAuto() {
     if (loaded)
@@ -19,11 +19,11 @@ async function loadAuto() {
     try {
         const d = await kvGet('autoCovers');
         if (d && typeof d === 'object')
-            Object.assign(auto, { t: d.t || {}, a: d.a || {}, ar: d.ar || {}, miss: d.v === 2 ? d.miss || {} : {} }); // v2: прежние «не нашлось» (из-за CORS) забываем
+            Object.assign(auto, { t: d.t || {}, a: d.a || {}, ar: d.v === 3 ? d.ar || {} : {}, own: d.own || {}, miss: d.v >= 2 ? Object.fromEntries(Object.entries(d.miss || {}).filter(([k]) => d.v === 3 || !k.startsWith('ar:'))) : {} }); // v3: фото артистов, найденные по одному имени, забываем — среди них были тёзки
     }
     catch { /* ignore */ }
 }
-const persist = () => kvSet('autoCovers', { ...auto, v: 2 }).catch(() => { });
+const persist = () => kvSet('autoCovers', { ...auto, v: 3 }).catch(() => { });
 async function getJSON(url) {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 9000);
     try {
@@ -107,11 +107,30 @@ async function findSong(title, artists) {
     const it = (await itunes('song', `${a0} ${name}`)).find(r => same(r.trackName, title) && artistMatch(r.artistName, artists));
     return it?.artworkUrl100 ? big(it.artworkUrl100) : null;
 }
-// фото артиста из каталога Deezer: имя должно совпасть; из тёзок берём самого известного
-async function findArtist(name) {
-    const hits = (await deezer('artist', name)).filter(r => nameEq(r.name, name)).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
-    const pic = hits[0] && (hits[0].picture_xl || hits[0].picture_big);
-    return pic && !/\/artist\/\//.test(pic) ? pic : null; // «/artist//» — заглушка Deezer, фото нет
+// Фото артиста из каталога Deezer. По одному имени искать нельзя — находятся тёзки с чужими фото.
+// Поэтому ищем ПЕСНЮ этого артиста из медиатеки: совпали и название песни, и имя — значит, артист тот самый.
+// Если артист в песне приглашённый, его фото берём из списка участников этой же песни.
+const okPic = a => { const p = a && (a.picture_xl || a.picture_big); return p && !/\/artist\/\//.test(p) ? p : null; }; // «/artist//» — заглушка, фото нет
+async function findArtist(name, tracks) {
+    for (const tr of tracks || []) {
+        const lead = tr.artists[0] || name;
+        const hits = await deezer('track', `artist:"${q(lead)}" track:"${q(clean(tr.title) || tr.title)}"`);
+        const song = hits.find(r => same(r.title_short || r.title, tr.title) && r.artist && artistMatch(r.artist.name, tr.artists));
+        if (!song)
+            continue;
+        if (nameEq(song.artist.name, name)) {
+            const p = okPic(song.artist);
+            if (p)
+                return p;
+            continue;
+        }
+        const full = await jsonp(`https://api.deezer.com/track/${song.id}?output=jsonp`);
+        const me = ((full && full.contributors) || []).find(c => nameEq(c.name, name));
+        const p = okPic(me);
+        if (p)
+            return p;
+    }
+    return null;
 }
 // что искать: альбомы без обложки целиком, одиночные песни — по названию
 function todo() {
@@ -131,8 +150,8 @@ function todo() {
         }
     }
     for (const a of d.artistList)
-        if (a.name !== UNKNOWN && !auto.ar[a.key] && fresh('ar:' + a.key))
-            jobs.push({ kind: 'ar', key: a.key, name: a.name });
+        if (a.name !== UNKNOWN && !auto.ar[a.key] && !auto.own[a.key] && fresh('ar:' + a.key))
+            jobs.push({ kind: 'ar', key: a.key, name: a.name, tracks: [...a.tracks.filter(t => t._artistKey === a.key), ...a.tracks.filter(t => t._artistKey !== a.key)].slice(0, 3).map(t => ({ title: t.title, artists: (t._artists || []).filter(x => x !== UNKNOWN) })) });
     return jobs;
 }
 async function run() {
@@ -145,7 +164,7 @@ async function run() {
         for (const j of todo()) {
             if (state.settings.autoCovers === false)
                 break;
-            let url = j.kind === 'ar' ? await findArtist(j.name) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
+            let url = j.kind === 'ar' ? await findArtist(j.name, j.tracks) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
             if (!url && j.kind === 't' && j.album)
                 url = await findAlbum(j.album, j.artists); // сингл из альбома — обложка альбома
             if (url) {
@@ -195,4 +214,16 @@ export async function initAutoCovers() {
         }
     } });
     scheduleAutoCovers(4000);
+}
+// своё фото артиста (или «без фото»): выбор пользователя важнее найденного, заново не ищем
+export async function setArtistPhoto(key, data) {
+    await loadAuto();
+    if (data)
+        auto.ar[key] = data;
+    else
+        delete auto.ar[key];
+    auto.own[key] = 1;
+    persist();
+    touchLibrary();
+    emit('covers');
 }

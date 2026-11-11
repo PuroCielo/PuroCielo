@@ -340,6 +340,7 @@ export function artistView(key) {
       <button class="icon-btn lg ghost" data-action="shuffle-artist" data-key="${esc(a.key)}" aria-label="Перемешать">${icon('shuffle')}</button>
       <button class="play-btn" data-action="play-artist" data-key="${esc(a.key)}" aria-label="Играть">${icon('play')}</button>
       <button class="icon-btn lg ghost" data-action="radio-artist" data-key="${esc(a.key)}" aria-label="Случайные песни артиста">${icon('queue')}</button>
+      <button class="icon-btn lg ghost" data-action="artist-photo" data-key="${esc(a.key)}" aria-label="Фото артиста" title="Фото артиста">${icon('edit')}</button>
     </div>
   </section><div class="artist-body">`;
     if (latest || top.length) {

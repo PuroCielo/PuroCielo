@@ -1090,6 +1090,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1257,7 +1290,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1347,6 +1380,18 @@ function doAction(el, e) {
             e.stopPropagation();
             (0, state_js_1.toggleLike)(d.id);
             break;
+        case 'artist-photo': {
+            e.stopPropagation();
+            const key = d.key, a = (0, state_js_1.derived)().artists.get(key);
+            (0, ui_js_1.openMenu)(el, [
+                { icon: 'edit', label: 'Выбрать фото…', onClick: async () => { const img = await (0, ui_js_1.pickImage)(360, 360); if (img) {
+                        await (0, covers_auto_js_1.setArtistPhoto)(key, img);
+                        (0, ui_js_1.toast)('Фото артиста обновлено');
+                    } } },
+                ...(a && a.photo ? [{ icon: 'trash', label: 'Убрать фото', danger: true, onClick: async () => { await (0, covers_auto_js_1.setArtistPhoto)(key, null); (0, ui_js_1.toast)('Фото убрано'); } }] : []),
+            ]);
+            break;
+        }
         case 'delete-track':
             e.stopPropagation();
             (0, actions_js_1.deleteTrackFlow)(d.id);
@@ -2461,6 +2506,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.auto = void 0;
 exports.scheduleAutoCovers = scheduleAutoCovers;
 exports.initAutoCovers = initAutoCovers;
+exports.setArtistPhoto = setArtistPhoto;
 const db_js_1 = require("./db.js");
 const state_js_1 = require("./state.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
@@ -2472,7 +2518,7 @@ const jsonp_js_1 = require("./jsonp.js");
 const ITUNES = 'https://itunes.apple.com/search';
 const MB = 'https://musicbrainz.org/ws/2';
 const RETRY = 14 * 864e5; // «не нашлось» — пробуем снова через две недели
-exports.auto = { t: {}, a: {}, ar: {}, miss: {} }; // t — песни, a — альбомы, ar — фото артистов
+exports.auto = { t: {}, a: {}, ar: {}, own: {}, miss: {} }; // t — песни, a — альбомы, ar — фото артистов, own — артисты, чьё фото задал сам пользователь
 let loaded = false, running = false, timer = 0;
 async function loadAuto() {
     if (loaded)
@@ -2481,11 +2527,11 @@ async function loadAuto() {
     try {
         const d = await (0, db_js_1.kvGet)('autoCovers');
         if (d && typeof d === 'object')
-            Object.assign(exports.auto, { t: d.t || {}, a: d.a || {}, ar: d.ar || {}, miss: d.v === 2 ? d.miss || {} : {} }); // v2: прежние «не нашлось» (из-за CORS) забываем
+            Object.assign(exports.auto, { t: d.t || {}, a: d.a || {}, ar: d.v === 3 ? d.ar || {} : {}, own: d.own || {}, miss: d.v >= 2 ? Object.fromEntries(Object.entries(d.miss || {}).filter(([k]) => d.v === 3 || !k.startsWith('ar:'))) : {} }); // v3: фото артистов, найденные по одному имени, забываем — среди них были тёзки
     }
     catch { /* ignore */ }
 }
-const persist = () => (0, db_js_1.kvSet)('autoCovers', { ...exports.auto, v: 2 }).catch(() => { });
+const persist = () => (0, db_js_1.kvSet)('autoCovers', { ...exports.auto, v: 3 }).catch(() => { });
 async function getJSON(url) {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 9000);
     try {
@@ -2569,11 +2615,30 @@ async function findSong(title, artists) {
     const it = (await itunes('song', `${a0} ${name}`)).find(r => same(r.trackName, title) && (0, lyrics_web_js_1.artistMatch)(r.artistName, artists));
     return it?.artworkUrl100 ? big(it.artworkUrl100) : null;
 }
-// фото артиста из каталога Deezer: имя должно совпасть; из тёзок берём самого известного
-async function findArtist(name) {
-    const hits = (await deezer('artist', name)).filter(r => (0, lyrics_web_js_1.nameEq)(r.name, name)).sort((a, b) => (b.nb_fan || 0) - (a.nb_fan || 0));
-    const pic = hits[0] && (hits[0].picture_xl || hits[0].picture_big);
-    return pic && !/\/artist\/\//.test(pic) ? pic : null; // «/artist//» — заглушка Deezer, фото нет
+// Фото артиста из каталога Deezer. По одному имени искать нельзя — находятся тёзки с чужими фото.
+// Поэтому ищем ПЕСНЮ этого артиста из медиатеки: совпали и название песни, и имя — значит, артист тот самый.
+// Если артист в песне приглашённый, его фото берём из списка участников этой же песни.
+const okPic = a => { const p = a && (a.picture_xl || a.picture_big); return p && !/\/artist\/\//.test(p) ? p : null; }; // «/artist//» — заглушка, фото нет
+async function findArtist(name, tracks) {
+    for (const tr of tracks || []) {
+        const lead = tr.artists[0] || name;
+        const hits = await deezer('track', `artist:"${q(lead)}" track:"${q(clean(tr.title) || tr.title)}"`);
+        const song = hits.find(r => same(r.title_short || r.title, tr.title) && r.artist && (0, lyrics_web_js_1.artistMatch)(r.artist.name, tr.artists));
+        if (!song)
+            continue;
+        if ((0, lyrics_web_js_1.nameEq)(song.artist.name, name)) {
+            const p = okPic(song.artist);
+            if (p)
+                return p;
+            continue;
+        }
+        const full = await (0, jsonp_js_1.jsonp)(`https://api.deezer.com/track/${song.id}?output=jsonp`);
+        const me = ((full && full.contributors) || []).find(c => (0, lyrics_web_js_1.nameEq)(c.name, name));
+        const p = okPic(me);
+        if (p)
+            return p;
+    }
+    return null;
 }
 // что искать: альбомы без обложки целиком, одиночные песни — по названию
 function todo() {
@@ -2593,8 +2658,8 @@ function todo() {
         }
     }
     for (const a of d.artistList)
-        if (a.name !== artists_js_1.UNKNOWN && !exports.auto.ar[a.key] && fresh('ar:' + a.key))
-            jobs.push({ kind: 'ar', key: a.key, name: a.name });
+        if (a.name !== artists_js_1.UNKNOWN && !exports.auto.ar[a.key] && !exports.auto.own[a.key] && fresh('ar:' + a.key))
+            jobs.push({ kind: 'ar', key: a.key, name: a.name, tracks: [...a.tracks.filter(t => t._artistKey === a.key), ...a.tracks.filter(t => t._artistKey !== a.key)].slice(0, 3).map(t => ({ title: t.title, artists: (t._artists || []).filter(x => x !== artists_js_1.UNKNOWN) })) });
     return jobs;
 }
 async function run() {
@@ -2607,7 +2672,7 @@ async function run() {
         for (const j of todo()) {
             if (state_js_1.state.settings.autoCovers === false)
                 break;
-            let url = j.kind === 'ar' ? await findArtist(j.name) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
+            let url = j.kind === 'ar' ? await findArtist(j.name, j.tracks) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
             if (!url && j.kind === 't' && j.album)
                 url = await findAlbum(j.album, j.artists); // сингл из альбома — обложка альбома
             if (url) {
@@ -2659,6 +2724,18 @@ async function initAutoCovers() {
         }
     });
     scheduleAutoCovers(4000);
+}
+// своё фото артиста (или «без фото»): выбор пользователя важнее найденного, заново не ищем
+async function setArtistPhoto(key, data) {
+    await loadAuto();
+    if (data)
+        exports.auto.ar[key] = data;
+    else
+        delete exports.auto.ar[key];
+    exports.auto.own[key] = 1;
+    persist();
+    (0, state_js_1.touchLibrary)();
+    (0, state_js_1.emit)('covers');
 }
 
 };
@@ -3034,7 +3111,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Продолжить': 'Continue', 'Слушать дальше': 'Keep listening', 'Открыть альбом': 'Open album', 'Перемешать всё': 'Shuffle all', 'Быстрые кнопки': 'Quick buttons', 'Выше': 'Move up', 'Ниже': 'Move down', 'Порядок разделов на главной: стрелками двигайте выше или ниже, выключателем — скрывайте.': 'Order of sections on the home page: move them with the arrows, hide them with the switch.', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.': 'If a song or album has no cover, the player finds one itself. It also finds artist photos.', 'Удалить песню?': 'Delete this song?', 'Удалить песню': 'Delete song', 'Удалить из медиатеки': 'Delete from library', 'Удалить': 'Delete', 'Добавить копию песни?': 'Add a copy of the song?', 'Добавить копии песен?': 'Add copies of the songs?', 'Добавить копию': 'Add a copy', 'Добавить копии': 'Add copies', 'Не добавлять': 'Don’t add', 'Фон от обложки': 'Background from cover', 'Тёмная тема: чёрный фон и мягкое свечение в цвет обложки. Светлая тема: свет от самой обложки.': 'Dark theme: black background with a soft glow in the cover colour. Light theme: light from the cover itself.', 'Движение фона': 'Background motion', 'Свет от обложки медленно плывёт.': 'The light from the cover drifts slowly.', 'Искать обложки': 'Find covers', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).': 'If a song or album has no cover, the player finds one itself (iTunes, MusicBrainz).', 'Убирать приписки сайтов': 'Remove site tags', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.': 'For example, “Song (Sefon.Pro)” → “Song”. Files aren’t changed.', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Фото артиста': 'Artist photo', 'Выбрать фото…': 'Choose a photo…', 'Убрать фото': 'Remove photo', 'Фото артиста обновлено': 'Artist photo updated', 'Фото убрано': 'Photo removed', 'Продолжить': 'Continue', 'Слушать дальше': 'Keep listening', 'Открыть альбом': 'Open album', 'Перемешать всё': 'Shuffle all', 'Быстрые кнопки': 'Quick buttons', 'Выше': 'Move up', 'Ниже': 'Move down', 'Порядок разделов на главной: стрелками двигайте выше или ниже, выключателем — скрывайте.': 'Order of sections on the home page: move them with the arrows, hide them with the switch.', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.': 'If a song or album has no cover, the player finds one itself. It also finds artist photos.', 'Удалить песню?': 'Delete this song?', 'Удалить песню': 'Delete song', 'Удалить из медиатеки': 'Delete from library', 'Удалить': 'Delete', 'Добавить копию песни?': 'Add a copy of the song?', 'Добавить копии песен?': 'Add copies of the songs?', 'Добавить копию': 'Add a copy', 'Добавить копии': 'Add copies', 'Не добавлять': 'Don’t add', 'Фон от обложки': 'Background from cover', 'Тёмная тема: чёрный фон и мягкое свечение в цвет обложки. Светлая тема: свет от самой обложки.': 'Dark theme: black background with a soft glow in the cover colour. Light theme: light from the cover itself.', 'Движение фона': 'Background motion', 'Свет от обложки медленно плывёт.': 'The light from the cover drifts slowly.', 'Искать обложки': 'Find covers', 'Если у песни или альбома нет обложки, плеер найдёт её сам (iTunes, MusicBrainz).': 'If a song or album has no cover, the player finds one itself (iTunes, MusicBrainz).', 'Убирать приписки сайтов': 'Remove site tags', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.': 'For example, “Song (Sefon.Pro)” → “Song”. Files aren’t changed.', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -7779,6 +7856,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -7790,7 +7900,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -8272,6 +8382,7 @@ function artistView(key) {
       <button class="icon-btn lg ghost" data-action="shuffle-artist" data-key="${(0, util_js_1.esc)(a.key)}" aria-label="Перемешать">${(0, icons_js_1.icon)('shuffle')}</button>
       <button class="play-btn" data-action="play-artist" data-key="${(0, util_js_1.esc)(a.key)}" aria-label="Играть">${(0, icons_js_1.icon)('play')}</button>
       <button class="icon-btn lg ghost" data-action="radio-artist" data-key="${(0, util_js_1.esc)(a.key)}" aria-label="Случайные песни артиста">${(0, icons_js_1.icon)('queue')}</button>
+      <button class="icon-btn lg ghost" data-action="artist-photo" data-key="${(0, util_js_1.esc)(a.key)}" aria-label="Фото артиста" title="Фото артиста">${(0, icons_js_1.icon)('edit')}</button>
     </div>
   </section><div class="artist-body">`;
     if (latest || top.length) {
