@@ -999,6 +999,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1165,7 +1198,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2414,7 +2447,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -3117,6 +3150,7 @@ function activeLine(lines, t) {
 };
 defs["lyrics-auto.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isFoundOnline = void 0;
 exports.cleanTitle = cleanTitle;
 exports.candidates = candidates;
 exports.pickBest = pickBest;
@@ -3124,6 +3158,7 @@ exports.getOffset = getOffset;
 exports.setOffset = setOffset;
 exports.rawLyrics = rawLyrics;
 exports.setManualLyrics = setManualLyrics;
+exports.rejectLyrics = rejectLyrics;
 exports.ensureLyrics = ensureLyrics;
 const state_js_1 = require("./state.js");
 const lrc_js_1 = require("./lrc.js");
@@ -3182,17 +3217,17 @@ function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v3|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v4|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
     if (d.syncedLyrics) {
         const p = (0, lrc_js_1.parseLrc)(d.syncedLyrics);
         if (p.synced)
-            return { type: 'synced', lines: p.lines, source: 'online' };
+            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id };
     }
     if (d.plainLyrics && d.plainLyrics.trim())
-        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online' };
+        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id };
     return null;
 }
 async function getJSON(url, ms = 9000) {
@@ -3211,16 +3246,11 @@ async function getJSON(url, ms = 9000) {
     }
 }
 // Это та же песня? LRCLIB ищет нечётко и может вернуть другой трек — тогда текст «идёт» не по песне.
-const sameTitle = (x, title) => {
-    const a = (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName || x.name)), b = (0, lyrics_web_js_1.norm)(title);
-    return !!a && !!b && (a.includes(b) || b.includes(a));
-};
-const sameTrack = (x, title, artist) => {
-    if (!sameTitle(x, title))
-        return false;
-    const who = (0, lyrics_web_js_1.norm)(artist), got = (0, lyrics_web_js_1.norm)(x.artistName);
-    return !who || !got || got.includes(who) || who.includes(got);
-};
+const sameTitle = (x, title) => (0, lyrics_web_js_1.titleMatch)(cleanTitle(x.trackName || x.name), title);
+// и название, и артист: сверяем со ВСЕМИ артистами трека (у «perubaby, boolymon» подходит любой из двух)
+const sameTrack = (x, title, artists) => sameTitle(x, title) && (0, lyrics_web_js_1.artistMatch)(x.artistName, artists);
+// латиница ↔ кириллица: имя артиста могло быть записано другим алфавитом — тогда сравнить его нельзя
+const otherScript = (a, b) => /[а-яё]/i.test(a) !== /[а-яё]/i.test(b);
 // Выбор версии: сначала с метками времени и почти той же длины, потом обычный текст.
 // Версия другой длины (другой монтаж) с метками разъедется со звуком — такую не берём.
 function pickBest(list, dur) {
@@ -3231,12 +3261,12 @@ function pickBest(list, dur) {
         || by(ok.filter(x => x.plainLyrics && diff(x) <= 6))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
-async function lookup(t) {
-    const dur = Math.round(t.duration || 0), cands = candidates(t), found = [];
+async function lookup(t, bad = []) {
+    const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
     const take = (list, test) => {
         for (const x of list || [])
-            if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && test(x))
+            if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) && test(x))
                 found.push(x);
     };
     for (const c of cands) {
@@ -3255,18 +3285,21 @@ async function lookup(t) {
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => sameTrack(x, c.title, c.artist));
+        take(s.data, x => sameTrack(x, c.title, arts));
         if (synced())
             break;
     }
-    // 3) свободный поиск (артист записан иначе: латиницей/кириллицей, с соавтором и т.п.) — только при совпадении названия и длины
+    // 3) свободный поиск: тот же артист, записанный иначе. Чужой артист с тем же названием — НЕ подходит.
+    //    Без артиста или с артистом другим алфавитом — только точное название и длина ±1 с.
     if (!synced() && cands.length) {
         const c = cands[0];
+        const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
+        const loose = x => (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && exactLen(x) && (!arts.length || otherScript(x.artistName, arts.join(' ')));
         const s = await getJSON(`${API}/search?${new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })}`);
-        take(s.data, x => sameTrack(x, c.title, c.artist) || (sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2));
-        if (!synced() && c.artist) {
+        take(s.data, x => sameTrack(x, c.title, arts) || loose(x));
+        if (!synced()) {
             const s2 = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title })}`);
-            take(s2.data, x => sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2);
+            take(s2.data, x => sameTrack(x, c.title, arts) || loose(x));
         }
     }
     return pickBest(found, dur);
@@ -3322,8 +3355,9 @@ async function extraSources(t) {
     }
     try {
         const r = await getJSON(`https://lyrist.vercel.app/api/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, 8000);
-        const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
-        if (txt)
+        const d = r.data, txt = d && d.lyrics && String(d.lyrics).trim();
+        // lyrist отдаёт первый результат поиска — берём, только если это та же песня того же артиста
+        if (txt && (0, lyrics_web_js_1.titleMatch)(d.title || '', title) && (0, lyrics_web_js_1.artistMatch)(d.artist || '', [artist]))
             return { type: 'plain', text: txt, source: 'online' };
     }
     catch { /* источник недоступен */ }
@@ -3376,6 +3410,26 @@ async function applyManual(t) {
     catch { /* ignore */ }
     return false;
 }
+// «Это не тот текст»: запоминаем неверный вариант и ищем снова без него
+const OWN = ['manual', 'lrc', 'sylt', 'uslt'];
+const isFoundOnline = ly => !!ly && !OWN.includes(ly.source);
+exports.isFoundOnline = isFoundOnline;
+async function rejectLyrics(t) {
+    const ly = t && t.lyrics;
+    if (!(0, exports.isFoundOnline)(ly))
+        return false;
+    const bad = (await (0, db_js_1.lyGet)('bad|' + t.id).catch(() => null)) || { ids: [] };
+    if (ly.ref != null)
+        bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
+    else
+        bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
+    await (0, db_js_1.lySet)('bad|' + t.id, bad);
+    await (0, db_js_1.lySet)(keyOf(t), { at: 0 });
+    t.lyrics = null;
+    t._ly = undefined;
+    (0, state_js_1.emit)('lyrics', t);
+    return ensureLyrics(t);
+}
 function ensureLyrics(t) {
     if (t && !t._manualChecked)
         return applyManual(t).then(ok => ok || ensureLyrics(t));
@@ -3406,7 +3460,14 @@ function ensureLyrics(t) {
                 t._ly = 'none';
                 return false;
             }
-            const d = await lookup(t);
+            // варианты, которые пользователь отметил «Это не тот текст»
+            const bad = (await (0, db_js_1.lyGet)('bad|' + t.id).catch(() => null)) || {};
+            if (bad.all) {
+                t._ly = 'none';
+                (0, db_js_1.lySet)(key, { miss: true, at: Date.now() });
+                return false;
+            }
+            const d = await lookup(t, bad.ids || []);
             const ly = d && !d.instrumental ? toLyrics(d) : null;
             if (ly) {
                 t.lyrics = ly;
@@ -3464,6 +3525,8 @@ defs["lyrics-web.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.looksLikeLyrics = exports.azUrl = exports.htmlToText = exports.decodeEntities = exports.norm = void 0;
 exports.extractGenius = extractGenius;
+exports.titleMatch = titleMatch;
+exports.artistMatch = artistMatch;
 exports.pickGeniusHit = pickGeniusHit;
 exports.pickLyricsCom = pickLyricsCom;
 exports.extractLyricsCom = extractLyricsCom;
@@ -3507,10 +3570,29 @@ function extractGenius(html) {
         return '';
     return (0, exports.htmlToText)(out.join('\n').replace(/<div[^>]*data-exclude-from-selection="true"[\s\S]*?<\/div>/g, ''));
 }
-const sameSong = (a, b) => { a = (0, exports.norm)(a); b = (0, exports.norm)(b); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+// Строгое совпадение названия: одинаковые или почти одинаковые («washed» ≠ «washed out», ≠ «brainwashed»)
+function titleMatch(a, b) {
+    a = (0, exports.norm)(a);
+    b = (0, exports.norm)(b);
+    if (!a || !b)
+        return false;
+    if (a === b)
+        return true;
+    const [s, l] = a.length < b.length ? [a, b] : [b, a];
+    return l.includes(s) && s.length >= 4 && s.length / l.length >= 0.85;
+}
+// Артист совпадает, если хотя бы один из наших артистов есть в их записи (или наоборот)
+function artistMatch(theirs, ours) {
+    const t = (0, exports.norm)(theirs);
+    if (!t)
+        return false;
+    return [].concat(ours).some(a => { a = (0, exports.norm)(a); return a.length >= 2 && (t.includes(a) || (a.includes(t) && t.length >= 3)); });
+}
+const sameSong = (a, b) => titleMatch(a, b);
+const sameArtist = (a, b) => artistMatch(a, b);
 function pickGeniusHit(json, artist, title) {
     const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
-    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameSong(h.result.primary_artist && h.result.primary_artist.name, artist)));
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ' ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
     return h ? h.result.url : '';
 }
 // ---- Lyrics.com ----
@@ -3520,7 +3602,7 @@ function pickLyricsCom(html, artist, title) {
     const want = (0, exports.norm)(title);
     while ((m = re.exec(html))) {
         const slug = decodeURIComponent(m[1]).toLowerCase();
-        if ((0, exports.norm)(m[2]).includes(want) || (0, exports.norm)(slug).includes(want)) {
+        if (titleMatch(m[2], title)) {
             if (!artist || (0, exports.norm)(slug).includes((0, exports.norm)(artist).slice(0, 5)))
                 return 'https://www.lyrics.com' + m[1];
         }
@@ -3545,6 +3627,10 @@ function linksByText(html, origin, title, artist) {
     while ((m = re.exec(html))) {
         const text = (0, exports.norm)((0, exports.htmlToText)(m[2]));
         if (!text || !text.includes(want))
+            continue;
+        // в ссылке «Артист - Название»: без имени артиста должно остаться само название, а не «название + ещё слова»
+        const rest = who && text.includes(who) ? text.replace(who, '') : text;
+        if (!titleMatch(rest, want) && rest !== want)
             continue;
         let href = m[1];
         if (href.startsWith('//'))
@@ -4334,6 +4420,11 @@ function initPlayerUI() {
             return;
         (0, ui_js_1.openMenu)(e.currentTarget, [
             { icon: 'lyrics', label: t.lyrics ? 'Изменить текст' : 'Добавить текст', onClick: () => editLyrics() },
+            ...((0, lyrics_auto_js_1.isFoundOnline)(t.lyrics) ? [{ icon: 'close', label: 'Это не тот текст', onClick: async () => {
+                        (0, ui_js_1.toast)('Ищу другой текст…', 'info', 2000);
+                        const ok = await (0, lyrics_auto_js_1.rejectLyrics)(t);
+                        (0, ui_js_1.toast)(ok ? 'Нашёл другой вариант' : 'Другого текста не нашлось — можно добавить свой через карандаш', ok ? 'info' : 'warn');
+                    } }] : []),
             { icon: 'upload', label: 'Обложка трека…', onClick: async () => {
                     const url = await (0, ui_js_1.pickImage)();
                     if (url) {
@@ -6826,6 +6917,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6836,7 +6960,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

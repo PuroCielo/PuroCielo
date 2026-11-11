@@ -3,7 +3,7 @@ import { parseLrc } from './lrc.js';
 import { lyGet, lySet } from './db.js';
 import { norm } from './util.js';
 import { UNKNOWN, splitArtists } from './artists.js';
-import { norm as norm_LyricsWeb, webLyrics } from './lyrics-web.js';
+import { artistMatch, norm as norm_LyricsWeb, titleMatch, webLyrics } from './lyrics-web.js';
 import { isNative, nativeFetchText } from './native.js';
 
 // Автоматический поиск текста песни.
@@ -56,17 +56,17 @@ export function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v3|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v4|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
     if (d.syncedLyrics) {
         const p = parseLrc(d.syncedLyrics);
         if (p.synced)
-            return { type: 'synced', lines: p.lines, source: 'online' };
+            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id };
     }
     if (d.plainLyrics && d.plainLyrics.trim())
-        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online' };
+        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id };
     return null;
 }
 async function getJSON(url, ms = 9000) {
@@ -85,16 +85,11 @@ async function getJSON(url, ms = 9000) {
     }
 }
 // Это та же песня? LRCLIB ищет нечётко и может вернуть другой трек — тогда текст «идёт» не по песне.
-const sameTitle = (x, title) => {
-    const a = norm_LyricsWeb(cleanTitle(x.trackName || x.name)), b = norm_LyricsWeb(title);
-    return !!a && !!b && (a.includes(b) || b.includes(a));
-};
-const sameTrack = (x, title, artist) => {
-    if (!sameTitle(x, title))
-        return false;
-    const who = norm_LyricsWeb(artist), got = norm_LyricsWeb(x.artistName);
-    return !who || !got || got.includes(who) || who.includes(got);
-};
+const sameTitle = (x, title) => titleMatch(cleanTitle(x.trackName || x.name), title);
+// и название, и артист: сверяем со ВСЕМИ артистами трека (у «perubaby, boolymon» подходит любой из двух)
+const sameTrack = (x, title, artists) => sameTitle(x, title) && artistMatch(x.artistName, artists);
+// латиница ↔ кириллица: имя артиста могло быть записано другим алфавитом — тогда сравнить его нельзя
+const otherScript = (a, b) => /[а-яё]/i.test(a) !== /[а-яё]/i.test(b);
 // Выбор версии: сначала с метками времени и почти той же длины, потом обычный текст.
 // Версия другой длины (другой монтаж) с метками разъедется со звуком — такую не берём.
 export function pickBest(list, dur) {
@@ -105,11 +100,11 @@ export function pickBest(list, dur) {
         || by(ok.filter(x => x.plainLyrics && diff(x) <= 6))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
-async function lookup(t) {
-    const dur = Math.round(t.duration || 0), cands = candidates(t), found = [];
+async function lookup(t, bad = []) {
+    const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
     const take = (list, test) => { for (const x of list || [])
-        if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && test(x))
+        if (x && (x.syncedLyrics || x.plainLyrics || x.instrumental) && !bad.includes(x.id) && test(x))
             found.push(x); };
     for (const c of cands) {
         if (!c.artist)
@@ -127,18 +122,21 @@ async function lookup(t) {
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => sameTrack(x, c.title, c.artist));
+        take(s.data, x => sameTrack(x, c.title, arts));
         if (synced())
             break;
     }
-    // 3) свободный поиск (артист записан иначе: латиницей/кириллицей, с соавтором и т.п.) — только при совпадении названия и длины
+    // 3) свободный поиск: тот же артист, записанный иначе. Чужой артист с тем же названием — НЕ подходит.
+    //    Без артиста или с артистом другим алфавитом — только точное название и длина ±1 с.
     if (!synced() && cands.length) {
         const c = cands[0];
+        const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
+        const loose = x => norm_LyricsWeb(cleanTitle(x.trackName)) === norm_LyricsWeb(c.title) && exactLen(x) && (!arts.length || otherScript(x.artistName, arts.join(' ')));
         const s = await getJSON(`${API}/search?${new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })}`);
-        take(s.data, x => sameTrack(x, c.title, c.artist) || (sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2));
-        if (!synced() && c.artist) {
+        take(s.data, x => sameTrack(x, c.title, arts) || loose(x));
+        if (!synced()) {
             const s2 = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title })}`);
-            take(s2.data, x => sameTitle(x, c.title) && dur && x.duration && Math.abs(x.duration - dur) <= 2);
+            take(s2.data, x => sameTrack(x, c.title, arts) || loose(x));
         }
     }
     return pickBest(found, dur);
@@ -192,8 +190,9 @@ async function extraSources(t) {
     }
     try {
         const r = await getJSON(`https://lyrist.vercel.app/api/${encodeURIComponent(title)}/${encodeURIComponent(artist)}`, 8000);
-        const txt = r.data && r.data.lyrics && String(r.data.lyrics).trim();
-        if (txt)
+        const d = r.data, txt = d && d.lyrics && String(d.lyrics).trim();
+        // lyrist отдаёт первый результат поиска — берём, только если это та же песня того же артиста
+        if (txt && titleMatch(d.title || '', title) && artistMatch(d.artist || '', [artist]))
             return { type: 'plain', text: txt, source: 'online' };
     }
     catch { /* источник недоступен */ }
@@ -244,6 +243,25 @@ async function applyManual(t) {
     catch { /* ignore */ }
     return false;
 }
+// «Это не тот текст»: запоминаем неверный вариант и ищем снова без него
+const OWN = ['manual', 'lrc', 'sylt', 'uslt'];
+export const isFoundOnline = ly => !!ly && !OWN.includes(ly.source);
+export async function rejectLyrics(t) {
+    const ly = t && t.lyrics;
+    if (!isFoundOnline(ly))
+        return false;
+    const bad = (await lyGet('bad|' + t.id).catch(() => null)) || { ids: [] };
+    if (ly.ref != null)
+        bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
+    else
+        bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
+    await lySet('bad|' + t.id, bad);
+    await lySet(keyOf(t), { at: 0 });
+    t.lyrics = null;
+    t._ly = undefined;
+    emit('lyrics', t);
+    return ensureLyrics(t);
+}
 export function ensureLyrics(t) {
     if (t && !t._manualChecked)
         return applyManual(t).then(ok => ok || ensureLyrics(t));
@@ -274,7 +292,14 @@ export function ensureLyrics(t) {
                 t._ly = 'none';
                 return false;
             }
-            const d = await lookup(t);
+            // варианты, которые пользователь отметил «Это не тот текст»
+            const bad = (await lyGet('bad|' + t.id).catch(() => null)) || {};
+            if (bad.all) {
+                t._ly = 'none';
+                lySet(key, { miss: true, at: Date.now() });
+                return false;
+            }
+            const d = await lookup(t, bad.ids || []);
             const ly = d && !d.instrumental ? toLyrics(d) : null;
             if (ly) {
                 t.lyrics = ly;

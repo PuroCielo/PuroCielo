@@ -40,8 +40,15 @@ async function netease(artist, title, dur) {
   const s = await (await fetch(`https://music.163.com/api/search/get?s=${q}&type=1&limit=6`, { headers: UA })).json();
   const songs = (s.result && s.result.songs) || [];
   songs.sort((a, b) => Math.abs((a.duration || 0) / 1000 - dur) - Math.abs((b.duration || 0) / 1000 - dur));
+  const n = x => String(x || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+  const sameTitle = (a, b) => { a = n(a); b = n(b); if (!a || !b) return false; if (a === b) return true; const [x, y] = a.length < b.length ? [a, b] : [b, a]; return y.includes(x) && x.length >= 4 && x.length / y.length >= 0.85; };
+  const who = artist.split(/\s*(?:,|&|;| feat\.? | ft\.? | x )\s*/i).map(n).filter(w => w.length >= 2);
   for (const song of songs) {
-    if (dur && Math.abs(song.duration / 1000 - dur) > 8) continue;
+    if (dur && Math.abs(song.duration / 1000 - dur) > 4) continue;
+    // та же песня того же артиста — иначе NetEase отдаёт текст чужой песни похожей длины
+    if (!sameTitle(song.name, title)) continue;
+    const their = n((song.artists || []).map(a => a.name).join(' '));
+    if (who.length && !who.some(w => their.includes(w) || (w.includes(their) && their.length >= 3))) continue;
     const l = await (await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&tv=-1`, { headers: UA })).json();
     const lrc = l.lrc && l.lrc.lyric;
     if (lrc && /\[\d+:\d+/.test(lrc)) return { synced: lrc, source: 'netease' };

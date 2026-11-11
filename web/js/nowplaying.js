@@ -1,7 +1,7 @@
 import { cachedTranslation, canTranslate, loadTranslation } from './translate.js';
 import { P, audio, clearUpcoming, current, cycleRepeat, getAnalyser, isPlaying, next, playTrackInQueue, prev, removeFromQueue, seek, setVolume, toggle, toggleMute, toggleShuffle } from './player.js';
 import { derived, emit, getTrack, hasOwnCover, on, save, setTrackCover, state, toggleLike } from './state.js';
-import { ensureLyrics, rawLyrics, setManualLyrics } from './lyrics-auto.js';
+import { ensureLyrics, isFoundOnline, rawLyrics, rejectLyrics, setManualLyrics } from './lyrics-auto.js';
 import { openMenu, openModal, pickImage, toast } from './ui.js';
 import { icon } from './icons.js';
 import { activeLine } from './lrc.js';
@@ -518,6 +518,11 @@ export function initPlayerUI() {
             return;
         openMenu(e.currentTarget, [
             { icon: 'lyrics', label: t.lyrics ? 'Изменить текст' : 'Добавить текст', onClick: () => editLyrics() },
+            ...(isFoundOnline(t.lyrics) ? [{ icon: 'close', label: 'Это не тот текст', onClick: async () => {
+                        toast('Ищу другой текст…', 'info', 2000);
+                        const ok = await rejectLyrics(t);
+                        toast(ok ? 'Нашёл другой вариант' : 'Другого текста не нашлось — можно добавить свой через карандаш', ok ? 'info' : 'warn');
+                    } }] : []),
             { icon: 'upload', label: 'Обложка трека…', onClick: async () => { const url = await pickImage(); if (url) {
                     setTrackCover(t.id, url);
                     toast('Обложка трека обновлена');

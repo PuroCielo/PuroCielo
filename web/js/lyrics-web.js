@@ -31,10 +31,29 @@ export function extractGenius(html) {
         return '';
     return htmlToText(out.join('\n').replace(/<div[^>]*data-exclude-from-selection="true"[\s\S]*?<\/div>/g, ''));
 }
-const sameSong = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a.includes(b) || b.includes(a)); };
+// Строгое совпадение названия: одинаковые или почти одинаковые («washed» ≠ «washed out», ≠ «brainwashed»)
+export function titleMatch(a, b) {
+    a = norm(a);
+    b = norm(b);
+    if (!a || !b)
+        return false;
+    if (a === b)
+        return true;
+    const [s, l] = a.length < b.length ? [a, b] : [b, a];
+    return l.includes(s) && s.length >= 4 && s.length / l.length >= 0.85;
+}
+// Артист совпадает, если хотя бы один из наших артистов есть в их записи (или наоборот)
+export function artistMatch(theirs, ours) {
+    const t = norm(theirs);
+    if (!t)
+        return false;
+    return [].concat(ours).some(a => { a = norm(a); return a.length >= 2 && (t.includes(a) || (a.includes(t) && t.length >= 3)); });
+}
+const sameSong = (a, b) => titleMatch(a, b);
+const sameArtist = (a, b) => artistMatch(a, b);
 export function pickGeniusHit(json, artist, title) {
     const hits = [].concat(...((json && json.response && json.response.sections) || []).map(s => s.hits || [])).filter(h => h.type === 'song' && h.result);
-    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameSong(h.result.primary_artist && h.result.primary_artist.name, artist)));
+    const h = hits.find(h => sameSong(h.result.title, title) && (!artist || sameArtist((h.result.artist_names || '') + ' ' + (h.result.primary_artist && h.result.primary_artist.name || ''), artist)));
     return h ? h.result.url : '';
 }
 // ---- Lyrics.com ----
@@ -44,7 +63,7 @@ export function pickLyricsCom(html, artist, title) {
     const want = norm(title);
     while ((m = re.exec(html))) {
         const slug = decodeURIComponent(m[1]).toLowerCase();
-        if (norm(m[2]).includes(want) || norm(slug).includes(want)) {
+        if (titleMatch(m[2], title)) {
             if (!artist || norm(slug).includes(norm(artist).slice(0, 5)))
                 return 'https://www.lyrics.com' + m[1];
         }
@@ -68,6 +87,10 @@ export function linksByText(html, origin, title, artist) {
     while ((m = re.exec(html))) {
         const text = norm(htmlToText(m[2]));
         if (!text || !text.includes(want))
+            continue;
+        // в ссылке «Артист - Название»: без имени артиста должно остаться само название, а не «название + ещё слова»
+        const rest = who && text.includes(who) ? text.replace(who, '') : text;
+        if (!titleMatch(rest, want) && rest !== want)
             continue;
         let href = m[1];
         if (href.startsWith('//'))
