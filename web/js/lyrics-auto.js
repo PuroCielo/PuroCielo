@@ -3,7 +3,8 @@ import { parseLrc } from './lrc.js';
 import { lyGet, lySet } from './db.js';
 import { norm } from './util.js';
 import { UNKNOWN, splitArtists } from './artists.js';
-import { artistMatch, norm as norm_LyricsWeb, titleMatch, webLyrics } from './lyrics-web.js';
+import { artistMatch, artistNear, norm as norm_LyricsWeb, titleMatch, webLyrics } from './lyrics-web.js';
+import { jsonp } from './jsonp.js';
 import { isNative, nativeFetchText } from './native.js';
 import { geniusLyrics } from './genius.js';
 
@@ -49,6 +50,8 @@ export function candidates(t) {
     }
     for (const a of arts)
         add(a, title);
+    if (!arts.length && t._guess) // артист, узнанный по названию и длине (см. identify)
+        add(t._guess, title);
     if (!arts.length) {
         const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
         if (f)
@@ -57,7 +60,7 @@ export function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v6|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v7|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -102,8 +105,35 @@ export function pickBest(list, dur) {
         || asPlain(by(ok.filter(x => x._sure && (x.plainLyrics || x.syncedLyrics))))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
+// У файла нет артиста в тегах — узнаём его по названию и длине в каталогах Deezer и iTunes.
+// Берём, только если название совпало, а длина отличается не больше чем на 2 секунды.
+async function identify(t) {
+    if (t._guess !== undefined || typeof document === 'undefined')
+        return;
+    t._guess = '';
+    const dur = Math.round(t.duration || 0), title = cleanTitle(t.title);
+    if (!dur || norm_LyricsWeb(title).length < 3)
+        return;
+    const best = list => list.filter(x => x.artist && titleMatch(cleanTitle(x.title), title) && Math.abs(x.dur - dur) <= 2).sort((a, b) => Math.abs(a.dur - dur) - Math.abs(b.dur - dur))[0];
+    try {
+        const d = await jsonp(`https://api.deezer.com/search/track?${new URLSearchParams({ q: title, limit: '40', output: 'jsonp' })}`);
+        let hit = best(((d && d.data) || []).map(x => ({ title: x.title_short || x.title, artist: x.artist && x.artist.name, dur: x.duration })));
+        if (!hit) {
+            const i = await jsonp(`https://itunes.apple.com/search?${new URLSearchParams({ term: title, entity: 'song', media: 'music', limit: '40' })}`);
+            hit = best(((i && i.results) || []).map(x => ({ title: x.trackName, artist: x.artistName, dur: Math.round((x.trackTimeMillis || 0) / 1000) })));
+        }
+        if (hit)
+            t._guess = hit.artist;
+    }
+    catch { /* каталоги недоступны */ }
+}
 async function lookup(t, bad = []) {
+    if (!realArtists(t).length && !candidates(t).some(c => c.artist))
+        await identify(t);
     const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
+    const near = (x, n) => !!dur && !!x.duration && Math.abs(x.duration - dur) <= n;
+    // 2 — совпали название и артист; 1 — название то же, артист записан иначе, зато длина та же (±3 с); 0 — не то
+    const grade = (x, title) => (!sameTitle(x, title) ? 0 : artistMatch(x.artistName, arts) ? 2 : near(x, 3) && artistNear(x.artistName, arts) ? 1 : 0);
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
     // test → 2: совпали и название, и артист; 1: подходит только при той же длине; 0: не то
     const take = (list, test) => { for (const x of list || []) {
@@ -122,12 +152,12 @@ async function lookup(t, bad = []) {
             q.set('duration', String(dur));
         const r = await getJSON(`${API}/get?${q}`);
         if (r.data)
-            take([r.data], x => (sameTrack(x, c.title, arts) ? 2 : 0)); // ответ тоже проверяем: бывает чужая песня
+            take([r.data], x => grade(x, c.title) || (near(x, 2) && sameTitle(x, c.title) ? 1 : 0)); // ответ тоже проверяем: бывает чужая песня
         if (synced())
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => (sameTrack(x, c.title, arts) ? 2 : 0));
+        take(s.data, x => grade(x, c.title));
         if (synced())
             break;
     }
@@ -136,9 +166,16 @@ async function lookup(t, bad = []) {
     if (!synced() && cands.length) {
         const c = cands[0];
         const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
-        // у файла вообще нет артиста: берём, только если название и длина совпали точно и такой исполнитель в ответе один
-        const twin = x => norm_LyricsWeb(cleanTitle(x.trackName)) === norm_LyricsWeb(c.title) && exactLen(x);
-        const judge = list => { const one = !arts.length && norm_LyricsWeb(c.title).length >= 4 && new Set((list || []).filter(twin).map(x => norm_LyricsWeb(x.artistName))).size === 1; return x => (arts.length && sameTrack(x, c.title, arts) ? 2 : one && twin(x) ? 1 : 0); };
+        // Артиста нет или он записан совсем иначе. Тогда «та же песня» — это то же название и та же длина (±2 с).
+        // Чтобы не взять чужую песню с частым названием («Интро»), нужно ещё одно из трёх:
+        // название приметное (от 8 букв), исполнитель в ответе один, или у всех таких записей один и тот же текст.
+        const twin = x => norm_LyricsWeb(cleanTitle(x.trackName)) === norm_LyricsWeb(c.title) && near(x, 2);
+        const head = x => norm_LyricsWeb(String(x.plainLyrics || x.syncedLyrics || '').replace(/\[[^\]]*\]/g, '')).slice(0, 120);
+        const judge = list => {
+            const tw = (list || []).filter(twin), n = norm_LyricsWeb(c.title).length;
+            const safe = n >= 8 || (n >= 3 && (new Set(tw.map(x => norm_LyricsWeb(x.artistName))).size === 1 || new Set(tw.map(head)).size === 1));
+            return x => grade(x, c.title) || (safe && twin(x) && (!arts.length || n >= 8) ? 1 : 0);
+        };
         for (const q of [...new Set(cands.slice(0, 3).map(k => `${k.artist} ${k.title}`.trim()))]) {
             const s = await getJSON(`${API}/search?${new URLSearchParams({ q })}`);
             take(s.data, judge(s.data));

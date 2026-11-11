@@ -1,6 +1,6 @@
 {
   "name": "puro-cielo-player",
-  "version": "1.9.7",
+  "version": "1.9.8",
   "private": true,
   "description": "Puro Cielo — музыкальный плеер для своих файлов. Исходники веб-плеера; сборка: node web/build.js",
   "scripts": { "build": "node build.js" },

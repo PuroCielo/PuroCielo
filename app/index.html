@@ -1024,6 +1024,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1191,7 +1224,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2438,6 +2471,7 @@ const db_js_1 = require("./db.js");
 const state_js_1 = require("./state.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
 const artists_js_1 = require("./artists.js");
+const jsonp_js_1 = require("./jsonp.js");
 // Обложки сами: для альбомов и песен без картинки ищем её онлайн — сначала в каталоге iTunes (Apple Music),
 // потом в MusicBrainz / Cover Art Archive. Берём, только если совпали и название, и артист.
 // Обложка из файла и своя (карандашом) всегда важнее найденной. Найденное хранится на устройстве.
@@ -2491,25 +2525,6 @@ async function toData(url) {
 }
 // iTunes и Deezer не отдают CORS-заголовки, поэтому обычный fetch из браузера/приложения блокируется.
 // Оба умеют JSONP: подключаем ответ как <script> с функцией обратного вызова.
-let seq = 0;
-function jsonp(url, param = 'callback') {
-    return new Promise(res => {
-        const cb = '__puroCov' + (++seq) + '_' + Date.now(), sc = document.createElement('script');
-        let done = false;
-        const end = v => { if (done)
-            return; done = true; clearTimeout(tm); try {
-            delete window[cb];
-        }
-        catch {
-            window[cb] = undefined;
-        } sc.remove(); res(v); };
-        const tm = setTimeout(() => end(null), 9000);
-        window[cb] = d => end(d);
-        sc.onerror = () => end(null);
-        sc.src = url + (url.includes('?') ? '&' : '?') + param + '=' + cb;
-        document.head.appendChild(sc);
-    });
-}
 // для сравнения убираем «(Deluxe Edition)», «- Single», «[Remastered 2011]», «feat. …» и т.п.
 const EXTRA = /\s*[([](?:[^)\]]*?\b(?:deluxe|remaster(?:ed)?|edition|expanded|anniversary|bonus|version|single|ep|explicit|clean|feat\.?|ft\.?|with|prod\.?|radio edit|original mix)\b[^)\]]*)[)\]]/gi;
 const clean = s => String(s || '').replace(EXTRA, '').replace(/\s+[-–—]\s+(?:single|ep)$/i, '').replace(/\s+(?:feat\.?|ft\.?)\s.+$/i, '').trim();
@@ -2518,11 +2533,11 @@ const artistOk = (theirs, artists) => !artists.length || (0, lyrics_web_js_1.art
 const big = u => String(u || '').replace(/\/\d+x\d+bb\./, '/600x600bb.');
 const q = s => String(s || '').replace(/"/g, '');
 async function deezer(path, query) {
-    const j = await jsonp(`https://api.deezer.com/search/${path}?${new URLSearchParams({ q: query, limit: '25', output: 'jsonp' })}`);
+    const j = await (0, jsonp_js_1.jsonp)(`https://api.deezer.com/search/${path}?${new URLSearchParams({ q: query, limit: '25', output: 'jsonp' })}`);
     return (j && j.data) || [];
 }
 async function itunes(entity, term) {
-    const j = await jsonp(`${ITUNES}?${new URLSearchParams({ term, entity, media: 'music', limit: '25' })}`);
+    const j = await (0, jsonp_js_1.jsonp)(`${ITUNES}?${new URLSearchParams({ term, entity, media: 'music', limit: '25' })}`);
     return (j && j.results) || [];
 }
 async function findAlbum(album, artists, firstTitle) {
@@ -2790,6 +2805,11 @@ function pickGenius(json, artists, title, skip = []) {
         const t = r.title || r.title_with_featured || '';
         return ((0, lyrics_web_js_1.titleMatch)(t, title) || (0, lyrics_web_js_1.titleMatch)(String(t).replace(/\s*[([].*?[)\]]/g, ''), title)) && (!artists.length || (0, lyrics_web_js_1.artistMatch)(by, artists));
     };
+    if (!artists.length) { // артиста не знаем: название должно совпасть буква в букву, быть приметным и встретиться у одной песни
+        const want = (0, lyrics_web_js_1.norm)(title), same = hits.filter(h => !skip.includes('genius:' + h.result.id) && !NOT_SONG.test(`${h.result.artist_names || ''} ${h.result.title || ''}`) && (0, lyrics_web_js_1.norm)(h.result.title) === want);
+        const one = want.length >= 8 && new Set(same.map(h => h.result.id)).size === 1 ? same[0] : null;
+        return one ? { id: one.result.id, url: one.result.url } : null;
+    }
     const h = hits.find(ok);
     return h ? { id: h.result.id, url: h.result.url } : null;
 }
@@ -2877,8 +2897,6 @@ async function geniusLyrics(cands, artists, fetchText, skip = []) {
     }
     for (const { q, c } of queries.slice(0, 5)) {
         const arts = c.artist ? [...new Set([c.artist, ...artists])] : artists;
-        if (!arts.length && q === c.title)
-            continue; // без артиста по одному названию — слишком легко ошибиться
         let hit = null;
         for (const ep of ['search/song', 'search/multi']) {
             const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson);
@@ -3648,6 +3666,31 @@ async function syncNativeLibrary(scan) {
 }
 
 };
+defs["jsonp.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.jsonp = jsonp;
+// JSONP: ответ сервиса подключается как <script> — так можно спрашивать сервисы без CORS (Deezer, iTunes)
+let seq = 0;
+function jsonp(url, param = 'callback') {
+    return new Promise(res => {
+        const cb = '__puroJsonp' + (++seq) + '_' + Date.now(), sc = document.createElement('script');
+        let done = false;
+        const end = v => { if (done)
+            return; done = true; clearTimeout(tm); try {
+            delete window[cb];
+        }
+        catch {
+            window[cb] = undefined;
+        } sc.remove(); res(v); };
+        const tm = setTimeout(() => end(null), 9000);
+        window[cb] = d => end(d);
+        sc.onerror = () => end(null);
+        sc.src = url + (url.includes('?') ? '&' : '?') + param + '=' + cb;
+        document.head.appendChild(sc);
+    });
+}
+
+};
 defs["lrc.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseLrc = parseLrc;
@@ -3732,6 +3775,7 @@ const db_js_1 = require("./db.js");
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
+const jsonp_js_1 = require("./jsonp.js");
 const native_js_1 = require("./native.js");
 const genius_js_1 = require("./genius.js");
 // Автоматический поиск текста песни.
@@ -3776,6 +3820,8 @@ function candidates(t) {
     }
     for (const a of arts)
         add(a, title);
+    if (!arts.length && t._guess) // артист, узнанный по названию и длине (см. identify)
+        add(t._guess, title);
     if (!arts.length) {
         const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
         if (f)
@@ -3784,7 +3830,7 @@ function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v6|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v7|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
 function toLyrics(d) {
     if (!d)
         return null;
@@ -3829,8 +3875,35 @@ function pickBest(list, dur) {
         || asPlain(by(ok.filter(x => x._sure && (x.plainLyrics || x.syncedLyrics))))
         || by(ok.filter(x => x.instrumental && diff(x) <= 4));
 }
+// У файла нет артиста в тегах — узнаём его по названию и длине в каталогах Deezer и iTunes.
+// Берём, только если название совпало, а длина отличается не больше чем на 2 секунды.
+async function identify(t) {
+    if (t._guess !== undefined || typeof document === 'undefined')
+        return;
+    t._guess = '';
+    const dur = Math.round(t.duration || 0), title = cleanTitle(t.title);
+    if (!dur || (0, lyrics_web_js_1.norm)(title).length < 3)
+        return;
+    const best = list => list.filter(x => x.artist && (0, lyrics_web_js_1.titleMatch)(cleanTitle(x.title), title) && Math.abs(x.dur - dur) <= 2).sort((a, b) => Math.abs(a.dur - dur) - Math.abs(b.dur - dur))[0];
+    try {
+        const d = await (0, jsonp_js_1.jsonp)(`https://api.deezer.com/search/track?${new URLSearchParams({ q: title, limit: '40', output: 'jsonp' })}`);
+        let hit = best(((d && d.data) || []).map(x => ({ title: x.title_short || x.title, artist: x.artist && x.artist.name, dur: x.duration })));
+        if (!hit) {
+            const i = await (0, jsonp_js_1.jsonp)(`https://itunes.apple.com/search?${new URLSearchParams({ term: title, entity: 'song', media: 'music', limit: '40' })}`);
+            hit = best(((i && i.results) || []).map(x => ({ title: x.trackName, artist: x.artistName, dur: Math.round((x.trackTimeMillis || 0) / 1000) })));
+        }
+        if (hit)
+            t._guess = hit.artist;
+    }
+    catch { /* каталоги недоступны */ }
+}
 async function lookup(t, bad = []) {
+    if (!realArtists(t).length && !candidates(t).some(c => c.artist))
+        await identify(t);
     const dur = Math.round(t.duration || 0), cands = candidates(t), found = [], arts = [...new Set([...realArtists(t), ...cands.map(c => c.artist).filter(Boolean)])];
+    const near = (x, n) => !!dur && !!x.duration && Math.abs(x.duration - dur) <= n;
+    // 2 — совпали название и артист; 1 — название то же, артист записан иначе, зато длина та же (±3 с); 0 — не то
+    const grade = (x, title) => (!sameTitle(x, title) ? 0 : (0, lyrics_web_js_1.artistMatch)(x.artistName, arts) ? 2 : near(x, 3) && (0, lyrics_web_js_1.artistNear)(x.artistName, arts) ? 1 : 0);
     const synced = () => found.some(x => x.syncedLyrics && (!dur || !x.duration || Math.abs(x.duration - dur) <= 4));
     // test → 2: совпали и название, и артист; 1: подходит только при той же длине; 0: не то
     const take = (list, test) => {
@@ -3851,12 +3924,12 @@ async function lookup(t, bad = []) {
             q.set('duration', String(dur));
         const r = await getJSON(`${API}/get?${q}`);
         if (r.data)
-            take([r.data], x => (sameTrack(x, c.title, arts) ? 2 : 0)); // ответ тоже проверяем: бывает чужая песня
+            take([r.data], x => grade(x, c.title) || (near(x, 2) && sameTitle(x, c.title) ? 1 : 0)); // ответ тоже проверяем: бывает чужая песня
         if (synced())
             break;
         // 2) поиск по артисту и названию
         const s = await getJSON(`${API}/search?${new URLSearchParams({ track_name: c.title, artist_name: c.artist })}`);
-        take(s.data, x => (sameTrack(x, c.title, arts) ? 2 : 0));
+        take(s.data, x => grade(x, c.title));
         if (synced())
             break;
     }
@@ -3865,9 +3938,16 @@ async function lookup(t, bad = []) {
     if (!synced() && cands.length) {
         const c = cands[0];
         const exactLen = x => dur && x.duration && Math.abs(x.duration - dur) <= 1;
-        // у файла вообще нет артиста: берём, только если название и длина совпали точно и такой исполнитель в ответе один
-        const twin = x => (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && exactLen(x);
-        const judge = list => { const one = !arts.length && (0, lyrics_web_js_1.norm)(c.title).length >= 4 && new Set((list || []).filter(twin).map(x => (0, lyrics_web_js_1.norm)(x.artistName))).size === 1; return x => (arts.length && sameTrack(x, c.title, arts) ? 2 : one && twin(x) ? 1 : 0); };
+        // Артиста нет или он записан совсем иначе. Тогда «та же песня» — это то же название и та же длина (±2 с).
+        // Чтобы не взять чужую песню с частым названием («Интро»), нужно ещё одно из трёх:
+        // название приметное (от 8 букв), исполнитель в ответе один, или у всех таких записей один и тот же текст.
+        const twin = x => (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && near(x, 2);
+        const head = x => (0, lyrics_web_js_1.norm)(String(x.plainLyrics || x.syncedLyrics || '').replace(/\[[^\]]*\]/g, '')).slice(0, 120);
+        const judge = list => {
+            const tw = (list || []).filter(twin), n = (0, lyrics_web_js_1.norm)(c.title).length;
+            const safe = n >= 8 || (n >= 3 && (new Set(tw.map(x => (0, lyrics_web_js_1.norm)(x.artistName))).size === 1 || new Set(tw.map(head)).size === 1));
+            return x => grade(x, c.title) || (safe && twin(x) && (!arts.length || n >= 8) ? 1 : 0);
+        };
         for (const q of [...new Set(cands.slice(0, 3).map(k => `${k.artist} ${k.title}`.trim()))]) {
             const s = await getJSON(`${API}/search?${new URLSearchParams({ q })}`);
             take(s.data, judge(s.data));
@@ -4135,6 +4215,7 @@ exports.extractGenius = extractGenius;
 exports.titleMatch = titleMatch;
 exports.nameEq = nameEq;
 exports.artistMatch = artistMatch;
+exports.artistNear = artistNear;
 exports.pickGeniusHit = pickGeniusHit;
 exports.pickLyricsCom = pickLyricsCom;
 exports.extractLyricsCom = extractLyricsCom;
@@ -4218,8 +4299,12 @@ function nameEq(a, b) {
         return true;
     if (Math.min(fx.length, fy.length) < 5)
         return false;
-    const sim = 1 - lev(fx, fy) / Math.max(fx.length, fy.length);
-    return sim >= (cross ? 0.78 : 0.86);
+    const sim = (p, q) => 1 - lev(p, q) / Math.max(p.length, q.length);
+    if (cross) { // «Нойз МС» = «Noize MC»: кириллическое «МС» — это латинское MC
+        const mc = v => fold(v.replace(/мс/g, 'мк'));
+        return Math.max(sim(fx, fy), sim(mc(x), mc(y))) >= 0.78;
+    }
+    return sim(fx, fy) >= 0.86;
 }
 const SEP_HARD = /\s*(?:[,;/]|&|\bfeat\.?|\bft\.?|\bfeaturing\b)\s*/i;
 const SEP_SOFT = /\s*(?:[,;/+×]|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\s(?:x|and|и|with|vs\.?)\s)\s*/i;
@@ -4231,6 +4316,14 @@ function artistMatch(theirs, ours) {
     if (!T.length)
         return false;
     return [].concat(ours).some(o => (0, exports.artistParts)(o).some(a => T.some(t => nameEq(a, t))));
+}
+// Слабее, чем artistMatch: одно имя целыми словами входит в другое («Macan» в «DJ Macan Remix»).
+// Буквы внутри чужого слова («Aria» в «Mariah») не считаются. Годится только вместе с совпавшей длиной песни.
+const words = s => String(s || '').toLowerCase().split(/[^\p{L}\p{N}$]+/u).map(w => (0, exports.norm)(w.replace(/\$/g, 's'))).filter(Boolean);
+function artistNear(theirs, ours) {
+    const T = words(theirs);
+    const inside = (small, big) => small.length && small.join('').length >= 3 && big.some((_, i) => small.every((w, k) => big[i + k] === w));
+    return [].concat(ours).some(o => { const O = words(o); return inside(O, T) || inside(T, O); });
 }
 const sameSong = (a, b) => titleMatch(a, b);
 const sameArtist = (a, b) => artistMatch(a, b);
@@ -7578,6 +7671,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -7589,7 +7715,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

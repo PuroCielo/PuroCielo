@@ -1,4 +1,4 @@
-import { artistMatch, extractGenius, htmlToText, titleMatch } from './lyrics-web.js';
+import { artistMatch, extractGenius, htmlToText, norm, titleMatch } from './lyrics-web.js';
 
 // Genius — главный источник обычного (не синхронного) текста.
 // Сайт Genius не разрешает браузеру читать свои страницы (CORS), поэтому идём несколькими путями по очереди:
@@ -66,6 +66,11 @@ export function pickGenius(json, artists, title, skip = []) {
         const t = r.title || r.title_with_featured || '';
         return (titleMatch(t, title) || titleMatch(String(t).replace(/\s*[([].*?[)\]]/g, ''), title)) && (!artists.length || artistMatch(by, artists));
     };
+    if (!artists.length) { // артиста не знаем: название должно совпасть буква в букву, быть приметным и встретиться у одной песни
+        const want = norm(title), same = hits.filter(h => !skip.includes('genius:' + h.result.id) && !NOT_SONG.test(`${h.result.artist_names || ''} ${h.result.title || ''}`) && norm(h.result.title) === want);
+        const one = want.length >= 8 && new Set(same.map(h => h.result.id)).size === 1 ? same[0] : null;
+        return one ? { id: one.result.id, url: one.result.url } : null;
+    }
     const h = hits.find(ok);
     return h ? { id: h.result.id, url: h.result.url } : null;
 }
@@ -152,8 +157,6 @@ export async function geniusLyrics(cands, artists, fetchText, skip = []) {
     }
     for (const { q, c } of queries.slice(0, 5)) {
         const arts = c.artist ? [...new Set([c.artist, ...artists])] : artists;
-        if (!arts.length && q === c.title)
-            continue; // без артиста по одному названию — слишком легко ошибиться
         let hit = null;
         for (const ep of ['search/song', 'search/multi']) {
             const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson);

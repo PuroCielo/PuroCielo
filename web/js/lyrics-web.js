@@ -71,8 +71,12 @@ export function nameEq(a, b) {
         return true;
     if (Math.min(fx.length, fy.length) < 5)
         return false;
-    const sim = 1 - lev(fx, fy) / Math.max(fx.length, fy.length);
-    return sim >= (cross ? 0.78 : 0.86);
+    const sim = (p, q) => 1 - lev(p, q) / Math.max(p.length, q.length);
+    if (cross) { // «Нойз МС» = «Noize MC»: кириллическое «МС» — это латинское MC
+        const mc = v => fold(v.replace(/мс/g, 'мк'));
+        return Math.max(sim(fx, fy), sim(mc(x), mc(y))) >= 0.78;
+    }
+    return sim(fx, fy) >= 0.86;
 }
 const SEP_HARD = /\s*(?:[,;/]|&|\bfeat\.?|\bft\.?|\bfeaturing\b)\s*/i;
 const SEP_SOFT = /\s*(?:[,;/+×]|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\s(?:x|and|и|with|vs\.?)\s)\s*/i;
@@ -83,6 +87,14 @@ export function artistMatch(theirs, ours) {
     if (!T.length)
         return false;
     return [].concat(ours).some(o => artistParts(o).some(a => T.some(t => nameEq(a, t))));
+}
+// Слабее, чем artistMatch: одно имя целыми словами входит в другое («Macan» в «DJ Macan Remix»).
+// Буквы внутри чужого слова («Aria» в «Mariah») не считаются. Годится только вместе с совпавшей длиной песни.
+const words = s => String(s || '').toLowerCase().split(/[^\p{L}\p{N}$]+/u).map(w => norm(w.replace(/\$/g, 's'))).filter(Boolean);
+export function artistNear(theirs, ours) {
+    const T = words(theirs);
+    const inside = (small, big) => small.length && small.join('').length >= 3 && big.some((_, i) => small.every((w, k) => big[i + k] === w));
+    return [].concat(ours).some(o => { const O = words(o); return inside(O, T) || inside(T, O); });
 }
 const sameSong = (a, b) => titleMatch(a, b);
 const sameArtist = (a, b) => artistMatch(a, b);

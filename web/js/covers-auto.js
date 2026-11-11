@@ -2,6 +2,7 @@ import { kvGet, kvSet } from './db.js';
 import { derived, emit, on, registerAutoCovers, state, touchLibrary } from './state.js';
 import { artistMatch, titleMatch } from './lyrics-web.js';
 import { UNKNOWN } from './artists.js';
+import { jsonp } from './jsonp.js';
 
 // Обложки сами: для альбомов и песен без картинки ищем её онлайн — сначала в каталоге iTunes (Apple Music),
 // потом в MusicBrainz / Cover Art Archive. Берём, только если совпали и название, и артист.
@@ -56,19 +57,6 @@ async function toData(url) {
 }
 // iTunes и Deezer не отдают CORS-заголовки, поэтому обычный fetch из браузера/приложения блокируется.
 // Оба умеют JSONP: подключаем ответ как <script> с функцией обратного вызова.
-let seq = 0;
-function jsonp(url, param = 'callback') {
-    return new Promise(res => {
-        const cb = '__puroCov' + (++seq) + '_' + Date.now(), sc = document.createElement('script');
-        let done = false;
-        const end = v => { if (done) return; done = true; clearTimeout(tm); try { delete window[cb]; } catch { window[cb] = undefined; } sc.remove(); res(v); };
-        const tm = setTimeout(() => end(null), 9000);
-        window[cb] = d => end(d);
-        sc.onerror = () => end(null);
-        sc.src = url + (url.includes('?') ? '&' : '?') + param + '=' + cb;
-        document.head.appendChild(sc);
-    });
-}
 // для сравнения убираем «(Deluxe Edition)», «- Single», «[Remastered 2011]», «feat. …» и т.п.
 const EXTRA = /\s*[([](?:[^)\]]*?\b(?:deluxe|remaster(?:ed)?|edition|expanded|anniversary|bonus|version|single|ep|explicit|clean|feat\.?|ft\.?|with|prod\.?|radio edit|original mix)\b[^)\]]*)[)\]]/gi;
 const clean = s => String(s || '').replace(EXTRA, '').replace(/\s+[-–—]\s+(?:single|ep)$/i, '').replace(/\s+(?:feat\.?|ft\.?)\s.+$/i, '').trim();
