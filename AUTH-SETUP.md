@@ -40,8 +40,9 @@ service cloud.firestore {
     match /sync/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
       match /blobs/{id} {
-        allow read, write: if request.auth != null && request.auth.uid == uid
-          && (request.resource == null || request.resource.data.data.size() < 900000);
+        allow read, delete: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.data.size() < 900000;
       }
     }
   }

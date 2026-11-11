@@ -201,7 +201,7 @@ async function reconcile(remote) {
         else if (remoteNew && !dirty) {
             await applyRemote(R, uid);
             writeMeta(uid, { fp: fingerprint(), at: R.updatedAt, blobs: R.blobs || {} });
-            set({ lastAt: R.updatedAt });
+            set({ lastAt: R.updatedAt, error: '' });
         }
         else if (remoteNew && dirty) {
             await applyRemote({ ...merge(payload(), R, !m.fp), blobs: { ...(R.blobs || {}), ...blobIndex(localBlobs()) } }, uid);
@@ -211,7 +211,10 @@ async function reconcile(remote) {
             await push(uid, payload());
     }
     catch (e) {
-        set({ error: String(e && (e.code || e.message) || e) });
+        const code = String(e && (e.code || e.message) || e);
+        set({ error: /permission-denied|insufficient permissions/i.test(code)
+                ? 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).'
+                : /unavailable|network|offline/i.test(code) ? 'Нет связи с сервером — синхронизирую, когда появится интернет.' : 'Ошибка синхронизации: ' + code });
     }
     finally {
         busy = false;

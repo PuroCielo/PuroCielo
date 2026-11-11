@@ -73,6 +73,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -239,7 +272,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1488,7 +1521,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -4639,7 +4672,7 @@ async function reconcile(remote) {
         else if (remoteNew && !dirty) {
             await applyRemote(R, uid);
             writeMeta(uid, { fp: fingerprint(), at: R.updatedAt, blobs: R.blobs || {} });
-            set({ lastAt: R.updatedAt });
+            set({ lastAt: R.updatedAt, error: '' });
         }
         else if (remoteNew && dirty) {
             await applyRemote({ ...merge(payload(), R, !m.fp), blobs: { ...(R.blobs || {}), ...blobIndex(localBlobs()) } }, uid);
@@ -4649,7 +4682,10 @@ async function reconcile(remote) {
             await push(uid, payload());
     }
     catch (e) {
-        set({ error: String(e && (e.code || e.message) || e) });
+        const code = String(e && (e.code || e.message) || e);
+        set({ error: /permission-denied|insufficient permissions/i.test(code)
+                ? 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).'
+                : /unavailable|network|offline/i.test(code) ? 'Нет связи с сервером — синхронизирую, когда появится интернет.' : 'Ошибка синхронизации: ' + code });
     }
     finally {
         busy = false;
@@ -5897,6 +5933,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -5907,7 +5976,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
