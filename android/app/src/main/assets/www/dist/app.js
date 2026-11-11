@@ -73,6 +73,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -239,7 +272,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1333,7 +1366,9 @@ function paletteFrom(url) {
 function initDust(cv) {
     const ctx = cv.getContext('2d');
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0;
+    let W = 0, H = 0, dpr = 1, parts = [], tint = [255, 236, 200], last = 0, energy = 0, raf = 0, cols = GRAPHITE, meteors = [], nextMeteor = 4000;
+    const root = document.documentElement, fx = cv.parentElement;
+    const off = c => root.classList.contains(c);
     // мягкая светящаяся точка — рисуется один раз, дальше только копируется
     const sprite = document.createElement('canvas');
     const paintSprite = () => {
@@ -1368,7 +1403,7 @@ function initDust(cv) {
     };
     const frame = (t) => {
         raf = requestAnimationFrame(frame);
-        if (document.hidden || document.documentElement.classList.contains('no-bg-particles'))
+        if (document.hidden)
             return;
         if (t - last < 28)
             return; // ~35 кадров в секунду хватает
@@ -1378,6 +1413,65 @@ function initDust(cv) {
         energy += ((playing ? level() : 0) - energy) * .18;
         const light = document.documentElement.dataset.theme === 'light';
         ctx.clearRect(0, 0, W, H);
+        // пульс: градиент «дышит» в такт басам
+        if (fx)
+            fx.style.setProperty('--beat', off('no-bg-pulse') ? '0' : energy.toFixed(3));
+        // звуковые волны: три светящиеся ленты внизу
+        if (!off('no-bg-waves')) {
+            ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
+            const base = H * .8, amp = H * (.025 + energy * .07) * (playing ? 1 : .45);
+            for (let i = 0; i < 3; i++) {
+                const k = (2 + i * .9) / W * Math.PI, ph = t / (2600 - i * 500) + i * 1.7;
+                ctx.beginPath();
+                for (let x = 0; x <= W; x += 12 * dpr) {
+                    const y = base + i * 18 * dpr + Math.sin(x * k + ph) * amp + Math.sin(x * k * 2.3 - ph * 1.4) * amp * .35;
+                    x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+                }
+                const g = ctx.createLinearGradient(0, 0, W, 0);
+                g.addColorStop(0, 'transparent');
+                g.addColorStop(.25, cols[i % cols.length]);
+                g.addColorStop(.75, cols[(i + 1) % cols.length]);
+                g.addColorStop(1, 'transparent');
+                ctx.strokeStyle = g;
+                ctx.lineWidth = (1.4 + energy * 2.5) * dpr;
+                ctx.globalAlpha = (light ? .35 : .55) - i * .12;
+                ctx.shadowColor = cols[i % cols.length];
+                ctx.shadowBlur = light ? 0 : 14 * dpr;
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+        }
+        // падающие звёзды
+        if (!off('no-bg-meteors')) {
+            nextMeteor -= dt * 16.7 * (playing ? 1 + energy * 2 : .5);
+            if (nextMeteor <= 0) {
+                nextMeteor = 5000 + Math.random() * 9000;
+                const a = Math.PI * (.72 + Math.random() * .12);
+                meteors.push({ x: W * (.35 + Math.random() * .65), y: -20 * dpr, vx: Math.cos(a) * 14 * dpr, vy: Math.sin(a) * 14 * dpr, life: 1 });
+            }
+            ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
+            for (const m of meteors) {
+                m.x += m.vx * dt;
+                m.y += m.vy * dt;
+                m.life -= .018 * dt;
+                const tail = 18, g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * tail, m.y - m.vy * tail);
+                g.addColorStop(0, light ? 'rgba(40,40,60,.55)' : `rgba(255,255,255,${(.9 * m.life).toFixed(3)})`);
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.strokeStyle = g;
+                ctx.lineWidth = 1.6 * dpr;
+                ctx.lineCap = 'round';
+                ctx.globalAlpha = Math.max(0, m.life);
+                ctx.beginPath();
+                ctx.moveTo(m.x, m.y);
+                ctx.lineTo(m.x - m.vx * tail, m.y - m.vy * tail);
+                ctx.stroke();
+            }
+            meteors = meteors.filter(m => m.life > 0 && m.y < H + 200);
+            ctx.globalAlpha = 1;
+        }
+        if (off('no-bg-particles'))
+            return;
         ctx.globalCompositeOperation = light ? 'source-over' : 'lighter';
         const speed = (playing ? 1 : .35) * (1 + energy * 2.2) * dpr;
         for (const p of parts) {
@@ -1402,6 +1496,7 @@ function initDust(cv) {
     else
         frame(1000);
     return {
+        setColors(c) { cols = c || GRAPHITE; },
         setTint(css) {
             const m = /hsl\((\d+) (\d+)% (\d+)%\)/.exec(css || '');
             if (!m) {
@@ -1429,6 +1524,7 @@ function initBgFx() {
         const c = cols || GRAPHITE;
         c.forEach((v, i) => fx && fx.style.setProperty(`--c${i + 1}`, v));
         dust?.setTint(cols ? cols[0] : null);
+        dust?.setColors(cols ? cols.map(v => v.replace(/(\d+)%\)$/, (m, l) => Math.min(75, +l + 22) + '%)')) : null);
     };
     const paintCover = async () => {
         const t = (0, player_js_1.current)(), url = state_js_1.state.settings.bgCover !== false ? t?.cover || null : null;
@@ -1645,7 +1741,7 @@ const D = {
     'Адрес должен начинаться с https://': 'The address must start with https://', 'Библиотека очищена': 'Library cleared', 'Плейлист сохранён как .m3u8': 'Playlist saved as .m3u8',
     'Не нашёл поддерживаемых файлов': 'No supported files found', 'В выбранной папке нет аудиофайлов': 'The chosen folder has no audio files', 'Не удалось прочитать папку': 'Could not read the folder',
     'Текст сохранён': 'Lyrics saved', 'Текст удалён': 'Lyrics deleted',
-    'Скрыть очередь': 'Hide queue', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
+    'Скрыть очередь': 'Hide queue', 'Лучи света': 'Light rays', 'Мягкие лучи сверху медленно вращаются.': 'Soft rays from above slowly turn.', 'Звуковые волны': 'Sound waves', 'Светящиеся ленты внизу колышутся под музыку.': 'Glowing ribbons at the bottom sway with the music.', 'Пульс': 'Pulse', 'Фон «дышит» в такт басам.': 'The background breathes with the bass.', 'Падающие звёзды': 'Shooting stars', 'Время от времени по фону пролетает метеор.': 'Now and then a meteor flies across the background.', 'Живой градиент': 'Living gradient', 'Цвета обложки играющей песни медленно перетекают по фону.': 'Colours from the playing song’s cover slowly flow across the background.', 'Звёздная пыль': 'Stardust', 'Мерцающие искры, которые оживают в такт музыке.': 'Twinkling sparks that come alive with the beat.', 'Цвета из обложки': 'Colours from the cover', 'Фон и искры окрашиваются в цвета текущего трека.': 'The background and sparks take on the current track’s colours.', 'Это не тот текст': 'Wrong lyrics', 'Ищу другой текст…': 'Looking for other lyrics…', 'Нашёл другой вариант': 'Found another version', 'Другого текста не нашлось — можно добавить свой через карандаш': 'No other lyrics found — you can add your own with the pencil', 'Firebase не пускает к данным синхронизации: опубликуйте новые правила Firestore (файл AUTH-SETUP.md в репозитории).': 'Firebase denies access to sync data: publish the new Firestore rules (AUTH-SETUP.md in the repository).', 'Нет связи с сервером — синхронизирую, когда появится интернет.': 'No connection to the server — will sync when the internet is back.', 'Текст и обложка': 'Lyrics and cover', 'Обложка трека…': 'Track cover…', 'Обложка трека обновлена': 'Track cover updated',
     'Вернуть обложку из файла': 'Restore cover from file', 'Обложка альбома…': 'Album cover…', 'Обложка сингла…': 'Single cover…',
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
@@ -4277,6 +4373,10 @@ exports.DEFAULT_SETTINGS = {
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
     bgParticles: true, // поднимающиеся частицы
     bgCover: true, // свечение от обложки играющего трека
+    bgRays: true, // лучи света сверху
+    bgWaves: true, // звуковые волны внизу
+    bgPulse: true, // фон «дышит» в такт басам
+    bgMeteors: true, // падающие звёзды
     corners: 'round', // round | sharp — скругление обложек
     density: 'cozy', // cozy | compact — плотность списков
     anim: true, // анимации интерфейса
@@ -5795,6 +5895,10 @@ function applySettings() {
     r.classList.toggle('no-bg-vinyl', !s.bgVinyl);
     r.classList.toggle('no-bg-particles', !s.bgParticles);
     r.classList.toggle('no-bg-cover', !s.bgCover);
+    r.classList.toggle('no-bg-rays', !s.bgRays);
+    r.classList.toggle('no-bg-waves', !s.bgWaves);
+    r.classList.toggle('no-bg-pulse', !s.bgPulse);
+    r.classList.toggle('no-bg-meteors', !s.bgMeteors);
     r.classList.toggle('no-anim', !s.anim);
 }
 
@@ -6115,6 +6219,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6125,7 +6262,7 @@ exports.norm = norm;
 exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -6760,6 +6897,10 @@ function settingsView() {
         ${srow('Пластинка', 'Виниловая пластинка крутится, пока играет музыка.', sw('bgVinyl', s.bgVinyl))}
         ${srow('Звёздная пыль', 'Мерцающие искры, которые оживают в такт музыке.', sw('bgParticles', s.bgParticles))}
         ${srow('Цвета из обложки', 'Фон и искры окрашиваются в цвета текущего трека.', sw('bgCover', s.bgCover))}
+        ${srow('Лучи света', 'Мягкие лучи сверху медленно вращаются.', sw('bgRays', s.bgRays !== false))}
+        ${srow('Звуковые волны', 'Светящиеся ленты внизу колышутся под музыку.', sw('bgWaves', s.bgWaves !== false))}
+        ${srow('Пульс', 'Фон «дышит» в такт басам.', sw('bgPulse', s.bgPulse !== false))}
+        ${srow('Падающие звёзды', 'Время от времени по фону пролетает метеор.', sw('bgMeteors', s.bgMeteors !== false))}
       </div>
 
       <h2 class="sg-title">Воспроизведение</h2>

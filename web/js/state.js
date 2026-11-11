@@ -21,6 +21,10 @@ export const DEFAULT_SETTINGS = {
     eqCustom: [0, 0, 0, 0, 0, 0], // свои значения полос, дБ
     bgParticles: true, // поднимающиеся частицы
     bgCover: true, // свечение от обложки играющего трека
+    bgRays: true, // лучи света сверху
+    bgWaves: true, // звуковые волны внизу
+    bgPulse: true, // фон «дышит» в такт басам
+    bgMeteors: true, // падающие звёзды
     corners: 'round', // round | sharp — скругление обложек
     density: 'cozy', // cozy | compact — плотность списков
     anim: true, // анимации интерфейса
