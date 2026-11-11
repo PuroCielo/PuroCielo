@@ -9,7 +9,8 @@
 // Версия берётся из web/package.json и подставляется в sw.js, лендинг (index.html) и Android-сборку.
 const fs = require('fs'), path = require('path');
 let ts;
-for (const p of ['typescript', path.join(__dirname, 'node_modules/typescript'), '/opt/node22/lib/node_modules/typescript', '/opt/npm-tools/node_modules/typescript']) { try { ts = require(p); break; } catch { /* дальше */ } }
+const globalRoot = (() => { try { return require('child_process').execSync('npm root -g', { encoding: 'utf8' }).trim(); } catch { return ''; } })();
+for (const p of ['typescript', path.join(__dirname, 'node_modules/typescript'), globalRoot && path.join(globalRoot, 'typescript'), '/opt/node22/lib/node_modules/typescript', '/opt/npm-tools/node_modules/typescript'].filter(Boolean)) { try { ts = require(p); break; } catch { /* дальше */ } }
 if (!ts) { console.error('Нужен TypeScript: npm i -g typescript'); process.exit(1); }
 const ROOT = path.join(__dirname, '..'), WWW = path.join(ROOT, 'android/app/src/main/assets/www'), APP = path.join(ROOT, 'app');
 const rd = p => fs.readFileSync(p, 'utf8'), wr = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };

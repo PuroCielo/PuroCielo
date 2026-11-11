@@ -18,7 +18,7 @@ jobs:
         with: { node-version: '20' }
       - name: Собрать веб-плеер из web/
         run: |
-          npm i -g typescript@5
+          npm i --prefix web --no-save --no-audit --no-fund typescript@5
           node web/build.js
           echo "VERSION=$(node -p "require('./web/package.json').version")" >> "$GITHUB_ENV"
       - name: Закоммитить сборку, если она отличается
