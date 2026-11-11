@@ -10,6 +10,7 @@ import { isNative } from './native.js';
 //
 // Firestore:  sync/{uid}                 — всё, кроме картинок (+ индекс картинок blobs: {docId: hash})
 //             sync/{uid}/blobs/{docId}   — по одной картинке: { kind: 'ct'|'ca'|'avatar'|'banner', key, data }
+//             sync/{uid}/blobs/ly_…      — по одному точному тексту песни: { kind: 'ly', key, data: JSON }
 const FB = '10.12.2', G = `https://www.gstatic.com/firebasejs/${FB}`;
 const importUrl = new Function('u', 'return import(u)'); // настоящий import() (сборка не должна превращать его в require)
 const DEVICE = (() => { try {
@@ -281,6 +282,50 @@ on('library', () => {
     if (changed)
         save();
 });
+// ---------- тексты песен в аккаунте ----------
+// Точно подобранный текст (совпали название и артист, либо его вписал сам пользователь) кладём в аккаунт,
+// чтобы на другом устройстве и после очистки кэша он появлялся сразу, без нового поиска.
+// Песня узнаётся по «артист + название + длина», поэтому текст подойдёт и к другому файлу той же песни.
+// Отдельные документы читаются по одному, только когда текст нужен, — основную синхронизацию это не замедляет.
+const lyDoc = key => 'ly_' + hash(key).toString(36) + hash([...key].reverse().join('')).toString(36);
+export const cloudReady = () => !!(uidNow && F);
+export async function cloudLyricsGet(key) {
+    if (!cloudReady())
+        return undefined; // не вошли — спрашивать негде
+    try {
+        const s = await F.getDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)));
+        const d = s.exists() ? s.data() : null;
+        return d && d.kind === 'ly' && d.key === key ? JSON.parse(d.data) : null;
+    }
+    catch {
+        return undefined;
+    }
+}
+export async function cloudLyricsPut(key, ly) {
+    if (!cloudReady())
+        return false;
+    try {
+        const data = JSON.stringify(ly);
+        if (data.length > 600000)
+            return false;
+        await F.setDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)), { kind: 'ly', key, data, at: Date.now() });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+export async function cloudLyricsDel(key) {
+    if (!cloudReady())
+        return false;
+    try {
+        await F.deleteDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)));
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 export async function initSync() {
     try {
         // если раньше входили на этом устройстве — поднимаем Firebase сразу

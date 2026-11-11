@@ -48,4 +48,5 @@ export const clearFiles = safe(() => tx('files', 'readwrite', s => s.clear()));
 export const kvGet = safe(k => tx('kv', 'readonly', s => s.get(k)));
 export const kvSet = safe((k, v) => tx('kv', 'readwrite', s => s.put(v, k)));
 export const lyGet = safe(k => tx('lyrics', 'readonly', s => s.get(k)));
+export const lyKeys = safe(async () => (await tx('lyrics', 'readonly', s => s.getAllKeys())) || []);
 export const lySet = safe((k, v) => tx('lyrics', 'readwrite', s => s.put(v, k)));

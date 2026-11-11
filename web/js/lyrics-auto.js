@@ -1,6 +1,7 @@
-import { emit, state } from './state.js';
+import { emit, on, state } from './state.js';
 import { parseLrc } from './lrc.js';
-import { lyGet, lySet } from './db.js';
+import { lyGet, lyKeys, lySet } from './db.js';
+import { cloudLyricsDel, cloudLyricsGet, cloudLyricsPut, cloudReady } from './sync.js';
 import { norm } from './util.js';
 import { UNKNOWN, splitArtists } from './artists.js';
 import { artistMatch, artistNear, norm as norm_LyricsWeb, titleMatch, webLyrics } from './lyrics-web.js';
@@ -60,17 +61,53 @@ export function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v7|${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+// Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
+const songKey = t => `${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v7|${songKey(t)}`; // обычный кэш: сбрасывается, когда меняются правила поиска
+const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
+// «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
+// Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
+async function keepSure(t, ly) {
+    const k = okKey(t), rec = { ly, at: Date.now(), up: false };
+    await lySet(k, rec);
+    if (await cloudLyricsPut(songKey(t), ly))
+        lySet(k, { ...rec, up: true });
+}
+async function dropSure(t) {
+    await lySet(okKey(t), { at: 0 });
+    cloudTried.delete(songKey(t));
+    cloudLyricsDel(songKey(t));
+}
+const cloudTried = new Set(); // в аккаунте уже спрашивали (за этот запуск)
+// после входа в аккаунт отправляем точные тексты, найденные раньше без входа
+let flushedFor = false;
+async function flushSure() {
+    if (!cloudReady() || flushedFor)
+        return;
+    flushedFor = true;
+    cloudTried.clear();
+    for (const k of (await lyKeys()) || []) {
+        if (typeof k !== 'string' || !k.startsWith('ok|'))
+            continue;
+        const r = await lyGet(k);
+        if (r && r.ly && !r.up && await cloudLyricsPut(k.slice(3), r.ly))
+            lySet(k, { ...r, up: true });
+    }
+}
+on('sync', () => { if (cloudReady())
+    flushSure();
+else
+    flushedFor = false; });
 function toLyrics(d) {
     if (!d)
         return null;
     if (d.syncedLyrics) {
         const p = parseLrc(d.syncedLyrics);
         if (p.synced)
-            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id };
+            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id, sure: !!d._sure };
     }
     if (d.plainLyrics && d.plainLyrics.trim())
-        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id };
+        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id, sure: !!d._sure };
     return null;
 }
 async function getJSON(url, ms = 9000) {
@@ -216,7 +253,7 @@ async function fromGenius(t, skip) {
     try {
         const g = await geniusLyrics(cands, realArtists(t), siteFetcher(), skip);
         if (g)
-            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref };
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: realArtists(t).length > 0 }; // артист из тегов совпал — уверены
     }
     catch { /* дальше */ }
     if (window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
@@ -298,6 +335,7 @@ export async function setManualLyrics(t, text) {
     t.lyrics = text ? lyFromText(text) : null;
     emit('lyrics', t);
     emit('lyrics-state', t);
+    text ? keepSure(t, { ...t.lyrics, sure: true }) : dropSure(t); // свой текст — точный по определению
 }
 async function applyManual(t) {
     t._manualChecked = true;
@@ -327,6 +365,7 @@ export async function rejectLyrics(t) {
         bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
     await lySet('bad|' + t.id, bad);
     await lySet(keyOf(t), { at: 0 });
+    await dropSure(t);
     t.lyrics = null;
     t._ly = undefined;
     emit('lyrics', t);
@@ -337,22 +376,35 @@ export function ensureLyrics(t) {
         return applyManual(t).then(ok => ok || ensureLyrics(t));
     if (!t || t.lyrics)
         return Promise.resolve(!!t?.lyrics);
-    if (!state.settings.autoLyrics) {
-        t._ly = 'none';
-        return Promise.resolve(false);
-    }
     if (running.has(t.id))
         return running.get(t.id);
     t._ly = 'loading';
     const p = (async () => {
         const key = keyOf(t);
         try {
+            const use = ly => { t.lyrics = ly; t._ly = undefined; emit('lyrics', t); return true; };
+            // 1) точный текст, сохранённый на этом устройстве
+            const sure = await lyGet(okKey(t)).catch(() => null);
+            if (sure && sure.ly)
+                return use(sure.ly);
+            // 2) точный текст из аккаунта (нашёлся или вписан на другом устройстве) — без нового поиска;
+            //    он важнее примерного текста из обычного кэша
+            const sk = songKey(t);
+            if (cloudReady() && !cloudTried.has(sk) && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+                cloudTried.add(sk);
+                const c = await cloudLyricsGet(sk);
+                if (c && (c.lines || c.text)) {
+                    lySet(okKey(t), { ly: c, at: Date.now(), up: true });
+                    return use(c);
+                }
+            }
+            // 3) обычный кэш
             const cached = await lyGet(key);
-            if (cached && cached.ly) {
-                t.lyrics = cached.ly;
-                t._ly = undefined;
-                emit('lyrics', t);
-                return true;
+            if (cached && cached.ly)
+                return use(cached.ly);
+            if (!state.settings.autoLyrics) {
+                t._ly = 'none';
+                return false;
             }
             if (cached && cached.miss && Date.now() - cached.at < MISS_TTL) {
                 t._ly = 'none';
@@ -381,6 +433,8 @@ export function ensureLyrics(t) {
                 t.lyrics = ly;
                 t._ly = undefined;
                 lySet(key, { ly, at: Date.now() });
+                if (ly.sure)
+                    keepSure(t, ly);
                 emit('lyrics', t);
                 return true;
             }

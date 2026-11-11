@@ -1098,6 +1098,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1265,7 +1298,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -2745,7 +2778,7 @@ async function setArtistPhoto(key, data) {
 };
 defs["db.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lySet = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = void 0;
+exports.lySet = exports.lyKeys = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = void 0;
 // IndexedDB: файлы библиотеки ('files'), состояние приложения ('kv'), кэш текстов ('lyrics')
 let dbp;
 function open() {
@@ -2798,6 +2831,7 @@ exports.clearFiles = safe(() => tx('files', 'readwrite', s => s.clear()));
 exports.kvGet = safe(k => tx('kv', 'readonly', s => s.get(k)));
 exports.kvSet = safe((k, v) => tx('kv', 'readwrite', s => s.put(v, k)));
 exports.lyGet = safe(k => tx('lyrics', 'readonly', s => s.get(k)));
+exports.lyKeys = safe(async () => (await tx('lyrics', 'readonly', s => s.getAllKeys())) || []);
 exports.lySet = safe((k, v) => tx('lyrics', 'readwrite', s => s.put(v, k)));
 
 };
@@ -3120,7 +3154,7 @@ const D = {
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
     'Аккаунт': 'Account', 'Синхронизация между устройствами': 'Sync between devices', 'Войти по почте': 'Sign in with email', 'Выйти': 'Sign out', 'Сейчас': 'Now',
-    'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.': 'Sign in with the same account as on the website — likes, playlists, plays, covers and settings become shared between your phone and computer. Music stays on each device.',
+    'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.': 'Sign in with the same account as on the website — likes, playlists, plays, covers, exact lyrics and settings become shared between your phone and computer. Music stays on each device.',
     'Вход в аккаунт Puro Cielo': 'Sign in to Puro Cielo', 'Почта': 'Email', 'Пароль': 'Password', 'Войти': 'Sign in',
     'Тот же аккаунт, что на сайте Puro Cielo. Нет аккаунта — нажмите «Создать».': 'The same account as on the Puro Cielo website. No account yet? Press “Create”.',
     'Вы вошли — синхронизация включена': 'Signed in — sync is on', 'Синхронизирую…': 'Syncing…', 'Аккаунт Puro Cielo': 'Puro Cielo account',
@@ -3154,7 +3188,7 @@ const R = [
     [/^Скорость: (.+)$/, (m, v) => `Speed: ${v.replace(',', '.')}`],
     [/^([\d,.]+)×$/, (m, v) => `${v.replace(',', '.')}×`],
     [/^Повтор: (выкл|все|один)$/, (m, v) => `Repeat: ${{ выкл: 'off', все: 'all', один: 'one' }[v]}`],
-    [/^Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах\.(?: Последний раз: (.+)\.)?$/, (m, w) => `Sync is on: likes, playlists, plays, covers and settings are the same on all your devices.${w ? ` Last synced: ${w}.` : ''}`],
+    [/^Синхронизация включена: лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки одинаковые на всех ваших устройствах\.(?: Последний раз: (.+)\.)?$/, (m, w) => `Sync is on: likes, playlists, plays, covers, exact lyrics and settings are the same on all your devices.${w ? ` Last synced: ${w}.` : ''}`],
     [/^Сейчас подходит: (.+)$/, (m, n) => `Matching now: ${n}`],
     [/^Обложку — на весь альбом «(.+)»$/, (m, n) => `Use the cover for the whole album “${n}”`],
     [/^Не удалось войти: (.+)$/, (m, e) => `Couldn’t sign in: ${e}`],
@@ -3903,6 +3937,7 @@ exports.ensureLyrics = ensureLyrics;
 const state_js_1 = require("./state.js");
 const lrc_js_1 = require("./lrc.js");
 const db_js_1 = require("./db.js");
+const sync_js_1 = require("./sync.js");
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
 const lyrics_web_js_1 = require("./lyrics-web.js");
@@ -3961,17 +3996,55 @@ function candidates(t) {
     }
     return out;
 }
-const keyOf = t => `v7|${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+// Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
+const songKey = t => `${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)(cleanTitle(t.title))}|${Math.round(t.duration || 0)}`;
+const keyOf = t => `v7|${songKey(t)}`; // обычный кэш: сбрасывается, когда меняются правила поиска
+const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
+// «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
+// Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
+async function keepSure(t, ly) {
+    const k = okKey(t), rec = { ly, at: Date.now(), up: false };
+    await (0, db_js_1.lySet)(k, rec);
+    if (await (0, sync_js_1.cloudLyricsPut)(songKey(t), ly))
+        (0, db_js_1.lySet)(k, { ...rec, up: true });
+}
+async function dropSure(t) {
+    await (0, db_js_1.lySet)(okKey(t), { at: 0 });
+    cloudTried.delete(songKey(t));
+    (0, sync_js_1.cloudLyricsDel)(songKey(t));
+}
+const cloudTried = new Set(); // в аккаунте уже спрашивали (за этот запуск)
+// после входа в аккаунт отправляем точные тексты, найденные раньше без входа
+let flushedFor = false;
+async function flushSure() {
+    if (!(0, sync_js_1.cloudReady)() || flushedFor)
+        return;
+    flushedFor = true;
+    cloudTried.clear();
+    for (const k of (await (0, db_js_1.lyKeys)()) || []) {
+        if (typeof k !== 'string' || !k.startsWith('ok|'))
+            continue;
+        const r = await (0, db_js_1.lyGet)(k);
+        if (r && r.ly && !r.up && await (0, sync_js_1.cloudLyricsPut)(k.slice(3), r.ly))
+            (0, db_js_1.lySet)(k, { ...r, up: true });
+    }
+}
+(0, state_js_1.on)('sync', () => {
+    if ((0, sync_js_1.cloudReady)())
+        flushSure();
+    else
+        flushedFor = false;
+});
 function toLyrics(d) {
     if (!d)
         return null;
     if (d.syncedLyrics) {
         const p = (0, lrc_js_1.parseLrc)(d.syncedLyrics);
         if (p.synced)
-            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id };
+            return { type: 'synced', lines: p.lines, source: 'online', ref: d.id, sure: !!d._sure };
     }
     if (d.plainLyrics && d.plainLyrics.trim())
-        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id };
+        return { type: 'plain', text: d.plainLyrics.trim(), source: 'online', ref: d.id, sure: !!d._sure };
     return null;
 }
 async function getJSON(url, ms = 9000) {
@@ -4121,7 +4194,7 @@ async function fromGenius(t, skip) {
     try {
         const g = await (0, genius_js_1.geniusLyrics)(cands, realArtists(t), siteFetcher(), skip);
         if (g)
-            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref };
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: realArtists(t).length > 0 }; // артист из тегов совпал — уверены
     }
     catch { /* дальше */ }
     if (window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
@@ -4205,6 +4278,7 @@ async function setManualLyrics(t, text) {
     t.lyrics = text ? lyFromText(text) : null;
     (0, state_js_1.emit)('lyrics', t);
     (0, state_js_1.emit)('lyrics-state', t);
+    text ? keepSure(t, { ...t.lyrics, sure: true }) : dropSure(t); // свой текст — точный по определению
 }
 async function applyManual(t) {
     t._manualChecked = true;
@@ -4235,6 +4309,7 @@ async function rejectLyrics(t) {
         bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
     await (0, db_js_1.lySet)('bad|' + t.id, bad);
     await (0, db_js_1.lySet)(keyOf(t), { at: 0 });
+    await dropSure(t);
     t.lyrics = null;
     t._ly = undefined;
     (0, state_js_1.emit)('lyrics', t);
@@ -4245,22 +4320,35 @@ function ensureLyrics(t) {
         return applyManual(t).then(ok => ok || ensureLyrics(t));
     if (!t || t.lyrics)
         return Promise.resolve(!!t?.lyrics);
-    if (!state_js_1.state.settings.autoLyrics) {
-        t._ly = 'none';
-        return Promise.resolve(false);
-    }
     if (running.has(t.id))
         return running.get(t.id);
     t._ly = 'loading';
     const p = (async () => {
         const key = keyOf(t);
         try {
+            const use = ly => { t.lyrics = ly; t._ly = undefined; (0, state_js_1.emit)('lyrics', t); return true; };
+            // 1) точный текст, сохранённый на этом устройстве
+            const sure = await (0, db_js_1.lyGet)(okKey(t)).catch(() => null);
+            if (sure && sure.ly)
+                return use(sure.ly);
+            // 2) точный текст из аккаунта (нашёлся или вписан на другом устройстве) — без нового поиска;
+            //    он важнее примерного текста из обычного кэша
+            const sk = songKey(t);
+            if ((0, sync_js_1.cloudReady)() && !cloudTried.has(sk) && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+                cloudTried.add(sk);
+                const c = await (0, sync_js_1.cloudLyricsGet)(sk);
+                if (c && (c.lines || c.text)) {
+                    (0, db_js_1.lySet)(okKey(t), { ly: c, at: Date.now(), up: true });
+                    return use(c);
+                }
+            }
+            // 3) обычный кэш
             const cached = await (0, db_js_1.lyGet)(key);
-            if (cached && cached.ly) {
-                t.lyrics = cached.ly;
-                t._ly = undefined;
-                (0, state_js_1.emit)('lyrics', t);
-                return true;
+            if (cached && cached.ly)
+                return use(cached.ly);
+            if (!state_js_1.state.settings.autoLyrics) {
+                t._ly = 'none';
+                return false;
             }
             if (cached && cached.miss && Date.now() - cached.at < MISS_TTL) {
                 t._ly = 'none';
@@ -4289,6 +4377,8 @@ function ensureLyrics(t) {
                 t.lyrics = ly;
                 t._ly = undefined;
                 (0, db_js_1.lySet)(key, { ly, at: Date.now() });
+                if (ly.sure)
+                    keepSure(t, ly);
                 (0, state_js_1.emit)('lyrics', t);
                 return true;
             }
@@ -6370,8 +6460,11 @@ function likedTracks() { return [...exports.state.likes].map(exports.getTrack).f
 };
 defs["sync.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncNow = exports.canGoogle = exports.pkeyOf = exports.sync = void 0;
+exports.syncNow = exports.canGoogle = exports.cloudReady = exports.pkeyOf = exports.sync = void 0;
 exports.payload = payload;
+exports.cloudLyricsGet = cloudLyricsGet;
+exports.cloudLyricsPut = cloudLyricsPut;
+exports.cloudLyricsDel = cloudLyricsDel;
 exports.initSync = initSync;
 exports.signInGoogle = signInGoogle;
 exports.signInEmail = signInEmail;
@@ -6387,6 +6480,7 @@ const native_js_1 = require("./native.js");
 //
 // Firestore:  sync/{uid}                 — всё, кроме картинок (+ индекс картинок blobs: {docId: hash})
 //             sync/{uid}/blobs/{docId}   — по одной картинке: { kind: 'ct'|'ca'|'avatar'|'banner', key, data }
+//             sync/{uid}/blobs/ly_…      — по одному точному тексту песни: { kind: 'ly', key, data: JSON }
 const FB = '10.12.2', G = `https://www.gstatic.com/firebasejs/${FB}`;
 const importUrl = new Function('u', 'return import(u)'); // настоящий import() (сборка не должна превращать его в require)
 const DEVICE = (() => {
@@ -6676,6 +6770,51 @@ function onUser(user) {
     if (changed)
         (0, state_js_1.save)();
 });
+// ---------- тексты песен в аккаунте ----------
+// Точно подобранный текст (совпали название и артист, либо его вписал сам пользователь) кладём в аккаунт,
+// чтобы на другом устройстве и после очистки кэша он появлялся сразу, без нового поиска.
+// Песня узнаётся по «артист + название + длина», поэтому текст подойдёт и к другому файлу той же песни.
+// Отдельные документы читаются по одному, только когда текст нужен, — основную синхронизацию это не замедляет.
+const lyDoc = key => 'ly_' + (0, util_js_1.hash)(key).toString(36) + (0, util_js_1.hash)([...key].reverse().join('')).toString(36);
+const cloudReady = () => !!(uidNow && F);
+exports.cloudReady = cloudReady;
+async function cloudLyricsGet(key) {
+    if (!(0, exports.cloudReady)())
+        return undefined; // не вошли — спрашивать негде
+    try {
+        const s = await F.getDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)));
+        const d = s.exists() ? s.data() : null;
+        return d && d.kind === 'ly' && d.key === key ? JSON.parse(d.data) : null;
+    }
+    catch {
+        return undefined;
+    }
+}
+async function cloudLyricsPut(key, ly) {
+    if (!(0, exports.cloudReady)())
+        return false;
+    try {
+        const data = JSON.stringify(ly);
+        if (data.length > 600000)
+            return false;
+        await F.setDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)), { kind: 'ly', key, data, at: Date.now() });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+async function cloudLyricsDel(key) {
+    if (!(0, exports.cloudReady)())
+        return false;
+    try {
+        await F.deleteDoc(F.doc(db, 'sync', uidNow, 'blobs', lyDoc(key)));
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 async function initSync() {
     try {
         // если раньше входили на этом устройстве — поднимаем Firebase сразу
@@ -7860,6 +7999,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -7871,7 +8043,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -8534,10 +8706,10 @@ function accountSection() {
     const err = sync_js_1.sync.error ? `<p class="acc-err">${(0, util_js_1.esc)(sync_js_1.sync.error)}</p>` : '';
     if (sync_js_1.sync.status === 'in' && u)
         return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
-        ${srow((0, util_js_1.esc)(u.email || u.name || 'Аккаунт Puro Cielo'), `Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах.${when ? ` Последний раз: ${when}.` : ''}`, `<button class="btn btn-soft sm" data-action="sync-now">${(0, icons_js_1.icon)('refresh')}Сейчас</button><button class="btn btn-soft sm" data-action="sync-out">Выйти</button>`)}
+        ${srow((0, util_js_1.esc)(u.email || u.name || 'Аккаунт Puro Cielo'), `Синхронизация включена: лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки одинаковые на всех ваших устройствах.${when ? ` Последний раз: ${when}.` : ''}`, `<button class="btn btn-soft sm" data-action="sync-now">${(0, icons_js_1.icon)('refresh')}Сейчас</button><button class="btn btn-soft sm" data-action="sync-out">Выйти</button>`)}
       </div>${err}`;
     return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
-        ${srow('Синхронизация между устройствами', 'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.', sync_js_1.sync.status === 'loading' ? '<span class="ly-spin"></span>' : `${(0, sync_js_1.canGoogle)() ? `<button class="btn btn-soft sm" data-action="sync-google">Google</button>` : ''}<button class="btn btn-primary sm" data-action="sync-email">Войти по почте</button>`)}
+        ${srow('Синхронизация между устройствами', 'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.', sync_js_1.sync.status === 'loading' ? '<span class="ly-spin"></span>' : `${(0, sync_js_1.canGoogle)() ? `<button class="btn btn-soft sm" data-action="sync-google">Google</button>` : ''}<button class="btn btn-primary sm" data-action="sync-email">Войти по почте</button>`)}
       </div>${err}`;
 }
 function settingsView() {

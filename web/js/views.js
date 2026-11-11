@@ -521,10 +521,10 @@ function accountSection() {
     const err = sync.error ? `<p class="acc-err">${esc(sync.error)}</p>` : '';
     if (sync.status === 'in' && u)
         return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
-        ${srow(esc(u.email || u.name || 'Аккаунт Puro Cielo'), `Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах.${when ? ` Последний раз: ${when}.` : ''}`, `<button class="btn btn-soft sm" data-action="sync-now">${icon('refresh')}Сейчас</button><button class="btn btn-soft sm" data-action="sync-out">Выйти</button>`)}
+        ${srow(esc(u.email || u.name || 'Аккаунт Puro Cielo'), `Синхронизация включена: лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки одинаковые на всех ваших устройствах.${when ? ` Последний раз: ${when}.` : ''}`, `<button class="btn btn-soft sm" data-action="sync-now">${icon('refresh')}Сейчас</button><button class="btn btn-soft sm" data-action="sync-out">Выйти</button>`)}
       </div>${err}`;
     return `<h2 class="sg-title">Аккаунт</h2><div class="settings">
-        ${srow('Синхронизация между устройствами', 'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.',
+        ${srow('Синхронизация между устройствами', 'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.',
         sync.status === 'loading' ? '<span class="ly-spin"></span>' : `${canGoogle() ? `<button class="btn btn-soft sm" data-action="sync-google">Google</button>` : ''}<button class="btn btn-primary sm" data-action="sync-email">Войти по почте</button>`)}
       </div>${err}`;
 }

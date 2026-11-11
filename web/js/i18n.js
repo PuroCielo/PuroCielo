@@ -98,7 +98,7 @@ const D = {
     'Обложка альбома обновлена': 'Album cover updated', 'Обложка сингла обновлена': 'Single cover updated',
     // 1.9: аккаунт, переход, эквалайзер, итоги, умные плейлисты, данные трека, перевод
     'Аккаунт': 'Account', 'Синхронизация между устройствами': 'Sync between devices', 'Войти по почте': 'Sign in with email', 'Выйти': 'Sign out', 'Сейчас': 'Now',
-    'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.': 'Sign in with the same account as on the website — likes, playlists, plays, covers and settings become shared between your phone and computer. Music stays on each device.',
+    'Войдите тем же аккаунтом, что на сайте, — лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки станут общими для телефона и компьютера. Музыка остаётся на каждом устройстве.': 'Sign in with the same account as on the website — likes, playlists, plays, covers, exact lyrics and settings become shared between your phone and computer. Music stays on each device.',
     'Вход в аккаунт Puro Cielo': 'Sign in to Puro Cielo', 'Почта': 'Email', 'Пароль': 'Password', 'Войти': 'Sign in',
     'Тот же аккаунт, что на сайте Puro Cielo. Нет аккаунта — нажмите «Создать».': 'The same account as on the Puro Cielo website. No account yet? Press “Create”.',
     'Вы вошли — синхронизация включена': 'Signed in — sync is on', 'Синхронизирую…': 'Syncing…', 'Аккаунт Puro Cielo': 'Puro Cielo account',
@@ -132,7 +132,7 @@ const R = [
     [/^Скорость: (.+)$/, (m, v) => `Speed: ${v.replace(',', '.')}`],
     [/^([\d,.]+)×$/, (m, v) => `${v.replace(',', '.')}×`],
     [/^Повтор: (выкл|все|один)$/, (m, v) => `Repeat: ${{ выкл: 'off', все: 'all', один: 'one' }[v]}`],
-    [/^Синхронизация включена: лайки, плейлисты, прослушивания, обложки и настройки одинаковые на всех ваших устройствах\.(?: Последний раз: (.+)\.)?$/, (m, w) => `Sync is on: likes, playlists, plays, covers and settings are the same on all your devices.${w ? ` Last synced: ${w}.` : ''}`],
+    [/^Синхронизация включена: лайки, плейлисты, прослушивания, обложки, точные тексты песен и настройки одинаковые на всех ваших устройствах\.(?: Последний раз: (.+)\.)?$/, (m, w) => `Sync is on: likes, playlists, plays, covers, exact lyrics and settings are the same on all your devices.${w ? ` Last synced: ${w}.` : ''}`],
     [/^Сейчас подходит: (.+)$/, (m, n) => `Matching now: ${n}`],
     [/^Обложку — на весь альбом «(.+)»$/, (m, n) => `Use the cover for the whole album “${n}”`],
     [/^Не удалось войти: (.+)$/, (m, e) => `Couldn’t sign in: ${e}`],
