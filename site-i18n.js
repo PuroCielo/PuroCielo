@@ -3,6 +3,8 @@
 (function () {
   var KEY = 'puro.site.lang';
   var D = {
+    'Обновляете старый APK?': 'Updating an older APK?',
+    'Если Android сообщает о несовместимой подписи, сначала синхронизируйте нужные данные с аккаунтом. Только после этого переустанавливайте приложение. Локальная история прослушиваний не синхронизируется.': 'If Android reports an incompatible signature, sync the data you need with your account first. Only then reinstall the app. Local listening history is not synced.',
     'Ваши файлы. Ваш любимый звук.': 'Your files. Your favourite sound.',
     'Ваша музыка.': 'Your music.', 'Ваше пространство.': 'Your space.',
     'Плеер для ваших файлов. Тексты песен, обложки и плейлисты — на компьютере и телефоне.': 'A player for your files. Lyrics, artwork and playlists — on your computer and phone.',
