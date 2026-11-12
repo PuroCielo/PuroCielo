@@ -1,5 +1,5 @@
 <!doctype html><html lang="ru"><head><title>Puro Cielo</title>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="icons/icon-192.png">
+<meta charset="utf-8"><meta name="theme-color" content="#f5f5f7"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="icons/icon-192.png">
 <meta name="description" content="Puro Cielo — плеер для музыки на вашем компьютере и телефоне: тексты песен, миксы, итоги, синхронизация между устройствами. Windows, Android и браузер.">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Puro Cielo"><meta property="og:url" content="https://purocielo.github.io/PuroCielo/">
 <meta property="og:title" content="Puro Cielo — ваша музыка без лишнего"><meta property="og:description" content="Плеер для своих файлов: тексты песен, миксы, итоги и синхронизация между устройствами. Windows, Android и браузер.">
@@ -7,133 +7,93 @@
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://purocielo.github.io/PuroCielo/assets/og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-/* Лендинг: графитовый фон, мягкое свечение, крупная нота как в приложении. Слева текст, справа скриншоты. */
-:root{--font:"Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--bg:#111113;--card:#1c1c1f;--card2:#26262a;--fg:#F5F5F7;--fg2:rgba(245,245,247,.66);--fg3:rgba(245,245,247,.4);--line:rgba(255,255,255,.1);--accent:#F5F5F7;--ink:#151517;--glow:rgba(255,255,255,.07);color-scheme:dark}
-@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#F5F5F7;--card:#fff;--card2:#E8E8EC;--fg:#1D1D1F;--fg2:rgba(29,29,31,.66);--fg3:rgba(29,29,31,.42);--line:rgba(0,0,0,.1);--accent:#2C2C2E;--ink:#fff;--glow:rgba(255,255,255,.9);color-scheme:light}}
-:root[data-theme="light"]{--bg:#F5F5F7;--card:#fff;--card2:#E8E8EC;--fg:#1D1D1F;--fg2:rgba(29,29,31,.66);--fg3:rgba(29,29,31,.42);--line:rgba(0,0,0,.1);--accent:#2C2C2E;--ink:#fff;--glow:rgba(255,255,255,.9);color-scheme:light}
-:root[data-theme="dark"]{--bg:#111113;--card:#1c1c1f;--card2:#26262a;--fg:#F5F5F7;--fg2:rgba(245,245,247,.66);--fg3:rgba(245,245,247,.4);--line:rgba(255,255,255,.1);--accent:#F5F5F7;--ink:#151517;--glow:rgba(255,255,255,.07);color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 var(--font);-webkit-font-smoothing:antialiased;letter-spacing:-.011em;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));overflow-x:hidden;position:relative}
-a{color:inherit}
-.bgnote{position:fixed;right:-6vw;bottom:-8vh;width:min(70vmin,620px);opacity:.05;color:var(--fg);pointer-events:none;animation:fl 24s ease-in-out infinite alternate}
-@keyframes fl{to{transform:translate(-24px,-30px) rotate(5deg)}}
-.glow{position:fixed;left:-12vmax;top:-16vmax;width:52vmax;height:52vmax;border-radius:50%;background:radial-gradient(circle,var(--glow),transparent 68%);filter:blur(80px);pointer-events:none}
-.wrap{position:relative;max-width:1120px;margin:0 auto;padding-block:20px 56px}
-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:6px 40px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.03em;text-decoration:none}
-.mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(140deg,#fff,#b9b9c0);display:grid;place-items:center}.mark svg{width:22px;height:22px;fill:#151517}
-nav .links{display:flex;gap:6px;flex-wrap:wrap}nav .links a{padding:8px 14px;border-radius:999px;color:var(--fg2);font-weight:600;font-size:14.5px;text-decoration:none}nav .links a:hover{background:var(--card);color:var(--fg)}
-.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:48px;align-items:center;padding-block:10px 64px}
-h1{font-size:clamp(38px,6vw,68px);line-height:1.02;letter-spacing:-.05em;margin:0 0 18px;font-weight:800;text-wrap:balance}
-.lead{color:var(--fg2);font-size:18px;max-width:46ch;margin:0 0 28px}
-.btns{display:flex;gap:12px;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:9px;height:48px;padding:0 24px;border-radius:999px;font:600 15.5px var(--font);border:0;cursor:pointer;text-decoration:none;background:var(--card2);color:var(--fg);transition:transform .2s,background .2s}
-.btn:hover{transform:translateY(-1px)}.btn.primary{background:var(--accent);color:var(--ink)}.btn[aria-disabled="true"]{opacity:.55;cursor:default;transform:none}
-.btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.shots{position:relative;min-width:0}.shots img{display:block;width:100%;border-radius:16px;border:1px solid var(--line);box-shadow:0 30px 60px -24px rgba(0,0,0,.7)}
-.shots img{height:auto}.shots .s2{position:absolute;width:24%;right:-3%;bottom:-12%;border-radius:22px;box-shadow:0 30px 60px -16px rgba(0,0,0,.8)}
-.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:18px}.gallery figure{margin:0}.gallery img{display:block;width:100%;height:auto;border-radius:16px;border:1px solid var(--line)}.gallery figcaption{color:var(--fg2);font-size:14.5px;margin-top:10px}
-.lang{display:inline-flex;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--card);overflow:hidden}.lang button{border:0;background:none;color:var(--fg2);font:600 13px var(--font);padding:0 12px;cursor:pointer}.lang button.on{background:var(--fg);color:var(--bg)}
-h2{font-size:clamp(26px,3.4vw,38px);letter-spacing:-.04em;margin:0 0 8px;font-weight:800;text-wrap:balance}
-.sub{color:var(--fg2);margin:0 0 26px;max-width:60ch}
-section{padding-block:36px}
-.dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
-.card{background:var(--card);border-radius:22px;padding:24px;display:flex;flex-direction:column;gap:12px;min-width:0}
-.card h3{margin:0;font-size:21px;letter-spacing:-.03em}.card p{margin:0;color:var(--fg2);font-size:14.5px}
-.meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--fg3);font-variant-numeric:tabular-nums}
-.meta span{padding:3px 10px;border-radius:999px;background:var(--card2)}
-.card .btn{margin-top:auto;align-self:flex-start}
-.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:14px}
-.feat div{padding:20px;border-radius:18px;border:1px solid var(--line);min-width:0}.feat b{display:block;margin-bottom:4px;font-size:16.5px}.feat span{color:var(--fg2);font-size:14.5px}
-.acc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
-@media(max-width:820px){.hero,.acc{grid-template-columns:1fr}.shots .s2{width:30%;right:2%;bottom:-10%}.hero{gap:32px}}
-label{display:block;font-size:13px;font-weight:600;color:var(--fg2);margin:10px 0 6px}
-input{width:100%;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:500 15.5px var(--font);padding:0 14px}
-input:focus-visible,.btn:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.note{font-size:13.5px;color:var(--fg3);margin:10px 0 0}.ok{color:var(--fg)}
-footer{padding-block:32px 8px;color:var(--fg3);font-size:13.5px;border-top:1px solid var(--line);margin-top:24px}
-@media(prefers-reduced-motion:reduce){.bgnote{animation:none}}
-
-.tabs{display:flex;gap:4px;padding:4px;border-radius:999px;background:var(--card2);margin-bottom:6px}.tabs button{flex:1;height:38px;border:0;border-radius:999px;background:transparent;color:var(--fg2);font:600 14.5px var(--font);cursor:pointer}.tabs button.on{background:var(--accent);color:var(--ink)}
-.soc{display:grid;gap:10px;margin-top:6px}.soc button{display:flex;align-items:center;justify-content:center;gap:10px;height:46px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 15px var(--font);cursor:pointer}.soc button:hover{background:var(--card2)}.soc svg{width:20px;height:20px}
-.or{display:flex;align-items:center;gap:12px;color:var(--fg3);font-size:13px;margin:14px 0 2px}.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
-.linkbtn{background:none;border:0;color:var(--fg2);font:500 13.5px var(--font);text-decoration:underline;cursor:pointer;padding:6px 0}
-.me{display:flex;align-items:center;gap:14px}.me img{width:56px;height:56px;border-radius:50%}.me b{display:block;font-size:18px}.me span{color:var(--fg2);font-size:14px}
-button:disabled{opacity:.6;cursor:default}.note.ok{color:var(--fg)}
-
-/* ===== вид сайта: телефон / ПК ===== */
-.brand{white-space:nowrap}
-.vtoggle{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg2);font:600 13.5px var(--font);cursor:pointer}
-.vtoggle:hover{color:var(--fg)}.vtoggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.dock{display:none}
-html[data-view="mobile"] .wrap{max-width:520px;padding-block:14px 96px}
-html[data-view="mobile"] nav{flex-wrap:wrap;padding-block:4px 20px;row-gap:10px}
-html[data-view="mobile"] nav .links{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-4px;padding-bottom:2px}
-html[data-view="mobile"] nav .links::-webkit-scrollbar{display:none}
-html[data-view="mobile"] nav .links a,html[data-view="mobile"] .vtoggle{flex:none;white-space:nowrap;background:var(--card)}
-html[data-view="mobile"] nav{position:relative}html[data-view="mobile"] .vtoggle{position:absolute;right:0;top:4px}
-html[data-view="mobile"] .hero,html[data-view="mobile"] .acc{grid-template-columns:1fr;gap:28px}
-html[data-view="mobile"] .hero{padding-block:4px 36px}
-html[data-view="mobile"] h1{font-size:clamp(34px,10.5vw,46px);margin-bottom:14px}
-html[data-view="mobile"] .lead{font-size:16.5px;margin-bottom:22px}
-html[data-view="mobile"] .btns{flex-direction:column}
-html[data-view="mobile"] .btns .btn{width:100%;justify-content:center;height:52px}
-html[data-view="mobile"] .shots .s2{display:none}
-html[data-view="mobile"] .shots img{border-radius:14px}
-html[data-view="mobile"] section{padding-block:26px}
-html[data-view="mobile"] .card{padding:20px;border-radius:20px}
-html[data-view="mobile"] .card .btn{align-self:stretch;justify-content:center}
-html[data-view="mobile"] .feat{grid-template-columns:1fr}
-html[data-view="mobile"] .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;gap:10px;padding:10px max(14px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--line);transform:translateY(110%);transition:transform .3s}
-html[data-view="mobile"] .dock.show{transform:none}
-html[data-view="mobile"] .dock .btn{flex:1;justify-content:center;height:48px;padding:0 14px}
-html[data-view="mobile"] footer{text-align:center}
-html[data-view="desktop"] .dock{display:none}
-.how{margin-top:12px;font-size:14px;color:var(--fg2)}.how summary{cursor:pointer;font-weight:600;color:var(--fg)}.how ol{margin:10px 0 0 18px;display:grid;gap:6px;line-height:1.5}
-/* Тонкие заголовки: Inter Display Thin (свободная лицензия OFL, файл и лицензия лежат в assets/fonts) — одинаково на всех устройствах. */
-@font-face{font-family:"Puro Thin";src:url("assets/fonts/InterDisplay-Thin.woff") format("woff");font-weight:100 300;font-style:normal;font-display:swap}
-h1,h2{font-family:"Puro Thin",var(--font);font-weight:200;letter-spacing:-.02em}
-</style></head><body>
-<div class="glow"></div>
-<div class="dock" id="dock"><a class="btn primary" id="dock-dl" href="https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk" download>Скачать</a><a class="btn" href="app/">В браузере</a></div>
-<svg class="bgnote" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg>
-<div class="wrap">
-<nav><a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg></span>Puro Cielo</a>
-<div class="links"><a href="#download">Скачать</a><a href="#features">Возможности</a><a href="app/">Открыть плеер</a><a href="#account" id="nav-login">Войти</a><button type="button" class="vtoggle" id="vtoggle" aria-label="Переключить вид сайта"></button><span class="lang" id="lang" data-notr><button type="button" data-l="ru">RU</button><button type="button" data-l="en">EN</button></span></div></nav>
-<div class="hero" id="top">
-<div><h1>Ваша музыка. Без лишнего.</h1>
-<p class="lead">Плеер для файлов на вашем компьютере и телефоне: обложки, артисты, текст песен с караоке и спокойный серо-белый интерфейс.</p>
-<div class="btns"><a class="btn primary" id="hero-win" href="https://github.com/PuroCielo/PuroCielo/releases/download/windows-1.7.0/PuroCielo-Setup.exe" download><svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>Скачать для Windows</a><a class="btn" href="#features">Что внутри</a></div><p class="note" id="hero-note"></p></div>
-<div class="shots"><img src="assets/shot-home.jpg" width="1440" height="900" alt="Главный экран Puro Cielo"><img class="s2" src="assets/shot-mobile.jpg" width="390" height="844" alt="Экран «Сейчас играет» на телефоне" loading="lazy"></div>
-</div>
-<section id="download"><h2>Скачать</h2><p class="sub">Установка без регистрации и без рекламы. Музыка остаётся на вашем устройстве.</p>
-<div class="dl">
-<div class="card"><h3>Windows</h3><p>Установщик с ярлыком на рабочем столе. Windows 10 и новее.</p><div class="meta"><span>версия 1.7.0</span><span>≈ 85 МБ</span><span>.exe</span></div><a class="btn primary" id="dl-win" href="https://github.com/PuroCielo/PuroCielo/releases/download/windows-1.7.0/PuroCielo-Setup.exe" download>Скачать .exe</a></div>
-<div class="card"><h3>Android</h3><p>Выбираете папку с музыкой или добавляете треки по одному. Работает с экрана блокировки.</p><div class="meta"><span data-version>версия 1.11.2</span><span>.apk</span></div><a class="btn primary" id="dl-apk" href="https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk" download>Скачать .apk</a></div>
-<div class="card"><h3>В браузере</h3><p>Ничего не устанавливается: откройте и перетащите файлы в окно.</p><div class="meta"><span>Chrome, Edge, Safari</span></div><a class="btn" id="dl-web" href="app/">Открыть</a></div>
-</div>
-</section>
-<section id="features"><h2>Что умеет</h2><p class="sub">Всё, что нужно для своей коллекции.</p>
-<div class="feat">
-<div><b>Своя библиотека</b><span>Альбомы, синглы, артисты и плейлисты собираются из тегов ваших файлов.</span></div>
-<div><b>Тексты песен</b><span>Ищет текст в файле, в .lrc и на Genius, Lyrics.com, AZLyrics, Text-pesni и Vse-pesni. Синхронизированный текст идёт вместе с песней.</span></div>
-<div><b>Миксы для вас</b><span>Пять подборок по вашим лайкам и прослушиваниям. Лента, сетка или список на главной.</span></div>
-<div><b>Синхронизация</b><span>Войдите в аккаунт — лайки, плейлисты, обложки и настройки одинаковые на телефоне и компьютере.</span></div>
-<div><b>Итоги и умные плейлисты</b><span>Сколько и что вы слушали за неделю, месяц, год. Плейлисты, которые собираются сами по правилам.</span></div>
-<div><b>Эквалайзер и переходы</b><span>Готовые настройки звука или своя. Плавный переход между треками и режим без пауз.</span></div>
-<div><b>Перевод и данные треков</b><span>Перевод текста строчкой под оригиналом. Название, артист, альбом и обложка из MusicBrainz.</span></div>
-<div><b>Русский и English</b><span>Язык интерфейса, плотность, углы, фон, резервная копия — в настройках.</span></div>
-<div><b>Живой фон</b><span>Мягкое свечение в цвет обложки песни, которая сейчас играет.</span></div>
-</div></section>
-
-<section id="screens"><h2>Как выглядит</h2><p class="sub">Текст песни идёт вместе с музыкой, а «Итоги» показывают, что вы слушали.</p>
-<div class="gallery"><figure><img src="assets/shot-np.jpg" width="1440" height="900" alt="Экран «Сейчас играет» с текстом песни" loading="lazy"><figcaption>Сейчас играет: обложка, текст песни, эквалайзер и очередь в одном месте.</figcaption></figure>
-<figure><img src="assets/shot-stats.jpg" width="1440" height="900" alt="Экран «Итоги»" loading="lazy"><figcaption>Итоги: минуты музыки, любимые артисты и самые прослушиваемые песни.</figcaption></figure></div></section>
-<section id="account"><h2>Аккаунт</h2><p class="sub">Войдите через Google, GitHub, Microsoft или почту — и тем же аккаунтом в плеере. Ник может занять только один человек.</p>
-<div class="acc"><div class="card">
+<script>
+/* Применяем тему до первого кадра, чтобы страница не вспыхивала при загрузке. */
+(function(){var t='';try{t=localStorage.getItem('puro.site.theme')}catch(e){}if(t!=='light'&&t!=='dark')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})();
+</script>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержимому</a>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="#top" aria-label="Puro Cielo — на главную"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M13.43 2.24L12.91 2.63L12.55 3.28L12.30 4.06L12.12 4.85L11.96 5.64L11.80 6.41L11.61 7.17L11.41 7.92L11.20 8.67L11.00 9.43L10.81 10.21L10.63 10.99L10.47 11.79L10.30 12.57L10.11 13.35L9.90 14.09L9.65 14.80L9.31 15.38L8.79 15.69L8.04 15.66L7.17 15.46L6.32 15.38L5.57 15.52L4.85 15.80L4.11 16.11L3.38 16.45L2.74 16.92L2.28 17.56L2.05 18.35L2.05 19.16L2.31 19.87L2.77 20.46L3.38 20.93L4.07 21.29L4.82 21.55L5.60 21.72L6.41 21.79L7.23 21.78L8.04 21.67L8.83 21.48L9.58 21.21L10.29 20.85L10.94 20.42L11.51 19.92L11.99 19.34L12.37 18.70L12.69 18.01L12.95 17.27L13.17 16.52L13.36 15.74L13.56 14.97L13.75 14.20L13.94 13.43L14.13 12.66L14.32 11.89L14.51 11.12L14.71 10.36L14.90 9.59L15.11 8.82L15.31 8.04L15.53 7.26L15.79 6.56L16.31 6.33L17.03 6.56L17.76 6.94L18.43 7.43L19.02 8.00L19.50 8.62L19.93 9.29L20.36 9.97L20.86 10.62L21.34 10.79L21.71 10.26L21.93 9.52L22.02 8.73L21.97 7.92L21.80 7.13L21.52 6.37L21.12 5.67L20.64 5.04L20.07 4.50L19.45 4.02L18.77 3.62L18.06 3.30L17.33 3.05L16.58 2.85L15.81 2.66L14.98 2.42L14.15 2.22zM6.64 17.64L6.75 17.63L6.85 17.63L6.96 17.63L7.07 17.63L7.17 17.64L7.28 17.66L7.38 17.68L7.48 17.70L7.58 17.72L7.68 17.76L7.78 17.79L7.87 17.83L7.95 17.87L8.04 17.92L8.11 17.96L8.19 18.02L8.25 18.07L8.31 18.13L8.36 18.20L8.41 18.26L8.44 18.33L8.47 18.40L8.49 18.48L8.50 18.55L8.50 18.63L8.49 18.71L8.47 18.79L8.45 18.87L8.41 18.95L8.38 19.03L8.33 19.10L8.28 19.17L8.22 19.24L8.16 19.30L8.09 19.36L8.02 19.41L7.94 19.46L7.86 19.50L7.77 19.53L7.68 19.56L7.59 19.59L7.49 19.61L7.39 19.63L7.29 19.64L7.19 19.65L7.08 19.66L6.97 19.66L6.87 19.66L6.76 19.65L6.65 19.64L6.54 19.63L6.44 19.61L6.33 19.59L6.23 19.57L6.13 19.54L6.04 19.51L5.94 19.47L5.86 19.44L5.77 19.39L5.70 19.35L5.62 19.30L5.56 19.25L5.50 19.19L5.45 19.14L5.41 19.07L5.37 19.01L5.35 18.94L5.33 18.87L5.32 18.80L5.33 18.72L5.34 18.64L5.36 18.56L5.38 18.48L5.42 18.41L5.46 18.33L5.50 18.25L5.56 18.18L5.62 18.11L5.68 18.05L5.75 17.99L5.82 17.93L5.90 17.88L5.98 17.83L6.07 17.79L6.16 17.75L6.25 17.72L6.34 17.69L6.44 17.67L6.54 17.65zM11.76 12.79L11.83 12.77L11.91 12.76L12.00 12.75L12.08 12.76L12.17 12.78L12.25 12.81L12.34 12.85L12.41 12.89L12.49 12.94L12.55 13.00L12.61 13.06L12.66 13.13L12.70 13.20L12.73 13.28L12.74 13.36L12.76 13.44L12.76 13.53L12.76 13.62L12.75 13.71L12.74 13.81L12.73 13.90L12.71 14.00L12.69 14.11L12.68 14.21L12.66 14.32L12.64 14.42L12.62 14.53L12.60 14.64L12.58 14.74L12.56 14.85L12.53 14.95L12.50 15.05L12.48 15.15L12.44 15.25L12.41 15.34L12.37 15.43L12.33 15.51L12.29 15.59L12.24 15.66L12.19 15.73L12.14 15.79L12.08 15.84L12.01 15.89L11.94 15.92L11.87 15.95L11.79 15.97L11.71 15.98L11.62 15.98L11.53 15.98L11.45 15.96L11.36 15.94L11.28 15.91L11.20 15.87L11.12 15.83L11.06 15.78L11.00 15.72L10.95 15.65L10.91 15.58L10.87 15.51L10.85 15.43L10.83 15.34L10.82 15.25L10.82 15.16L10.82 15.07L10.82 14.97L10.83 14.87L10.85 14.78L10.86 14.68L10.88 14.58L10.90 14.48L10.93 14.38L10.95 14.28L10.98 14.18L11.01 14.09L11.05 13.99L11.08 13.89L11.11 13.79L11.15 13.70L11.19 13.60L11.22 13.50L11.26 13.41L11.31 13.31L11.35 13.23L11.40 13.14L11.45 13.06L11.50 12.99L11.56 12.93L11.62 12.87L11.68 12.82zM12.88 8.50L12.96 8.49L13.04 8.48L13.12 8.49L13.20 8.51L13.28 8.54L13.35 8.58L13.43 8.62L13.50 8.68L13.56 8.74L13.62 8.80L13.67 8.88L13.71 8.95L13.74 9.03L13.76 9.11L13.77 9.20L13.78 9.28L13.78 9.37L13.77 9.47L13.76 9.56L13.74 9.66L13.73 9.76L13.71 9.86L13.69 9.96L13.67 10.06L13.65 10.17L13.63 10.28L13.61 10.38L13.59 10.49L13.57 10.59L13.55 10.69L13.52 10.80L13.50 10.89L13.47 10.99L13.44 11.08L13.41 11.17L13.38 11.25L13.34 11.33L13.30 11.40L13.25 11.47L13.20 11.53L13.15 11.58L13.09 11.63L13.03 11.67L12.96 11.69L12.89 11.71L12.81 11.72L12.73 11.73L12.65 11.72L12.56 11.70L12.48 11.68L12.39 11.65L12.31 11.61L12.24 11.57L12.17 11.52L12.11 11.46L12.05 11.40L12.00 11.33L11.97 11.25L11.94 11.18L11.92 11.10L11.91 11.01L11.90 10.92L11.90 10.83L11.91 10.74L11.92 10.64L11.93 10.55L11.95 10.45L11.96 10.36L11.98 10.26L12.00 10.16L12.03 10.06L12.05 9.97L12.08 9.87L12.11 9.77L12.14 9.68L12.17 9.58L12.20 9.48L12.24 9.39L12.28 9.29L12.32 9.19L12.36 9.10L12.41 9.01L12.45 8.92L12.50 8.84L12.56 8.76L12.62 8.69L12.68 8.63L12.74 8.57L12.81 8.53zM13.96 4.25L14.03 4.24L14.10 4.24L14.18 4.25L14.26 4.27L14.33 4.30L14.41 4.34L14.48 4.39L14.55 4.44L14.61 4.50L14.67 4.57L14.72 4.64L14.76 4.71L14.80 4.79L14.82 4.87L14.84 4.95L14.85 5.04L14.85 5.12L14.85 5.21L14.84 5.30L14.82 5.39L14.81 5.49L14.79 5.59L14.77 5.68L14.75 5.79L14.72 5.89L14.70 5.99L14.68 6.09L14.65 6.19L14.62 6.30L14.60 6.40L14.57 6.49L14.53 6.59L14.50 6.68L14.46 6.77L14.43 6.86L14.38 6.94L14.34 7.02L14.30 7.09L14.25 7.15L14.19 7.21L14.14 7.27L14.08 7.31L14.02 7.35L13.95 7.38L13.88 7.40L13.81 7.41L13.73 7.41L13.65 7.40L13.57 7.38L13.49 7.36L13.41 7.33L13.33 7.29L13.26 7.24L13.20 7.19L13.14 7.13L13.08 7.07L13.04 7.00L13.00 6.93L12.98 6.85L12.96 6.76L12.95 6.68L12.95 6.59L12.96 6.50L12.96 6.40L12.98 6.31L13.00 6.21L13.02 6.12L13.04 6.02L13.06 5.92L13.08 5.83L13.11 5.73L13.13 5.63L13.16 5.54L13.19 5.45L13.22 5.35L13.26 5.26L13.29 5.16L13.33 5.07L13.37 4.98L13.41 4.89L13.45 4.80L13.50 4.71L13.54 4.63L13.59 4.55L13.65 4.48L13.70 4.42L13.76 4.36L13.82 4.31L13.89 4.28z"/></svg></span>Puro Cielo</a>
+    <nav class="nav-links" aria-label="Навигация по сайту">
+      <a href="#features">Возможности</a><a href="#download">Скачать</a><a class="nav-player" href="app/">Открыть плеер</a><a href="#account">Аккаунт</a>
+    </nav>
+    <div class="header-actions">
+      <button class="icon-button" id="theme-toggle" type="button" aria-label="Тёмная тема" aria-pressed="false" title="Сменить тему"><svg class="icon theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 13.4A9 9 0 0 1 10.6 3.2a9 9 0 1 0 10.2 10.2Z"/></svg><svg class="icon theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 1v2m0 18v2M1 12h2m18 0h2M4 4l1.5 1.5m13 13L20 20M4 20l1.5-1.5m13-13L20 4"/></svg></button>
+      <div class="lang" id="lang" data-notr role="group" aria-label="Language"><button type="button" data-l="ru">RU</button><button type="button" data-l="en">EN</button></div>
+      <a class="btn primary small" href="#account" id="nav-login">Войти</a>
+    </div>
+  </div>
+</header>
+<main class="container" id="main">
+  <div class="hero" id="top">
+    <div>
+      <p class="eyebrow">Ваши файлы. Ваш любимый звук.</p>
+      <h1><span>Ваша музыка.</span><span>Ваше пространство.</span></h1>
+      <p class="lead">Плеер для ваших файлов. Тексты песен, обложки и плейлисты — на компьютере и телефоне.</p>
+      <div class="btns"><a class="btn primary" href="app/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>Открыть в браузере</a><a class="btn" href="#download"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg>Скачать</a></div>
+      <p class="note">Без рекламы. Без регистрации для прослушивания.</p>
+    </div>
+    <div class="hero-visual">
+      <div class="preview-window"><div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Puro Cielo</span></div><img src="assets/shot-home.jpg" width="1440" height="900" alt="Главный экран Puro Cielo" fetchpriority="high"></div>
+      <div class="preview-caption"><span>Ваша коллекция — в одном месте</span><a href="#screens">Посмотреть интерфейс</a></div>
+    </div>
+  </div>
+  <section id="download" aria-labelledby="download-title">
+    <div class="section-head"><h2 id="download-title">Музыка там, где вы.</h2><p>Выберите свой способ слушать. Файлы остаются на вашем устройстве.</p></div>
+    <div class="dl">
+      <article class="card download-card">
+        <div class="platform-head"><span class="platform-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.5 4v7H3Zm9-1.8L21 2v9h-9ZM3 12.5h7.5v7L3 18Zm9 0h9v9.5l-9-1.8Z" fill="currentColor" stroke="none"/></svg></span><div><h3>Windows</h3><small>Для компьютера</small></div></div>
+        <p>Установщик с ярлыком на рабочем столе. Windows 10 и новее.</p>
+        <div class="meta"><span>версия 1.7.0</span><span>≈ 85 МБ</span><span>.exe</span></div>
+        <a class="btn primary" id="dl-win" href="https://github.com/PuroCielo/PuroCielo/releases/download/windows-1.7.0/PuroCielo-Setup.exe" download><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg>Скачать .exe</a>
+      </article>
+      <article class="card download-card">
+        <div class="platform-head"><span class="platform-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4-2-3m12 3 2-3M4 10a8 8 0 0 1 16 0Zm0 3v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M8 20v3m8-3v3M1 12v6m22-6v6"/><path d="M8 7h.01M16 7h.01" stroke-width="2.5"/></svg></span><div><h3>Android</h3><small>Для телефона</small></div></div>
+        <p>Выберите папку с музыкой. Управляйте воспроизведением с экрана блокировки.</p>
+        <div class="meta"><span data-version>версия 1.11.2</span><span>Android 8.0+</span><span>.apk</span></div>
+        <a class="btn primary" id="dl-apk" href="https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk" download><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/></svg>Скачать .apk</a>
+      </article>
+      <article class="card download-card">
+        <div class="platform-head"><span class="platform-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg></span><div><h3>В браузере</h3><small>Без установки</small></div></div>
+        <p>Откройте плеер и добавьте свои файлы. Можно слушать прямо сейчас.</p>
+        <div class="meta"><span>Chrome, Edge, Safari</span><span>iPhone и iPad</span></div>
+        <a class="btn" id="dl-web" href="app/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>Открыть плеер</a>
+      </article>
+    </div>
+    <p class="install-note" id="ios-note" hidden>На iPhone и iPad плеер работает в браузере: откройте его в Safari и добавьте на экран «Домой».</p>
+  </section>
+  <section class="steps-section" aria-labelledby="steps-title">
+    <h2 id="steps-title">От файла до музыки — три шага</h2>
+    <ol class="steps">
+      <li><span class="step-no" aria-hidden="true">01</span><div><h3>Добавьте музыку</h3><p>Выберите файлы или папку с вашей коллекцией.</p></div></li>
+      <li><span class="step-no" aria-hidden="true">02</span><div><h3>Соберите плейлист</h3><p>Сохраните любимые песни под любое настроение.</p></div></li>
+      <li><span class="step-no" aria-hidden="true">03</span><div><h3>Нажмите Play</h3><p>Слушайте музыку с обложками и текстами песен.</p></div></li>
+    </ol>
+  </section>
+  <section id="features" aria-labelledby="features-title">
+    <div class="section-head"><h2 id="features-title">Всё для вашей коллекции.</h2><p>Любимые файлы, внимание к деталям и ничего лишнего между вами и музыкой.</p></div>
+    <div class="features">
+      <article class="card feature-card"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9H3Z"/><path d="M3 10h18"/></svg><h3>Своя библиотека</h3><p>Альбомы, артисты и плейлисты собираются из ваших файлов. Миксы помогают заново открыть любимое.</p></article>
+      <article class="card feature-card"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M5 10h14M5 15h8M5 20h10"/></svg><h3>Тексты рядом с музыкой</h3><p>Плеер ищет тексты песен онлайн и читает .lrc. Текст с метками времени идёт вместе с песней.</p></article>
+      <article class="card feature-card"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7A8 8 0 0 0 6 5L3 8m0-5v5h5M4 17a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/></svg><h3>На разных устройствах</h3><p>Войдите в аккаунт — лайки, плейлисты, обложки и настройки одинаковые на телефоне и компьютере.</p></article>
+    </div>
+    <div class="feature-details"><span>Эквалайзер и переходы</span><span>Итоги и умные плейлисты</span><span>Светлая и тёмная темы</span><span>Русский и English</span></div>
+  </section>
+  <section id="screens" aria-labelledby="screens-title">
+    <div class="section-head"><h2 id="screens-title">Создан для вашей музыки.</h2><p>Знакомьтесь с интерфейсом: сейчас играет и ваши музыкальные итоги.</p></div>
+    <div class="gallery">
+      <figure><img src="assets/shot-np.jpg" width="1440" height="900" alt="Экран «Сейчас играет» с текстом песни" loading="lazy"><figcaption>Сейчас играет: обложка, текст песни, эквалайзер и очередь в одном месте.</figcaption></figure>
+      <figure><img src="assets/shot-stats.jpg" width="1440" height="900" alt="Экран «Итоги»" loading="lazy"><figcaption>Итоги: минуты музыки, любимые артисты и самые прослушиваемые песни.</figcaption></figure>
+    </div>
+  </section>
+  <section id="account" aria-labelledby="account-title"><div class="section-head"><h2 id="account-title">Ваш аккаунт Puro Cielo</h2><p>Войдите через Google, GitHub, Microsoft или почту — и тем же аккаунтом в плеере. Ник может занять только один человек.</p></div>
+<div class="acc"><div class="card account-card">
 <div id="auth-off" hidden><h3>Вход скоро появится</h3><p>Владелец сайта ещё не подключил службу входа. Скачать и пользоваться плеером можно уже сейчас.</p></div>
-<div id="auth-on"><div id="auth-form-box"><div class="tabs"><button type="button" id="tab-in">Вход</button><button type="button" id="tab-up">Регистрация</button></div>
+<div id="auth-on"><div id="auth-form-box"><div class="tabs"><button type="button" id="tab-in" class="on">Вход</button><button type="button" id="tab-up">Регистрация</button></div>
 <div class="soc"><button type="button" data-provider="google"><svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.100 1.600l3-3C17.200 1.800 14.800.8 12 .8 7.700.8 4 3.300 2.200 6.900l3.500 2.700C6.600 7 9 5 12 5z"/><path fill="#4285F4" d="M23.200 12.300c0-.8-.1-1.500-.2-2.200H12v4.200h6.300c-.3 1.400-1.100 2.600-2.300 3.400l3.500 2.700c2.100-1.900 3.700-4.800 3.700-8.100z"/><path fill="#FBBC05" d="M5.700 14.300c-.2-.6-.3-1.200-.3-1.800s.1-1.200.3-1.800L2.200 8C1.500 9.400 1.100 10.900 1.100 12.500s.4 3.100 1.100 4.500z"/><path fill="#34A853" d="M12 24.200c3.200 0 5.900-1.100 7.900-2.900l-3.500-2.700c-1 .7-2.400 1.100-4.400 1.100-3 0-5.500-2-6.300-4.700L2.200 17.700C4 21.300 7.700 24.200 12 24.200z"/></svg>Продолжить с Google</button><button type="button" data-provider="github"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.500 11.500 0 0 0-3.600 22.400c.6.100.8-.3.8-.6v-2c-3.200.7-3.900-1.400-3.900-1.400-.5-1.300-1.300-1.700-1.300-1.700-1-.7.100-.7.100-.7 1.200.1 1.800 1.200 1.800 1.200 1 1.800 2.700 1.300 3.400 1 .1-.8.400-1.300.7-1.600-2.600-.3-5.300-1.300-5.300-5.700 0-1.300.5-2.300 1.200-3.100-.1-.3-.5-1.500.1-3.100 0 0 1-.3 3.200 1.200a11 11 0 0 1 5.800 0c2.200-1.500 3.200-1.200 3.200-1.200.6 1.600.2 2.800.1 3.100.8.800 1.200 1.800 1.200 3.100 0 4.400-2.700 5.400-5.300 5.700.4.400.8 1.100.8 2.200v3.200c0 .3.200.7.800.6A11.500 11.500 0 0 0 12 .5z"/></svg>Продолжить с GitHub</button><button type="button" data-provider="microsoft"><svg viewBox="0 0 24 24"><path fill="#F25022" d="M2 2h9.500v9.500H2z"/><path fill="#7FBA00" d="M12.500 2H22v9.500h-9.500z"/><path fill="#00A4EF" d="M2 12.500h9.500V22H2z"/><path fill="#FFB900" d="M12.500 12.500H22V22h-9.500z"/></svg>Продолжить с Microsoft</button></div>
 <div class="or">или по почте</div>
 <form id="auth-form"><div id="f-name-wrap" hidden><label for="auth-user">Ник (уникальный)</label><input id="auth-user" maxlength="24" autocomplete="username" placeholder="например, listener"><label for="auth-name">Имя</label><input id="auth-name" maxlength="40" autocomplete="name"></div>
@@ -143,40 +103,22 @@ h1,h2{font-family:"Puro Thin",var(--font);font-weight:200;letter-spacing:-.02em}
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px"><button class="btn primary" id="auth-go" type="submit">Войти</button><button class="linkbtn" id="auth-reset" type="button">Забыли пароль?</button></div></form></div>
 <div id="auth-me" hidden><div class="me"><img id="me-photo" alt="" hidden><div><b id="me-name"></b><span id="me-nick" style="display:block"></span><span id="me-mail"></span></div></div><div id="claim-box" hidden style="margin-top:18px"><form id="claim-form"><label for="claim-user">Выберите ник</label><input id="claim-user" maxlength="24" placeholder="например, listener" autocomplete="off"><p class="note" id="claim-msg" role="status"></p><button class="btn primary" type="submit" style="margin-top:10px">Занять ник</button></form></div><div class="btns" style="margin-top:18px"><a class="btn primary" href="app/">Открыть плеер</a><button class="btn" id="auth-out" type="button">Выйти</button></div></div></div>
 </div>
-<div class="card"><h3>Зачем аккаунт</h3><p>Войдите тем же аккаунтом в плеере (Настройки → Аккаунт) — лайки, плейлисты, прослушивания, свои обложки и настройки станут общими для всех ваших устройств. Сама музыка остаётся на каждом устройстве и никуда не загружается.</p></div></div></section>
-<footer><button type="button" class="linkbtn" id="vtoggle2"></button><br>Puro Cielo <span data-v>1.11.2</span> · Музыка остаётся на ваших устройствах; в облако уходят только лайки, плейлисты и настройки — если вы вошли в аккаунт.</footer>
-</div>
-
-<script>
-/* Вид сайта: сам определяется по устройству, переключается кнопкой «Вид», выбор запоминается. */
-(function(){
-var ua=navigator.userAgent,KEY='puro.site.view';
-var touch=/Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-var os=/Android/i.test(ua)?'android':/iPhone|iPad|iPod/i.test(ua)?'ios':'desktop';
-var saved='';try{saved=localStorage.getItem(KEY)||''}catch(e){}
-var view=saved||(touch?'mobile':'desktop');
-var meta=document.querySelector('meta[name=viewport]');
-var ICON={mobile:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',desktop:'<svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>'};
-function apply(v){
-  view=v;document.documentElement.dataset.view=v;
-  /* «версия для ПК» на телефоне: страница рисуется шире и масштабируется, как в обычном десктопном режиме */
-  meta.setAttribute('content',v==='desktop'&&touch?'width=1120':'width=device-width,initial-scale=1');
-  var label=v==='mobile'?'Версия для ПК':'Версия для телефона',ic=v==='mobile'?ICON.mobile:ICON.desktop;
-  var b1=document.getElementById('vtoggle'),b2=document.getElementById('vtoggle2');
-  if(b1)b1.innerHTML=ic+label;if(b2)b2.textContent=label;
-}
-function go(){var n=view==='mobile'?'desktop':'mobile';try{localStorage.setItem(KEY,n)}catch(e){}apply(n);window.scrollTo(0,0)}
-apply(view);
-['vtoggle','vtoggle2'].forEach(function(id){var b=document.getElementById(id);if(b)b.addEventListener('click',go)});
-/* главная кнопка скачивания подбирается под устройство */
-var hero=document.getElementById('hero-win'),note=document.getElementById('hero-note'),dock=document.getElementById('dock-dl');
-var DL='<svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>';
-if(os==='android'){hero.href='https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk';hero.innerHTML=DL+'Скачать для Android';note.textContent='Для Windows установщик ниже, в разделе «Скачать».';dock.textContent='Скачать APK'}
-else if(os==='ios'){hero.href='app/';hero.removeAttribute('download');hero.innerHTML='Открыть плеер';note.textContent='На iPhone и iPad плеер работает в браузере: откройте его в Safari и добавьте на экран «Домой».';dock.href='app/';dock.removeAttribute('download');dock.textContent='Открыть плеер'}
-else{note.textContent='Android-версия и плеер в браузере ниже.';dock.href='https://github.com/PuroCielo/PuroCielo/releases/download/windows-1.7.0/PuroCielo-Setup.exe';dock.textContent='Скачать для Windows'}
-/* нижняя панель скачивания в телефонном виде появляется после первого экрана */
-var d=document.getElementById('dock');function sc(){d.classList.toggle('show',scrollY>420)}addEventListener('scroll',sc,{passive:true});sc();
-})();
-</script>
+<aside class="account-info"><h3>Одна коллекция. Разные устройства.</h3>
+<p>Войдите тем же аккаунтом в плеере, чтобы синхронизировать любимое между телефоном и компьютером.</p>
+<ul class="account-benefits">
+<li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 5.5a5 5 0 0 0-7 0L12 7l-1.5-1.5a5 5 0 0 0-7 7L12 21l8.5-8.5a5 5 0 0 0 0-7Z"/></svg><div><b>Лайки и плейлисты</b><span>Ваши подборки рядом на каждом устройстве.</span></div></li>
+<li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7A8 8 0 0 0 6 5L3 8m0-5v5h5M4 17a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/></svg><div><b>Обложки и настройки</b><span>Сохраните свой стиль и данные треков.</span></div></li>
+<li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg><div><b>Музыка остаётся у вас</b><span>Аудиофайлы не загружаются в аккаунт.</span></div></li>
+</ul>
+<p class="privacy">Аккаунт нужен для синхронизации. Скачивать плеер и слушать музыку можно без регистрации.</p>
+</aside></div></section>
+</main>
+<footer class="container">
+  <div><a class="brand" href="#top">Puro Cielo <span data-v>1.11.2</span></a><p>Ваша музыка остаётся на ваших устройствах. Аккаунт объединяет лайки, плейлисты и настройки.</p></div>
+  <nav class="footer-links" aria-label="Ссылки внизу страницы"><a href="#download">Скачать</a><a href="app/">Открыть плеер</a><a href="#account" data-register>Регистрация</a><a href="https://github.com/PuroCielo/PuroCielo">GitHub</a></nav>
+</footer>
+<div class="dock" id="dock" role="region" aria-label="Быстрый запуск"><a class="btn primary" href="app/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none"/></svg>Открыть плеер</a><a class="btn" id="dock-dl" href="https://github.com/PuroCielo/PuroCielo/releases/download/windows-1.7.0/PuroCielo-Setup.exe" download>Для Windows</a></div>
+<script src="site.js"></script>
 <script src="site-i18n.js"></script>
-<script type="module" src="auth.js"></script></body></html>
+<script type="module" src="auth.js"></script>
+</body></html>
