@@ -938,6 +938,19 @@ select.input { appearance: auto; }
 .dup-row.keep .dup-badge { background: var(--text); color: var(--bg); }
 .page-head-r .btn { white-space: nowrap; }
 @media (max-width: 899px) { .dup-group > header { flex-wrap: wrap; } .dup-badge { display: none; } .dup-row.keep .dup-badge { display: inline-block; } }
+
+/* ---------- 1.11.1: тёмная тема — фон тоже движется ---------- */
+/* Главная: в цветной полосе сверху плывут те же «облака» из цветов обложки (книзу растворяются в чёрном).
+   Остальные страницы: свечение в углу медленно плавает. Музыка на паузе — всё замирает. */
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-clouds { display: block; -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .6) 36%, transparent 78%); mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .6) 36%, transparent 78%); }
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-clouds.on { opacity: .5; }
+:root:not([data-theme="light"]) .bg-clouds i:nth-child(4) { bottom: auto; top: -8vmax; left: 34vmax; }
+:root:not([data-theme="light"]) .bg-clouds i:nth-child(5) { bottom: auto; top: -18vmax; right: 24vmax; }
+:root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-clouds.on ~ .bg-top { opacity: .34; }
+.bg-glow { animation: glowDrift 17s ease-in-out infinite alternate; will-change: transform; }
+@keyframes glowDrift { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(16vmax, 5vmax) scale(1.18); } 100% { transform: translate(6vmax, 14vmax) scale(.92); } }
+:root:not(.is-playing) .bg-glow, :root.no-bg-anim .bg-glow { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .bg-glow { animation: none; } }
 </style>
 </head>
 <body>
@@ -1162,6 +1175,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1338,7 +1384,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -8612,6 +8658,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -8623,7 +8702,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
