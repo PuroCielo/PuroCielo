@@ -91,6 +91,9 @@ html[data-view="mobile"] .dock .btn{flex:1;justify-content:center;height:48px;pa
 html[data-view="mobile"] footer{text-align:center}
 html[data-view="desktop"] .dock{display:none}
 .how{margin-top:12px;font-size:14px;color:var(--fg2)}.how summary{cursor:pointer;font-weight:600;color:var(--fg)}.how ol{margin:10px 0 0 18px;display:grid;gap:6px;line-height:1.5}
+/* Тонкие заголовки: Inter Display Thin (свободная лицензия OFL, файл и лицензия лежат в assets/fonts) — одинаково на всех устройствах. */
+@font-face{font-family:"Puro Thin";src:url("assets/fonts/InterDisplay-Thin.woff") format("woff");font-weight:100 300;font-style:normal;font-display:swap}
+h1,h2{font-family:"Puro Thin",var(--font);font-weight:200;letter-spacing:-.02em}
 </style></head><body>
 <div class="glow"></div>
 <div class="dock" id="dock"><a class="btn primary" id="dock-dl" href="https://github.com/PuroCielo/PuroCielo/releases/latest/download/PuroCielo.apk" download>Скачать</a><a class="btn" href="app/">В браузере</a></div>
