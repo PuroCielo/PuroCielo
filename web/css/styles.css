@@ -942,3 +942,15 @@ select.input { appearance: auto; }
 @media (min-width: 900px) and (max-height: 620px) { .np-viz { display: none; } .np-art { width: min(100%, max(120px, calc(100vh - 400px))); } }
 /* телефон: в шапке «Дубликатов» и «Песен без данных» кнопки не помещались и уезжали за край */
 @media (max-width: 899px) { .page-head-r { flex-wrap: wrap; row-gap: 8px; } .page-head-r a.btn[href="#/settings"] { display: none; } }
+
+/* Новая тема раскрывается от нажатой кнопки, как на странице скачивания. */
+html.player-theme-reveal *,
+html.player-theme-reveal *::before,
+html.player-theme-reveal *::after { transition: none !important; }
+html.player-theme-reveal::view-transition { pointer-events: none; }
+html.player-theme-reveal::view-transition-group(root) { animation: none; }
+html.player-theme-reveal::view-transition-old(root),
+html.player-theme-reveal::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.player-theme-reveal::view-transition-old(root) { z-index: 1; }
+html.player-theme-reveal::view-transition-new(root) { z-index: 2; clip-path: var(--player-theme-from); }
+.player-theme-cover { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }

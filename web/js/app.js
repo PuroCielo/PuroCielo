@@ -364,10 +364,10 @@ function doAction(el, e) {
             quickEdit('lyricsProxy');
             break;
         case 'set-theme':
-            applyTheme(d.v);
+            applyTheme(d.v, el);
             break;
         case 'toggle-theme':
-            toggleTheme();
+            toggleTheme(el);
             break;
         case 'home-view':
             setSetting('homeView', d.v);
