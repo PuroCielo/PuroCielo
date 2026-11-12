@@ -222,15 +222,21 @@ footer .brand { font-size: 16px; }
   .download-card .btn { padding-inline: 12px; }
   .account-card { padding: 20px; }
 }
-/* Цвета меняются синхронно; при первой загрузке переход не включается. */
-html.theme-changing,
-html.theme-changing *,
-html.theme-changing *::before,
-html.theme-changing *::after {
-  transition: background-color .36s ease, color .36s ease, border-color .36s ease,
-    box-shadow .36s ease, outline-color .36s ease, fill .36s ease, stroke .36s ease,
-    transform .18s ease, opacity .18s ease;
+/* Снимки обеих тем остаются чёткими, новая раскрывается кругом от кнопки. */
+html.theme-reveal,
+html.theme-reveal *,
+html.theme-reveal *::before,
+html.theme-reveal *::after { transition: none !important; }
+html.theme-reveal::view-transition { pointer-events: none; }
+html.theme-reveal::view-transition-group(root) { animation: none; }
+html.theme-reveal::view-transition-old(root),
+html.theme-reveal::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.theme-reveal::view-transition-old(root) { z-index: 1; }
+html.theme-reveal::view-transition-new(root) {
+  z-index: 2;
+  clip-path: circle(0 at var(--theme-x) var(--theme-y));
 }
+.theme-cover { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; }
