@@ -39,13 +39,15 @@ function draw() {
         return;
     const d = win.document, t = current(), $ = s => d.querySelector(s);
     if (!t) {
+        delete $('.box').dataset.track;
         $('.box').innerHTML = `<div class="empty">Ничего не играет.<br>Включите песню в плеере.</div>`;
         $('.bg').style.backgroundImage = '';
         d.title = 'Puro Cielo';
         return;
     }
-    if ($('.box').dataset.id !== t.id) {
-        $('.box').dataset.id = t.id;
+    const trackKey = JSON.stringify([t.id, t.title, t.artist, t.cover]);
+    if ($('.box').dataset.track !== trackKey) {
+        $('.box').dataset.track = trackKey;
         $('.box').innerHTML = `
       <div class="cov" ${t.cover ? `style="background-image:url('${t.cover}')"` : ''}>${t.cover ? '' : icon('note')}</div>
       <div class="t"><b>${esc(t.title)}</b><span>${esc(t.artist || '')}</span></div>

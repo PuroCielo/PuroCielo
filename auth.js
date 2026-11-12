@@ -20,12 +20,16 @@ function checkUser(n) {
 const human = e => ERR[e && e.code] || (e && e.message === 'taken' ? 'Этот ник уже занят. Выберите другой.' : 'Не получилось. Попробуйте ещё раз.');
 
 (async () => {
+  // Пока SDK загружается, форма не должна отправляться обычным GET-запросом.
+  $('#auth-form').addEventListener('submit', e => e.preventDefault());
+  const busy = on => document.querySelectorAll('#auth-on button').forEach(b => { b.disabled = on; });
+  busy(true);
   if (!firebaseConfig.apiKey) { $('#auth-off').hidden = false; $('#auth-on').hidden = true; return; }
   let A, F;
   try {
     const [{ initializeApp }, auth, fs] = await Promise.all([import(`${G}/firebase-app.js`), import(`${G}/firebase-auth.js`), import(`${G}/firebase-firestore.js`)]);
     A = auth; F = fs; var app = initializeApp(firebaseConfig); var a = auth.getAuth(app); var db = fs.getFirestore(app);
-  } catch { $('#auth-off').hidden = false; $('#auth-off p').textContent = 'Не удалось загрузить службу входа. Проверьте соединение.'; return; }
+  } catch { $('#auth-off').hidden = false; $('#auth-on').hidden = true; $('#auth-off p').textContent = 'Не удалось загрузить службу входа. Проверьте соединение.'; return; }
   let mode = 'in';
   const setMode = m => {
     mode = m; $('#tab-in').classList.toggle('on', m === 'in'); $('#tab-up').classList.toggle('on', m === 'up');
@@ -44,7 +48,6 @@ const human = e => ERR[e && e.code] || (e && e.message === 'taken' ? 'Этот �
       tx.set(F.doc(db, 'users', uid), { username: n, at: Date.now() }, { merge: true });
     });
   }
-  const busy = on => document.querySelectorAll('#auth-on button').forEach(b => { b.disabled = on; });
   $('#auth-form').addEventListener('submit', async e => {
     e.preventDefault(); const email = $('#auth-email').value.trim(), pass = $('#auth-pass').value; busy(true); msg('');
     try {
@@ -54,6 +57,7 @@ const human = e => ERR[e && e.code] || (e && e.message === 'taken' ? 'Этот �
         const c = await A.createUserWithEmailAndPassword(a, email, pass);
         const name = $('#auth-name').value.trim(); await A.updateProfile(c.user, { displayName: name || nick });
         try { await claim(c.user.uid, nick); } catch { /* ник заняли секунду назад: попросим выбрать другой ниже */ }
+        await refreshMe(c.user);
         try { await A.sendEmailVerification(c.user); msg('Аккаунт создан. Мы отправили письмо для подтверждения почты.', true); } catch { /* ignore */ }
       } else await A.signInWithEmailAndPassword(a, email, pass);
     } catch (err) { msg(human(err)); } finally { busy(false); }
@@ -82,4 +86,5 @@ const human = e => ERR[e && e.code] || (e && e.message === 'taken' ? 'Этот �
     $('#auth-form-box').hidden = !!u; $('#auth-me').hidden = !u; $('#nav-login').textContent = u ? (u.displayName || u.email || 'Профиль') : 'Войти';
     if (u) { refreshMe(u); $('#me-name').textContent = u.displayName || 'Слушатель'; $('#me-mail').textContent = u.email || ''; const ph = $('#me-photo'); if (u.photoURL) { ph.src = u.photoURL; ph.hidden = false; } else ph.hidden = true; }
   });
+  busy(false);
 })();

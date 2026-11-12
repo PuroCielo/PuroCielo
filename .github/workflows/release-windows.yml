@@ -1,24 +1,42 @@
 name: Release Windows
-# Выкладывает установщик для Windows в отдельный релиз (не «последний» — последним всегда идёт APK).
-# Запуск: положите новый установщик в репозиторий, затем Actions → Release Windows → Run workflow
-# (версия и путь к .exe), после выкладки файл из репозитория можно удалить.
 on:
   workflow_dispatch:
-    inputs:
-      version: { description: 'Версия, например 1.7.0', required: true, default: '1.7.0' }
-      file: { description: 'Путь к установщику в репозитории', required: true, default: 'PuroCielo-Setup.exe' }
+  push:
+    branches: [main]
+    paths: ['web/**', 'windows/**', '.github/workflows/release-windows.yml']
 permissions:
   contents: write
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cp "${{ inputs.file }}" PuroCielo-Setup.exe || true
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Install build dependencies
+        run: |
+          npm install --prefix web --no-save --no-audit --no-fund typescript@5
+          npm ci --prefix windows --no-audit --no-fund
+      - name: Build current player and Windows installer
+        run: |
+          npm run prepare-player --prefix windows
+          npm test --prefix windows
+          npm run build --prefix windows
+      - name: Test the packaged Windows application
+        run: npm run smoke --prefix windows
+      - name: Read shared version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./web/package.json').version"
+          "VERSION=$version" >> $env:GITHUB_ENV
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-${{ inputs.version }}
-          name: Puro Cielo для Windows ${{ inputs.version }}
-          body: Установщик для Windows.
+          tag_name: windows-${{ env.VERSION }}
+          name: Puro Cielo для Windows ${{ env.VERSION }}
           make_latest: false
-          files: PuroCielo-Setup.exe
+          files: windows/dist/PuroCielo-Setup.exe
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-build-log
+          path: windows/dist/builder-debug.yml

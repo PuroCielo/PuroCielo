@@ -19,6 +19,8 @@ jobs:
       - name: Собрать веб-плеер из web/
         run: |
           npm i --prefix web --no-save --no-audit --no-fund typescript@5
+          npx --prefix web playwright install chromium --with-deps
+          npm test --prefix web
           node web/build.js
           echo "VERSION=$(node -p "require('./web/package.json').version")" >> "$GITHUB_ENV"
       - name: Закоммитить сборку, если она отличается
@@ -34,6 +36,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.7' }
       - run: gradle -p android assembleDebug --no-daemon
+      - run: gradle -p android testDebugUnitTest --no-daemon
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk PuroCielo.apk
       - uses: softprops/action-gh-release@v2
         with:

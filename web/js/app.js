@@ -1206,6 +1206,10 @@ window.__puroBack = () => goBack();
 // команды из уведомления / наушников (Android)
 window.__puroCmd = c => { if (c === 'toggle')
     toggle();
+else if (c === 'play' && audio.paused)
+    toggle();
+else if (c === 'pause' && !audio.paused)
+    toggle();
 else if (c === 'next')
     next();
 else if (c === 'prev')

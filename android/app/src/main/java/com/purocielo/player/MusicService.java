@@ -24,8 +24,8 @@ public class MusicService extends Service {
         }
         session = new MediaSession(this, "PuroCielo");
         session.setCallback(new MediaSession.Callback() {
-            @Override public void onPlay() { cmd("toggle"); }
-            @Override public void onPause() { cmd("toggle"); }
+            @Override public void onPlay() { cmd("play"); }
+            @Override public void onPause() { cmd("pause"); }
             @Override public void onSkipToNext() { cmd("next"); }
             @Override public void onSkipToPrevious() { cmd("prev"); }
         });

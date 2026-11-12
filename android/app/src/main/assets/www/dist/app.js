@@ -1389,6 +1389,10 @@ window.__puroBack = () => goBack();
 window.__puroCmd = c => {
     if (c === 'toggle')
         (0, player_js_1.toggle)();
+    else if (c === 'play' && player_js_1.audio.paused)
+        (0, player_js_1.toggle)();
+    else if (c === 'pause' && !player_js_1.audio.paused)
+        (0, player_js_1.toggle)();
     else if (c === 'next')
         (0, player_js_1.next)();
     else if (c === 'prev')
@@ -4026,13 +4030,15 @@ function draw() {
         return;
     const d = win.document, t = (0, player_js_1.current)(), $ = s => d.querySelector(s);
     if (!t) {
+        delete $('.box').dataset.track;
         $('.box').innerHTML = `<div class="empty">Ничего не играет.<br>Включите песню в плеере.</div>`;
         $('.bg').style.backgroundImage = '';
         d.title = 'Puro Cielo';
         return;
     }
-    if ($('.box').dataset.id !== t.id) {
-        $('.box').dataset.id = t.id;
+    const trackKey = JSON.stringify([t.id, t.title, t.artist, t.cover]);
+    if ($('.box').dataset.track !== trackKey) {
+        $('.box').dataset.track = trackKey;
         $('.box').innerHTML = `
       <div class="cov" ${t.cover ? `style="background-image:url('${t.cover}')"` : ''}>${t.cover ? '' : (0, icons_js_1.icon)('note')}</div>
       <div class="t"><b>${(0, util_js_1.esc)(t.title)}</b><span>${(0, util_js_1.esc)(t.artist || '')}</span></div>
@@ -5423,8 +5429,10 @@ if ('mediaSession' in navigator) {
         }
         catch { /* unsupported */ }
     };
-    h('play', toggle);
-    h('pause', toggle);
+    h('play', () => { if (exports.audio.paused)
+        toggle(); });
+    h('pause', () => { if (!exports.audio.paused)
+        toggle(); });
     h('nexttrack', () => next());
     h('previoustrack', prev);
     h('seekto', d => seek(d.seekTime));
@@ -5952,6 +5960,7 @@ const firebase_config_js_1 = require("./firebase-config.js");
 const state_js_1 = require("./state.js");
 const util_js_1 = require("./util.js");
 const native_js_1 = require("./native.js");
+const db_js_1 = require("./db.js");
 // Синхронизация через аккаунт Puro Cielo (тот же Firebase, что и вход на сайте).
 // Между устройствами переносятся лайки, плейлисты (обычные и умные), счётчики прослушиваний, свои данные треков,
 // свои обложки, профиль, тема и настройки. Сама музыка остаётся на каждом устройстве.
@@ -6108,6 +6117,7 @@ async function applyRemote(R, uid) {
                     banner = b.data;
             }
             state_js_1.state.covers = covers;
+            await (0, db_js_1.kvSet)('covers', covers);
             state_js_1.state.profile.avatar = avatar;
             state_js_1.state.profile.banner = banner;
         }
@@ -6231,7 +6241,7 @@ function onUser(user) {
         }
     }).catch(() => { });
 }
-// на Android, когда файлы появились после синхронизации, привязываем к ним лайки и плейлисты
+// На Android файлы могут появиться после синхронизации: привязываем все данные треков.
 (0, state_js_1.on)('library', () => {
     if (applying || !uidNow)
         return;
@@ -6246,8 +6256,14 @@ function onUser(user) {
     state_js_1.state.likes = new Set([...state_js_1.state.likes].map(fix));
     for (const p of state_js_1.state.playlists)
         p.ids = p.ids.map(fix);
-    if (changed)
+    state_js_1.state.plays = mapKeys(state_js_1.state.plays, fix);
+    state_js_1.state.tagEdits = mapKeys(state_js_1.state.tagEdits, fix);
+    state_js_1.state.covers.t = mapKeys(state_js_1.state.covers.t, fix);
+    if (changed) {
         (0, state_js_1.save)();
+        (0, db_js_1.kvSet)('covers', state_js_1.state.covers);
+        (0, state_js_1.touchLibrary)();
+    }
 });
 // ---------- тексты песен в аккаунте ----------
 // Точно подобранный текст (совпали название и артист, либо его вписал сам пользователь) кладём в аккаунт,
@@ -6302,7 +6318,7 @@ async function initSync() {
     }
     catch { /* без интернета — синхронизации просто нет */ }
 }
-const canGoogle = () => !native_js_1.isNative; // во встроенном браузере Android вход через Google запрещён самим Google
+const canGoogle = () => !native_js_1.isNative && !(typeof window !== 'undefined' && window.PuroDesktop); // OAuth-popup не работает внутри нативных оболочек; доступен вход по почте.
 exports.canGoogle = canGoogle;
 async function signInGoogle() {
     set({ status: 'loading', error: '' });

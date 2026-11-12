@@ -2,6 +2,7 @@ import { firebaseConfig } from './firebase-config.js';
 import { emit, on, save, state, touchLibrary } from './state.js';
 import { hash } from './util.js';
 import { isNative } from './native.js';
+import { kvSet } from './db.js';
 
 // Синхронизация через аккаунт Puro Cielo (тот же Firebase, что и вход на сайте).
 // Между устройствами переносятся лайки, плейлисты (обычные и умные), счётчики прослушиваний, свои данные треков,
@@ -152,6 +153,7 @@ async function applyRemote(R, uid) {
                     banner = b.data;
             }
             state.covers = covers;
+            await kvSet('covers', covers);
             state.profile.avatar = avatar;
             state.profile.banner = banner;
         }
@@ -268,7 +270,7 @@ function onUser(user) {
         emit('settings', 'profile');
     } }).catch(() => { });
 }
-// на Android, когда файлы появились после синхронизации, привязываем к ним лайки и плейлисты
+// На Android файлы могут появиться после синхронизации: привязываем все данные треков.
 on('library', () => {
     if (applying || !uidNow)
         return;
@@ -279,8 +281,14 @@ on('library', () => {
     state.likes = new Set([...state.likes].map(fix));
     for (const p of state.playlists)
         p.ids = p.ids.map(fix);
-    if (changed)
+    state.plays = mapKeys(state.plays, fix);
+    state.tagEdits = mapKeys(state.tagEdits, fix);
+    state.covers.t = mapKeys(state.covers.t, fix);
+    if (changed) {
         save();
+        kvSet('covers', state.covers);
+        touchLibrary();
+    }
 });
 // ---------- тексты песен в аккаунте ----------
 // Точно подобранный текст (совпали название и артист, либо его вписал сам пользователь) кладём в аккаунт,
@@ -334,7 +342,7 @@ export async function initSync() {
     }
     catch { /* без интернета — синхронизации просто нет */ }
 }
-export const canGoogle = () => !isNative; // во встроенном браузере Android вход через Google запрещён самим Google
+export const canGoogle = () => !isNative && !(typeof window !== 'undefined' && window.PuroDesktop); // OAuth-popup не работает внутри нативных оболочек; доступен вход по почте.
 export async function signInGoogle() {
     set({ status: 'loading', error: '' });
     try {

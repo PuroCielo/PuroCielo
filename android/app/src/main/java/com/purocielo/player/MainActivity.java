@@ -24,6 +24,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.ValueCallback;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -42,11 +43,12 @@ import java.util.Map;
 /** Оболочка: WebView с сайтом из assets/www + доступ к одной выбранной папке с музыкой (SAF). */
 public class MainActivity extends Activity {
     static final String HOST = "puro.local";
-    static final int REQ_TREE = 41, REQ_NOTIF = 42, REQ_FILES = 43;
+    static final int REQ_TREE = 41, REQ_NOTIF = 42, REQ_FILES = 43, REQ_WEB_FILES = 44;
     static MainActivity instance;
 
     WebView web;
     SharedPreferences prefs;
+    ValueCallback<Uri[]> fileChooserCallback;
     final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override protected void onCreate(Bundle b) {
@@ -64,7 +66,19 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false); s.setAllowContentAccess(false);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         web.addJavascriptInterface(new Bridge(), "PuroNative");
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
+                fileChooserCallback = callback;
+                try {
+                    startActivityForResult(params.createIntent(), REQ_WEB_FILES);
+                } catch (android.content.ActivityNotFoundException e) {
+                    fileChooserCallback = null;
+                    callback.onReceiveValue(null);
+                }
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
@@ -89,7 +103,8 @@ public class MainActivity extends Activity {
 
     WebResourceResponse serve(Uri u, Map<String, String> headers) throws IOException {
         String path = u.getPath() == null ? "/" : u.getPath();
-        if (path.startsWith("/f/")) return serveDoc(Uri.decode(path.substring(3)), headers);
+        // getPath() уже декодирует %xx. Второе декодирование ломает имена с буквальным «%20».
+        if (path.startsWith("/f/")) return serveDoc(path.substring(3), headers);
         if (path.equals("/") || path.isEmpty()) path = "/index.html";
         String name = path.substring(1);
         InputStream in;
@@ -260,6 +275,12 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_WEB_FILES) {
+            ValueCallback<Uri[]> callback = fileChooserCallback;
+            fileChooserCallback = null;
+            if (callback != null) callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
+            return;
+        }
         if (req == REQ_FILES && res == RESULT_OK && data != null) {
             Set<String> s = singles(); java.util.List<Uri> picked = new java.util.ArrayList<>();
             if (data.getClipData() != null) for (int i = 0; i < data.getClipData().getItemCount(); i++) picked.add(data.getClipData().getItemAt(i).getUri());
@@ -312,5 +333,9 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed() {
         web.evaluateJavascript("(window.__puroBack&&window.__puroBack())===true", v -> { if (!"true".equals(v)) moveTaskToBack(true); });
     }
-    @Override protected void onDestroy() { if (instance == this) instance = null; super.onDestroy(); }
+    @Override protected void onDestroy() {
+        if (fileChooserCallback != null) { fileChooserCallback.onReceiveValue(null); fileChooserCallback = null; }
+        if (instance == this) instance = null;
+        super.onDestroy();
+    }
 }

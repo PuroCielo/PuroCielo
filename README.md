@@ -17,6 +17,6 @@
 ## Сборка и выпуск
 При пуше в `web/**` или `android/**` GitHub Actions (**Build**) сам собирает плеер и APK и выкладывает APK в
 [Releases](https://github.com/PuroCielo/PuroCielo/releases). Кнопка на сайте всегда ведёт на последний APK.
-Установщик для Windows лежит в отдельном релизе (`windows-…`), выкладывается через Actions → **Release Windows**.
+Установщик для Windows собирается из `windows/` и тех же исходников `web/` через **Release Windows**, проверяется запуск упакованного приложения и публикуется в отдельном релизе `windows-…`. Подробнее — `windows/README.md`.
 
 Чтобы выпустить новую версию: поменяйте `version` в `web/package.json` и запушьте.

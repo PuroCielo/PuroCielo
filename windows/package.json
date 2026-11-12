@@ -1,0 +1,29 @@
+{
+  "name": "puro-cielo",
+  "version": "1.11.3",
+  "private": true,
+  "description": "Puro Cielo — музыкальный плеер для своих файлов",
+  "author": "Puro Cielo",
+  "main": "main.cjs",
+  "scripts": {
+    "prepare-player": "node prepare.cjs",
+    "build": "electron-builder --win nsis --x64",
+    "test": "node --test test/*.test.cjs",
+    "smoke": "node smoke.cjs"
+  },
+  "devDependencies": {
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0",
+    "playwright": "1.65.0"
+  },
+  "build": {
+    "appId": "com.purocielo.player",
+    "productName": "PuroCielo",
+    "artifactName": "PuroCielo-Setup.exe",
+    "directories": { "output": "dist" },
+    "files": ["main.cjs", "preload.cjs", "lyrics-fetch.cjs", "renderer/**/*", "package.json"],
+    "win": { "icon": "../icons/icon-512.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true, "shortcutName": "Puro Cielo", "deleteAppDataOnUninstall": false }
+  }
+}

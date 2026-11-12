@@ -473,8 +473,8 @@ if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler(a, f);
     }
     catch { /* unsupported */ } };
-    h('play', toggle);
-    h('pause', toggle);
+    h('play', () => { if (audio.paused) toggle(); });
+    h('pause', () => { if (!audio.paused) toggle(); });
     h('nexttrack', () => next());
     h('previoustrack', prev);
     h('seekto', d => seek(d.seekTime));
