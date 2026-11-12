@@ -4,21 +4,28 @@
   var systemTheme = matchMedia('(prefers-color-scheme: dark)');
   var themeButton = document.getElementById('theme-toggle');
   var chosenTheme = '';
+  var themeTimer;
+  var reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   try { chosenTheme = localStorage.getItem('puro.site.theme') || ''; } catch (_) {}
   if (chosenTheme !== 'light' && chosenTheme !== 'dark') chosenTheme = '';
 
-  function applyTheme(theme) {
+  function applyTheme(theme, animate) {
+    clearTimeout(themeTimer);
+    var transition = animate && !reducedMotion.matches && root.dataset.theme !== theme;
+    root.classList.toggle('theme-changing', !!transition);
+    if (transition) void root.offsetWidth;
     root.dataset.theme = theme;
     themeButton.setAttribute('aria-pressed', String(theme === 'dark'));
     document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#111113' : '#f5f5f7';
+    if (transition) themeTimer = setTimeout(function () { root.classList.remove('theme-changing'); }, 420);
   }
   applyTheme(chosenTheme || (systemTheme.matches ? 'dark' : 'light'));
   themeButton.addEventListener('click', function () {
     chosenTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
     try { localStorage.setItem('puro.site.theme', chosenTheme); } catch (_) {}
-    applyTheme(chosenTheme);
+    applyTheme(chosenTheme, true);
   });
-  var followSystem = function (e) { if (!chosenTheme) applyTheme(e.matches ? 'dark' : 'light'); };
+  var followSystem = function (e) { if (!chosenTheme) applyTheme(e.matches ? 'dark' : 'light', true); };
   if (systemTheme.addEventListener) systemTheme.addEventListener('change', followSystem);
   else if (systemTheme.addListener) systemTheme.addListener(followSystem);
 

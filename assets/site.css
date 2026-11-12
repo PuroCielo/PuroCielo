@@ -222,6 +222,15 @@ footer .brand { font-size: 16px; }
   .download-card .btn { padding-inline: 12px; }
   .account-card { padding: 20px; }
 }
+/* Цвета меняются синхронно; при первой загрузке переход не включается. */
+html.theme-changing,
+html.theme-changing *,
+html.theme-changing *::before,
+html.theme-changing *::after {
+  transition: background-color .36s ease, color .36s ease, border-color .36s ease,
+    box-shadow .36s ease, outline-color .36s ease, fill .36s ease, stroke .36s ease,
+    transform .18s ease, opacity .18s ease;
+}
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; }
