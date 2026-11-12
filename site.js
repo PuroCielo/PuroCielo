@@ -18,6 +18,8 @@
       if (activeTransition.transition) activeTransition.transition.skipTransition();
       if (activeTransition.animation) activeTransition.animation.cancel();
       if (activeTransition.cover) activeTransition.cover.remove();
+      if (activeTransition.lineAnimation) activeTransition.lineAnimation.cancel();
+      if (activeTransition.line) activeTransition.line.remove();
       activeTransition = null;
     }
     root.classList.remove('site-transition', 'theme-reveal', 'language-reveal');
@@ -32,12 +34,21 @@
       if (sequence !== transitionSequence) return;
       if (state.animation) state.animation.cancel();
       if (state.cover) state.cover.remove();
+      if (state.lineAnimation) state.lineAnimation.cancel();
+      if (state.line) state.line.remove();
       activeTransition = null;
       root.classList.remove('site-transition', 'theme-reveal', 'language-reveal');
     }
     var timing = { duration: effect.duration || 650, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' };
     if (typeof document.startViewTransition === 'function') {
       try {
+        if (effect.kind === 'language') {
+          state.line = document.createElement('div');
+          state.line.className = 'language-sweep';
+          state.line.setAttribute('aria-hidden', 'true');
+          state.line.style.left = (effect.reverse ? innerWidth - 1 : -1) + 'px';
+          document.body.appendChild(state.line);
+        }
         var transition = document.startViewTransition(commit);
         state.transition = transition;
         transition.ready.then(function () {
@@ -46,6 +57,16 @@
             duration: timing.duration, easing: timing.easing, fill: timing.fill,
             pseudoElement: '::view-transition-new(root)',
           });
+          if (state.line) {
+            var edges = ['translateX(-1px)', 'translateX(' + (innerWidth - 1) + 'px)'];
+            if (effect.reverse) edges.reverse();
+            state.lineAnimation = root.animate({ transform: edges }, {
+              duration: timing.duration, easing: timing.easing, fill: timing.fill,
+              pseudoElement: '::view-transition-group(language-sweep)',
+            });
+            state.animation.startTime = document.timeline.currentTime;
+            state.lineAnimation.startTime = state.animation.startTime;
+          }
         }).catch(function () { if (sequence === transitionSequence) commit(); });
         transition.finished.then(finish, finish);
       } catch (_) { commit(); finish(); }

@@ -133,7 +133,7 @@
       });
     }
     if (animate && typeof window.PuroSiteTransition === 'function') {
-      window.PuroSiteTransition(update, { kind: 'language', duration: 700,
+      window.PuroSiteTransition(update, { kind: 'language', duration: 700, reverse: l === 'ru',
         from: l === 'en' ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)',
         to: 'inset(0 0 0 0)' });
     } else update();
