@@ -971,6 +971,32 @@ html.player-theme-reveal::view-transition-new(root) { z-index: 2; clip-path: var
 
 html.player-theme-collapse::view-transition-old(root) { z-index: 2; clip-path: var(--player-theme-from); }
 html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: none; }
+
+/* Мягкое движение без задержки управления и без анимации всей библиотеки. */
+:root { --motion-soft: cubic-bezier(.22, 1, .36, 1); }
+.view.enter { animation: viewSoftIn .38s var(--motion-soft) both; }
+@keyframes viewSoftIn { from { opacity: .3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.menu { transform: translateY(5px) scale(.98); transition: opacity .18s ease-out, transform .3s var(--motion-soft); }
+.menu.in { transform: none; }
+.modal { transform: translateY(14px) scale(.985); transition: transform .36s var(--motion-soft); }
+.modal-wrap:not(.in) .modal { transition-duration: .2s; }
+.modal-wrap.in .modal { transform: none; }
+.toast { transform: translateY(8px) scale(.985); transition: opacity .22s ease-out, transform .32s var(--motion-soft); }
+.toast.in { transform: none; }
+.side-link, #tabbar a { transition: background .24s ease, color .24s ease, transform .28s var(--motion-soft); }
+.seg button, .chip, .menu-item { transition: background .24s ease, color .24s ease, transform .24s var(--motion-soft); }
+.seg button:active, .chip:active, .menu-item:active, #tabbar a:active { transform: scale(.97); }
+.switch i { transition: transform .36s var(--motion-soft), background .25s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .side-link:hover { transform: translateX(2px); }
+  .card:hover .card-art, .card:focus-visible .card-art { transform: translateY(-3px) scale(1.015); }
+  .card:active .card-art { transform: scale(.985); }
+}
+/* Эти правила идут после новых эффектов, чтобы настройки движения имели приоритет. */
+:root.no-anim *, :root.no-anim *::before, :root.no-anim *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
+}
 </style>
 </head>
 <body>
@@ -1216,6 +1242,7 @@ const db_js_1 = require("./db.js");
 const i18n_js_1 = require("./i18n.js");
 const covers_auto_js_2 = require("./covers-auto.js");
 const sync_js_1 = require("./sync.js");
+const motion_js_1 = require("./motion.js");
 const view = (0, util_js_1.$)('#view');
 let query = '';
 // ================= роутер =================
@@ -1306,6 +1333,8 @@ function render({ keepScroll = false, restore = null } = {}) {
     (0, util_js_1.$$)('#tabbar a').forEach(a => a.classList.toggle('active', key.startsWith(a.dataset.tab)));
     syncRows();
     syncRails();
+    if (!keepScroll)
+        (0, motion_js_1.revealView)(view);
     if (r.name === 'search' && !keepScroll) {
         const i = (0, util_js_1.$)('#search-main');
         if (i && matchMedia('(max-width: 899px)').matches)
@@ -5236,6 +5265,77 @@ if (typeof window !== 'undefined')
     });
 
 };
+defs["motion.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.motionEnabled = void 0;
+exports.cancelMotion = cancelMotion;
+exports.revealElement = revealElement;
+exports.revealView = revealView;
+exports.dismissElement = dismissElement;
+// Короткие анимации интерфейса: только видимые элементы, без постоянных циклов.
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+const active = new Set(), byElement = new WeakMap();
+const motionEnabled = () => !reduced.matches && !document.documentElement.classList.contains('no-anim');
+exports.motionEnabled = motionEnabled;
+function cancelMotion() {
+    for (const animation of active)
+        animation.cancel();
+}
+if (reduced.addEventListener)
+    reduced.addEventListener('change', () => { if (reduced.matches)
+        cancelMotion(); });
+function animate(el, frames, options) {
+    byElement.get(el)?.cancel();
+    if (!(0, exports.motionEnabled)() || !el?.animate)
+        return null;
+    const animation = el.animate(frames, { duration: 360, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'backwards', ...options });
+    byElement.set(el, animation);
+    active.add(animation);
+    const clean = () => {
+        active.delete(animation);
+        if (byElement.get(el) === animation)
+            byElement.delete(el);
+    };
+    animation.finished.then(clean, clean);
+    return animation;
+}
+function revealElement(el, { distance = 8, delay = 0, duration = 360 } = {}) {
+    if (!el || !(0, exports.motionEnabled)())
+        return;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth)
+        return;
+    return animate(el, distance ? [
+        { opacity: 0, transform: `translateY(${distance}px)` },
+        { opacity: 1, transform: 'translateY(0)' },
+    ] : [{ opacity: .25 }, { opacity: 1 }], { delay, duration });
+}
+function revealView(view) {
+    if (!(0, exports.motionEnabled)())
+        return;
+    let count = 0, inspected = 0;
+    for (const el of view.querySelectorAll('.card, .lrow, .row, .setting, .empty')) {
+        if (++inspected > 80)
+            break;
+        if (revealElement(el, { delay: count * 22, duration: 380 }))
+            count++;
+        if (count >= 12)
+            break;
+    }
+}
+function dismissElement(el) {
+    // Уходящее меню сразу перестаёт перехватывать мышь и клавиатуру.
+    el.inert = true;
+    el.style.pointerEvents = 'none';
+    el.setAttribute('aria-hidden', 'true');
+    const animation = animate(el, [{ opacity: getComputedStyle(el).opacity }, { opacity: 0, transform: 'translateY(4px) scale(.985)' }], { duration: 160, fill: 'forwards' });
+    if (animation)
+        animation.finished.then(() => el.remove(), () => el.remove());
+    else
+        el.remove();
+}
+
+};
 defs["native.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onNativeFetch = exports.nativeFetchText = exports.forgetFile = exports.pickFiles = exports.setPlayback = exports.folderName = exports.rescan = exports.pickFolder = exports.RemoteFile = exports.isNativeId = exports.nativeId = exports.nativeUrl = exports.isNative = exports.bridge = void 0;
@@ -5360,6 +5460,7 @@ const util_js_1 = require("./util.js");
 const views_js_1 = require("./views.js");
 const actions_js_1 = require("./actions.js");
 const miniwin_js_1 = require("./miniwin.js");
+const motion_js_1 = require("./motion.js");
 const mini = (0, util_js_1.$)('#mini'), np = (0, util_js_1.$)('#np'), lyBox = (0, util_js_1.$)('#np-lyrics'), qBox = (0, util_js_1.$)('#np-queue');
 const miniSeek = (0, util_js_1.$)('#mini-seek'), npSeek = (0, util_js_1.$)('#np-seek'), miniVol = (0, util_js_1.$)('#mini-vol'), npVol = (0, util_js_1.$)('#np-vol');
 const isDesktop = () => matchMedia('(min-width: 900px)').matches;
@@ -5469,7 +5570,10 @@ function syncLikeBtns() {
         b.innerHTML = (0, icons_js_1.icon)(on_ ? 'heart-fill' : 'heart');
     }
 }
+let displayedTrack = null;
 function renderTrack(t) {
+    const changed = !!t && displayedTrack !== t.id;
+    displayedTrack = t?.id || null;
     mini.hidden = !t;
     document.body.classList.toggle('has-mini', !!t);
     if (!t) {
@@ -5489,6 +5593,13 @@ function renderTrack(t) {
     (0, util_js_1.$)('#np-album').innerHTML = [t.album ? (0, views_js_1.albumLink)(t) : '', (0, util_js_1.esc)(t.year || ''), (0, util_js_1.esc)(t.genre || '')].filter(Boolean).join(' · ');
     (0, util_js_1.$)('#np-chips').innerHTML = tp.map((x, i) => `<span class="chip-s ${i === 0 ? 'codec' : ''}">${(0, util_js_1.esc)(x)}</span>`).join('');
     (0, util_js_1.$)('#mini-dur').textContent = (0, util_js_1.$)('#np-dur').textContent = (0, util_js_1.fmtTime)(t.duration);
+    if (changed) {
+        ['mini-title', 'mini-artist', 'np-title', 'np-artist', 'np-cover'].forEach((id, i) => {
+            if (id.startsWith('np-') && !npOpen)
+                return;
+            (0, motion_js_1.revealElement)((0, util_js_1.$)('#' + id), { distance: 0, delay: i % 2 * 35, duration: 320 });
+        });
+    }
     (0, lyrics_auto_js_1.ensureLyrics)(t);
     syncLikeBtns();
     renderLyrics(t);
@@ -5751,7 +5862,10 @@ const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
 function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
+    const changed = np.dataset.pane !== p;
     np.dataset.pane = p;
+    if (changed && npOpen)
+        (0, motion_js_1.revealElement)(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
     (0, util_js_1.$)('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
 }
 // Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр
@@ -8226,11 +8340,13 @@ exports.applyTheme = applyTheme;
 exports.toggleTheme = toggleTheme;
 exports.applySettings = applySettings;
 const state_js_1 = require("./state.js");
+const motion_js_1 = require("./motion.js");
 let reveal = null, sequence = 0, chosenTheme = null;
 // Передаём кнопку только для действий пользователя; запуск и импорт настроек мгновенные.
 function applyTheme(t = state_js_1.state.theme, origin = null) {
     const root = document.documentElement, theme = t === 'light' ? 'light' : 'dark';
     chosenTheme = theme;
+    (0, motion_js_1.cancelMotion)();
     const id = ++sequence;
     if (reveal) {
         reveal.transition?.skipTransition();
@@ -8336,6 +8452,8 @@ function applySettings() {
     r.classList.toggle('no-bg-anim', !s.bgAnim);
     r.classList.toggle('no-bg-cover', !s.bgCover);
     r.classList.toggle('no-anim', !s.anim);
+    if (!s.anim)
+        (0, motion_js_1.cancelMotion)();
 }
 
 };
@@ -8559,6 +8677,7 @@ exports.promptText = promptText;
 exports.pickImage = pickImage;
 const icons_js_1 = require("./icons.js");
 const util_js_1 = require("./util.js");
+const motion_js_1 = require("./motion.js");
 // ---------- toast ----------
 function toast(msg, kind = 'ok', ms = 2600) {
     const root = document.getElementById('toasts');
@@ -8568,14 +8687,15 @@ function toast(msg, kind = 'ok', ms = 2600) {
     el.className = `toast ${kind}`;
     el.innerHTML = `<span class="toast-dot"></span><span>${(0, util_js_1.esc)(msg)}</span>`;
     root.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('in'));
+    requestAnimationFrame(() => { if (el.isConnected && !el.inert)
+        el.classList.add('in'); });
     setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 350); }, ms);
 }
 // ---------- контекстное меню ----------
 let menuEl = null;
 function closeMenu() {
     if (menuEl) {
-        menuEl.remove();
+        (0, motion_js_1.dismissElement)(menuEl);
         menuEl = null;
         return true;
     }
@@ -8607,7 +8727,8 @@ function openMenu(anchor, items, { x, y } = {}) {
     el.style.left = left + 'px';
     el.style.top = top + 'px';
     el.style.transformOrigin = `${origin} ${r.right - left > mw / 2 ? 'right' : 'left'}`;
-    requestAnimationFrame(() => el.classList.add('in'));
+    requestAnimationFrame(() => { if (el.isConnected && !el.inert)
+        el.classList.add('in'); });
     el.addEventListener('click', e => {
         const b = e.target.closest('[data-mi]');
         if (!b)
@@ -8642,12 +8763,21 @@ function openModal({ title, html = '', actions = [], wide = false, onMount }) {
     ${actions.length ? `<div class="modal-foot">${actions.map((a, i) => `<button class="btn ${a.primary ? 'btn-primary' : 'btn-soft'} ${a.danger ? 'btn-danger' : ''}" data-act="${i}">${(0, util_js_1.esc)(a.label)}</button>`).join('')}</div>` : ''}
   </div>`;
     root.appendChild(wrap);
+    let closing = false;
     const api = { el: wrap, close() {
+            if (closing)
+                return;
+            closing = true;
+            wrap.inert = true;
+            wrap.style.pointerEvents = 'none';
             wrap.classList.remove('in');
             const i = stack.indexOf(api);
             if (i >= 0)
                 stack.splice(i, 1);
-            setTimeout(() => wrap.remove(), 250);
+            if ((0, motion_js_1.motionEnabled)())
+                setTimeout(() => wrap.remove(), 250);
+            else
+                wrap.remove();
         } };
     stack.push(api);
     wrap.addEventListener('mousedown', e => {
@@ -8665,7 +8795,8 @@ function openModal({ title, html = '', actions = [], wide = false, onMount }) {
                 api.close();
         }
     });
-    requestAnimationFrame(() => { wrap.classList.add('in'); wrap.querySelector('input,textarea')?.focus(); });
+    requestAnimationFrame(() => { if (closing)
+        return; wrap.classList.add('in'); wrap.querySelector('input,textarea')?.focus(); });
     onMount?.(api);
     return api;
 }

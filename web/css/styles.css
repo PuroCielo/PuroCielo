@@ -957,3 +957,29 @@ html.player-theme-reveal::view-transition-new(root) { z-index: 2; clip-path: var
 
 html.player-theme-collapse::view-transition-old(root) { z-index: 2; clip-path: var(--player-theme-from); }
 html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: none; }
+
+/* Мягкое движение без задержки управления и без анимации всей библиотеки. */
+:root { --motion-soft: cubic-bezier(.22, 1, .36, 1); }
+.view.enter { animation: viewSoftIn .38s var(--motion-soft) both; }
+@keyframes viewSoftIn { from { opacity: .3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.menu { transform: translateY(5px) scale(.98); transition: opacity .18s ease-out, transform .3s var(--motion-soft); }
+.menu.in { transform: none; }
+.modal { transform: translateY(14px) scale(.985); transition: transform .36s var(--motion-soft); }
+.modal-wrap:not(.in) .modal { transition-duration: .2s; }
+.modal-wrap.in .modal { transform: none; }
+.toast { transform: translateY(8px) scale(.985); transition: opacity .22s ease-out, transform .32s var(--motion-soft); }
+.toast.in { transform: none; }
+.side-link, #tabbar a { transition: background .24s ease, color .24s ease, transform .28s var(--motion-soft); }
+.seg button, .chip, .menu-item { transition: background .24s ease, color .24s ease, transform .24s var(--motion-soft); }
+.seg button:active, .chip:active, .menu-item:active, #tabbar a:active { transform: scale(.97); }
+.switch i { transition: transform .36s var(--motion-soft), background .25s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .side-link:hover { transform: translateX(2px); }
+  .card:hover .card-art, .card:focus-visible .card-art { transform: translateY(-3px) scale(1.015); }
+  .card:active .card-art { transform: scale(.985); }
+}
+/* Эти правила идут после новых эффектов, чтобы настройки движения имели приоритет. */
+:root.no-anim *, :root.no-anim *::before, :root.no-anim *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
+}

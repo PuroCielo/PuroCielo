@@ -19,6 +19,8 @@ import { initI18n, setLang } from './i18n.js';
 import { initAutoCovers, setArtistPhoto } from './covers-auto.js';
 import { initSync, signInEmail, signInGoogle, signOutSync, sync, syncNow } from './sync.js';
 
+import { revealView } from './motion.js';
+
 const view = $('#view');
 let query = '';
 // ================= роутер =================
@@ -107,6 +109,7 @@ function render({ keepScroll = false, restore = null } = {}) {
     $$('#tabbar a').forEach(a => a.classList.toggle('active', key.startsWith(a.dataset.tab)));
     syncRows();
     syncRails();
+    if (!keepScroll) revealView(view);
     if (r.name === 'search' && !keepScroll) {
         const i = $('#search-main');
         if (i && matchMedia('(max-width: 899px)').matches)

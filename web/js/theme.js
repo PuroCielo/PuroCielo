@@ -1,4 +1,5 @@
 import { emit, save, state } from './state.js';
+import { cancelMotion } from './motion.js';
 
 let reveal = null, sequence = 0, chosenTheme = null;
 
@@ -6,6 +7,7 @@ let reveal = null, sequence = 0, chosenTheme = null;
 export function applyTheme(t = state.theme, origin = null) {
     const root = document.documentElement, theme = t === 'light' ? 'light' : 'dark';
     chosenTheme = theme;
+    cancelMotion();
     const id = ++sequence;
     if (reveal) {
         reveal.transition?.skipTransition();
@@ -95,4 +97,5 @@ export function applySettings() {
     r.classList.toggle('no-bg-anim', !s.bgAnim);
     r.classList.toggle('no-bg-cover', !s.bgCover);
     r.classList.toggle('no-anim', !s.anim);
+    if (!s.anim) cancelMotion();
 }

@@ -9,6 +9,7 @@ import { $, clamp, esc, fmtTime } from './util.js';
 import { albumLink, artistLinks, artistsOf, cov } from './views.js';
 import { trackMenu } from './actions.js';
 import { canMiniWindow, toggleMiniWindow } from './miniwin.js';
+import { revealElement } from './motion.js';
 
 const mini = $('#mini'), np = $('#np'), lyBox = $('#np-lyrics'), qBox = $('#np-queue');
 const miniSeek = $('#mini-seek'), npSeek = $('#np-seek'), miniVol = $('#mini-vol'), npVol = $('#np-vol');
@@ -112,7 +113,10 @@ export function syncLikeBtns() {
         b.innerHTML = icon(on_ ? 'heart-fill' : 'heart');
     }
 }
+let displayedTrack = null;
 function renderTrack(t) {
+    const changed = !!t && displayedTrack !== t.id;
+    displayedTrack = t?.id || null;
     mini.hidden = !t;
     document.body.classList.toggle('has-mini', !!t);
     if (!t) {
@@ -132,6 +136,12 @@ function renderTrack(t) {
     $('#np-album').innerHTML = [t.album ? albumLink(t) : '', esc(t.year || ''), esc(t.genre || '')].filter(Boolean).join(' · ');
     $('#np-chips').innerHTML = tp.map((x, i) => `<span class="chip-s ${i === 0 ? 'codec' : ''}">${esc(x)}</span>`).join('');
     $('#mini-dur').textContent = $('#np-dur').textContent = fmtTime(t.duration);
+    if (changed) {
+        ['mini-title', 'mini-artist', 'np-title', 'np-artist', 'np-cover'].forEach((id, i) => {
+            if (id.startsWith('np-') && !npOpen) return;
+            revealElement($('#' + id), { distance: 0, delay: i % 2 * 35, duration: 320 });
+        });
+    }
     ensureLyrics(t);
     syncLikeBtns();
     renderLyrics(t);
@@ -385,7 +395,9 @@ const lyricsOn = () => state.settings.showLyrics !== false;
 export function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
+    const changed = np.dataset.pane !== p;
     np.dataset.pane = p;
+    if (changed && npOpen) revealElement(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
     $('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
 }
 // Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр

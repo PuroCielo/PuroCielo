@@ -1,5 +1,6 @@
 import { icon } from './icons.js';
 import { esc } from './util.js';
+import { dismissElement, motionEnabled } from './motion.js';
 
 // ---------- toast ----------
 export function toast(msg, kind = 'ok', ms = 2600) {
@@ -10,13 +11,13 @@ export function toast(msg, kind = 'ok', ms = 2600) {
     el.className = `toast ${kind}`;
     el.innerHTML = `<span class="toast-dot"></span><span>${esc(msg)}</span>`;
     root.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('in'));
+    requestAnimationFrame(() => { if (el.isConnected && !el.inert) el.classList.add('in'); });
     setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 350); }, ms);
 }
 // ---------- контекстное меню ----------
 let menuEl = null;
 export function closeMenu() { if (menuEl) {
-    menuEl.remove();
+    dismissElement(menuEl);
     menuEl = null;
     return true;
 } return false; }
@@ -46,7 +47,7 @@ export function openMenu(anchor, items, { x, y } = {}) {
     el.style.left = left + 'px';
     el.style.top = top + 'px';
     el.style.transformOrigin = `${origin} ${r.right - left > mw / 2 ? 'right' : 'left'}`;
-    requestAnimationFrame(() => el.classList.add('in'));
+    requestAnimationFrame(() => { if (el.isConnected && !el.inert) el.classList.add('in'); });
     el.addEventListener('click', e => {
         const b = e.target.closest('[data-mi]');
         if (!b)
@@ -79,8 +80,18 @@ export function openModal({ title, html = '', actions = [], wide = false, onMoun
     ${actions.length ? `<div class="modal-foot">${actions.map((a, i) => `<button class="btn ${a.primary ? 'btn-primary' : 'btn-soft'} ${a.danger ? 'btn-danger' : ''}" data-act="${i}">${esc(a.label)}</button>`).join('')}</div>` : ''}
   </div>`;
     root.appendChild(wrap);
-    const api = { el: wrap, close() { wrap.classList.remove('in'); const i = stack.indexOf(api); if (i >= 0)
-            stack.splice(i, 1); setTimeout(() => wrap.remove(), 250); } };
+    let closing = false;
+    const api = { el: wrap, close() {
+        if (closing) return;
+        closing = true;
+        wrap.inert = true;
+        wrap.style.pointerEvents = 'none';
+        wrap.classList.remove('in');
+        const i = stack.indexOf(api);
+        if (i >= 0) stack.splice(i, 1);
+        if (motionEnabled()) setTimeout(() => wrap.remove(), 250);
+        else wrap.remove();
+    } };
     stack.push(api);
     wrap.addEventListener('mousedown', e => { if (e.target === wrap)
         api.close(); });
@@ -95,7 +106,7 @@ export function openModal({ title, html = '', actions = [], wide = false, onMoun
                 api.close();
         }
     });
-    requestAnimationFrame(() => { wrap.classList.add('in'); wrap.querySelector('input,textarea')?.focus(); });
+    requestAnimationFrame(() => { if (closing) return; wrap.classList.add('in'); wrap.querySelector('input,textarea')?.focus(); });
     onMount?.(api);
     return api;
 }
