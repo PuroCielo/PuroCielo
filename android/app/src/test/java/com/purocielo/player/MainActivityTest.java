@@ -13,12 +13,23 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implements;
+import org.robolectric.annotation.Implementation;
 import static org.junit.Assert.*;
 import static org.robolectric.Shadows.shadowOf;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 34)
+@Config(sdk = 34, shadows = MainActivityTest.FileChooserResultShadow.class)
 public class MainActivityTest {
+    // Robolectric не реализует WebViewFactory.parseFileChooserResult.
+    // Подменяем только этот системный метод; проверяем маршрутизацию настоящего callback Activity.
+    @Implements(WebChromeClient.FileChooserParams.class)
+    public static class FileChooserResultShadow {
+        @Implementation protected static Uri[] parseResult(int result, Intent data) {
+            return result == Activity.RESULT_OK && data != null && data.getData() != null
+                    ? new Uri[] { data.getData() } : null;
+        }
+    }
     static class RecordingActivity extends MainActivity {
         String requested;
         @Override WebResourceResponse serveDoc(String id, Map<String, String> headers) {
