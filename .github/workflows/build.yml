@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PURO_SIGNING_STORE_PASSWORD: ${{ secrets.PURO_SIGNING_STORE_PASSWORD }}
+      PURO_SIGNING_KEY_ALIAS: ${{ secrets.PURO_SIGNING_KEY_ALIAS }}
+      PURO_SIGNING_KEY_PASSWORD: ${{ secrets.PURO_SIGNING_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,6 +39,22 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.7' }
+      - name: Restore configured Android signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PURO_SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          python - <<'PY'
+          import os, base64, pathlib
+          key = os.environ.get('KEYSTORE_BASE64', '')
+          if key:
+              target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'purocielo-signing.keystore'
+              target.write_bytes(base64.b64decode(key, validate=True))
+              target.chmod(0o600)
+              with open(os.environ['GITHUB_ENV'], 'a') as f:
+                  f.write(f'PURO_SIGNING_KEYSTORE={target}\n')
+          else:
+              print('::warning::No persistent signing key configured. See android/README.md before upgrading an installed APK.')
+          PY
       - run: gradle -p android assembleDebug --no-daemon
       - run: gradle -p android testDebugUnitTest --no-daemon
       - run: cp android/app/build/outputs/apk/debug/app-debug.apk PuroCielo.apk

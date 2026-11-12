@@ -48,7 +48,7 @@
     'Для Windows установщик ниже, в разделе «Скачать».': 'The Windows installer is below, in “Download”.', 'Android-версия и плеер в браузере ниже.': 'The Android app and the web player are below.',
     'На iPhone и iPad плеер работает в браузере: откройте его в Safari и добавьте на экран «Домой».': 'On iPhone and iPad the player runs in the browser: open it in Safari and add it to the Home Screen.',
     'Установка без регистрации и без рекламы. Музыка остаётся на вашем устройстве.': 'No sign-up and no ads. Your music stays on your device.',
-    'Установщик с ярлыком на рабочем столе. Windows 10 и новее.': 'Installer with a desktop shortcut. Windows 10 and later.', '≈ 85 МБ': '≈ 85 MB', 'Скачать .exe': 'Download .exe',
+    'Установщик с ярлыком на рабочем столе. Windows 10 и новее.': 'Installer with a desktop shortcut. Windows 10 and later.', '≈ 123 МБ': '≈ 123 MB', 'Скачать .exe': 'Download .exe',
     'Выбираете папку с музыкой или добавляете треки по одному. Работает с экрана блокировки.': 'Pick your music folder or add tracks one by one. Works from the lock screen.', 'Скачать .apk': 'Download .apk',
     'Ничего не устанавливается: откройте и перетащите файлы в окно.': 'Nothing to install: open it and drop your files into the window.', 'Открыть': 'Open',
     'Что умеет': 'What it does', 'Всё, что нужно для своей коллекции.': 'Everything you need for your own collection.',
