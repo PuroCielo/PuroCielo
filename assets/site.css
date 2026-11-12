@@ -225,19 +225,19 @@ footer .brand { font-size: 16px; }
   .download-card .btn { padding-inline: 12px; }
   .account-card { padding: 20px; }
 }
-/* Снимки обеих тем остаются чёткими, новая раскрывается кругом от кнопки. */
-html.theme-reveal,
-html.theme-reveal *,
-html.theme-reveal *::before,
-html.theme-reveal *::after { transition: none !important; }
-html.theme-reveal::view-transition { pointer-events: none; }
-html.theme-reveal::view-transition-group(root) { animation: none; }
-html.theme-reveal::view-transition-old(root),
-html.theme-reveal::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-html.theme-reveal::view-transition-old(root) { z-index: 1; }
-html.theme-reveal::view-transition-new(root) {
+/* Тема раскрывается кругом, язык — горизонтально, без полосы и растворения текста. */
+html.site-transition,
+html.site-transition *,
+html.site-transition *::before,
+html.site-transition *::after { transition: none !important; }
+html.site-transition::view-transition { pointer-events: none; }
+html.site-transition::view-transition-group(root) { animation: none; }
+html.site-transition::view-transition-old(root),
+html.site-transition::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.site-transition::view-transition-old(root) { z-index: 1; }
+html.site-transition::view-transition-new(root) {
   z-index: 2;
-  clip-path: circle(0 at var(--theme-x) var(--theme-y));
+  clip-path: var(--site-transition-from);
 }
 .theme-cover { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {

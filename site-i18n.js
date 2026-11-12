@@ -117,13 +117,27 @@
     if (lang !== 'en') return;
     list.forEach(function (m) { if (m.type === 'childList') m.addedNodes.forEach(walk); else if (m.type === 'characterData') doNode(m.target); else doNode(m.target); });
   }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
-  function set(l) {
-    var was = lang; lang = l;
+  var selectedLang;
+  function set(l, animate) {
+    l = l === 'en' ? 'en' : 'ru';
+    if (l === selectedLang) return;
+    selectedLang = l;
     try { localStorage.setItem(KEY, l); } catch (e) { /* ignore */ }
-    document.documentElement.lang = l;
-    if (l === 'en') walk(document.body); else if (was === 'en') restore();
-    document.querySelectorAll('#lang button').forEach(function (b) { b.classList.toggle('on', b.dataset.l === l); });
+    function update() {
+      var was = lang; lang = l;
+      document.documentElement.lang = l;
+      if (l === 'en') walk(document.body); else if (was === 'en') restore();
+      document.querySelectorAll('#lang button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.l === l);
+        b.setAttribute('aria-pressed', String(b.dataset.l === l));
+      });
+    }
+    if (animate && typeof window.PuroSiteTransition === 'function') {
+      window.PuroSiteTransition(update, { kind: 'language', duration: 700,
+        from: l === 'en' ? 'inset(0 100% 0 0)' : 'inset(0 0 0 100%)',
+        to: 'inset(0 0 0 0)' });
+    } else update();
   }
-  document.querySelectorAll('#lang button').forEach(function (b) { b.addEventListener('click', function () { set(b.dataset.l); }); });
+  document.querySelectorAll('#lang button').forEach(function (b) { b.addEventListener('click', function () { set(b.dataset.l, true); }); });
   set(lang);
 })();
