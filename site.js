@@ -22,11 +22,12 @@
       if (activeTransition.line) activeTransition.line.remove();
       activeTransition = null;
     }
-    root.classList.remove('site-transition', 'theme-reveal', 'language-reveal');
+    root.classList.remove('site-transition', 'theme-reveal', 'language-reveal', 'theme-collapse');
     var committed = false;
     function commit() { if (!committed) { committed = true; update(); } }
     if (!effect || reducedMotion.matches) { commit(); return; }
     root.style.setProperty('--site-transition-from', effect.from);
+    root.classList.toggle('theme-collapse', !!effect.collapse);
     root.classList.add('site-transition', effect.kind === 'theme' ? 'theme-reveal' : 'language-reveal');
     var state = { commit: commit };
     activeTransition = state;
@@ -37,7 +38,7 @@
       if (state.lineAnimation) state.lineAnimation.cancel();
       if (state.line) state.line.remove();
       activeTransition = null;
-      root.classList.remove('site-transition', 'theme-reveal', 'language-reveal');
+      root.classList.remove('site-transition', 'theme-reveal', 'language-reveal', 'theme-collapse');
     }
     var timing = { duration: effect.duration || 650, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' };
     if (typeof document.startViewTransition === 'function') {
@@ -55,7 +56,7 @@
           if (sequence !== transitionSequence) return;
           state.animation = root.animate({ clipPath: [effect.from, effect.to] }, {
             duration: timing.duration, easing: timing.easing, fill: timing.fill,
-            pseudoElement: '::view-transition-new(root)',
+            pseudoElement: effect.collapse ? '::view-transition-old(root)' : '::view-transition-new(root)',
           });
           if (state.line) {
             var edges = ['translateX(-1px)', 'translateX(' + (innerWidth - 1) + 'px)'];
@@ -81,11 +82,13 @@
     document.body.appendChild(cover);
     state.cover = cover;
     if (typeof cover.animate !== 'function') { commit(); finish(); return; }
+    if (effect.collapse) commit();
     var wave = cover.animate({ clipPath: [effect.from, effect.to] }, timing);
     state.animation = wave;
     wave.finished.then(function () {
       if (sequence !== transitionSequence) return;
       commit();
+      if (effect.collapse) { finish(); return; }
       var fade = cover.animate({ opacity: [1, 0] }, { duration: 140, easing: 'ease-out', fill: 'forwards' });
       state.animation = fade;
       fade.finished.then(finish, finish);
@@ -102,7 +105,8 @@
       root.style.setProperty('--theme-y', y + 'px');
       effect = { kind: 'theme', from: 'circle(0px at ' + x + 'px ' + y + 'px)',
         to: 'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)',
-        color: theme === 'dark' ? '#111113' : '#f5f5f7' };
+        color: '#f5f5f7', collapse: theme === 'dark' };
+      if (effect.collapse) { var start = effect.from; effect.from = effect.to; effect.to = start; }
     }
     window.PuroSiteTransition(function () {
       root.dataset.theme = theme;

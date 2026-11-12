@@ -253,3 +253,6 @@ html.language-reveal::view-transition-new(language-sweep) { animation: none; mix
   *, *::before, *::after { transition: none !important; }
   .preview-window { transform: none; }
 }
+
+html.theme-collapse::view-transition-old(root) { z-index: 2; clip-path: var(--site-transition-from); }
+html.theme-collapse::view-transition-new(root) { z-index: 1; clip-path: none; }

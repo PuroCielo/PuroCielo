@@ -13,7 +13,7 @@ export function applyTheme(t = state.theme, origin = null) {
         reveal.cover?.remove();
         reveal = null;
     }
-    root.classList.remove('player-theme-reveal');
+    root.classList.remove('player-theme-reveal', 'player-theme-collapse');
     let committed = false;
     const commit = () => {
         if (id !== sequence || committed) return;
@@ -32,9 +32,11 @@ export function applyTheme(t = state.theme, origin = null) {
     const x = Math.max(0, Math.min(innerWidth, rect.left + rect.width / 2));
     const y = Math.max(0, Math.min(innerHeight, rect.top + rect.height / 2));
     const radius = Math.ceil(Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))) + 2;
-    const from = `circle(0px at ${x}px ${y}px)`, to = `circle(${radius}px at ${x}px ${y}px)`;
+    const small = `circle(0px at ${x}px ${y}px)`, large = `circle(${radius}px at ${x}px ${y}px)`;
+    const collapse = theme === 'dark', from = collapse ? large : small, to = collapse ? small : large;
     root.style.setProperty('--player-theme-from', from);
     root.classList.add('player-theme-reveal');
+    root.classList.toggle('player-theme-collapse', collapse);
     const current = {};
     reveal = current;
     const finish = () => {
@@ -42,7 +44,7 @@ export function applyTheme(t = state.theme, origin = null) {
         current.animation?.cancel();
         current.cover?.remove();
         reveal = null;
-        root.classList.remove('player-theme-reveal');
+        root.classList.remove('player-theme-reveal', 'player-theme-collapse');
     };
     const timing = { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' };
     if (typeof document.startViewTransition === 'function') {
@@ -52,7 +54,7 @@ export function applyTheme(t = state.theme, origin = null) {
             transition.ready.then(() => {
                 if (id !== sequence) return;
                 current.animation = root.animate({ clipPath: [from, to] }, {
-                    ...timing, pseudoElement: '::view-transition-new(root)',
+                    ...timing, pseudoElement: collapse ? '::view-transition-old(root)' : '::view-transition-new(root)',
                 });
             }).catch(commit);
             transition.finished.then(finish, finish);
@@ -63,14 +65,16 @@ export function applyTheme(t = state.theme, origin = null) {
     const cover = document.createElement('div');
     cover.className = 'player-theme-cover';
     cover.setAttribute('aria-hidden', 'true');
-    cover.style.backgroundColor = theme === 'dark' ? '#09090B' : '#F5F5F7';
+    cover.style.backgroundColor = '#F5F5F7';
     document.body.appendChild(cover);
     current.cover = cover;
     if (typeof cover.animate !== 'function') { commit(); finish(); return; }
+    if (collapse) commit();
     current.animation = cover.animate({ clipPath: [from, to] }, timing);
     current.animation.finished.then(() => {
         if (id !== sequence) return;
         commit();
+        if (collapse) { finish(); return; }
         current.animation = cover.animate({ opacity: [1, 0] }, { duration: 140, fill: 'forwards' });
         current.animation.finished.then(finish, finish);
     }).catch(finish);

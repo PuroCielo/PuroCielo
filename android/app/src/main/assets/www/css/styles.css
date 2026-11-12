@@ -954,3 +954,6 @@ html.player-theme-reveal::view-transition-new(root) { animation: none; mix-blend
 html.player-theme-reveal::view-transition-old(root) { z-index: 1; }
 html.player-theme-reveal::view-transition-new(root) { z-index: 2; clip-path: var(--player-theme-from); }
 .player-theme-cover { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
+
+html.player-theme-collapse::view-transition-old(root) { z-index: 2; clip-path: var(--player-theme-from); }
+html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: none; }
