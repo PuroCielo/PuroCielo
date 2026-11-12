@@ -2,7 +2,7 @@ import { getTrack, on, state } from './state.js';
 import { audio, current } from './player.js';
 import { icon } from './icons.js';
 // Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
-// (она сильно размыта и медленно плывёт). Больше на фоне ничего нет.
+// (она сильно размыта, а поверх плывут «облака» её цветов — пока музыка играет; на паузе они замирают).
 const $ = s => document.querySelector(s);
 const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
 // ---------- цвета обложки ----------
@@ -62,7 +62,7 @@ export function paletteFrom(url) {
     });
 }
 export function initBgFx() {
-    const cover = $('#bg-cover'), root = document.documentElement;
+    const cover = $('#bg-cover'), clouds = $('#bg-clouds'), root = document.documentElement;
     const sync = () => root.classList.toggle('is-playing', !audio.paused && !audio.ended && !!current());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         audio.addEventListener(e, sync);
@@ -76,6 +76,11 @@ export function initBgFx() {
         if (cover) {
             cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
             cover.classList.toggle('on', !!t?.cover);
+        }
+        if (clouds) { // «облака»: те же цвета обложки, несколько размытых пятен, которые плывут, пока играет музыка
+            if (t?.cover)
+                clouds.style.setProperty('--img', `url("${t.cover}")`);
+            clouds.classList.toggle('on', !!t?.cover);
         }
         sync();
         if (url === lastUrl)

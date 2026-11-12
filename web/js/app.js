@@ -918,11 +918,21 @@ on('playlists', () => { render({ keepScroll: true }); renderSidePlaylists(); });
 on('likes', syncLikes);
 on('track', syncRows);
 // карточка «Продолжить» на главной показывает ту песню, что играет сейчас
-on('track', () => { const el = route().name === 'home' && $('.cont'); if (el && el.dataset.trackId !== current()?.id) {
-    const html = continueCard();
-    if (html)
-        el.outerHTML = html;
-} });
+on('track', () => {
+    if (route().name !== 'home')
+        return;
+    const el = $('.cont');
+    if (!el) { // карточки ещё не было (до этого ничего не слушали) — перерисовываем главную, чтобы она появилась
+        if (current() && !homeHidden().has('continue') && $('.quick, .section'))
+            render({ keepScroll: true });
+        return;
+    }
+    if (el.dataset.trackId !== current()?.id) {
+        const html = continueCard();
+        if (html)
+            el.outerHTML = html;
+    }
+});
 on('profile', () => { renderSideProfile(); render({ keepScroll: true }); });
 on('theme', () => { render({ keepScroll: true }); syncThemeBtn(); });
 on('settings', k => {

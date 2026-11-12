@@ -880,3 +880,25 @@ select.input { appearance: auto; }
 .bg-top { position: absolute; left: 0; right: 0; top: 0; height: 64vh; opacity: 0; transition: opacity 1.2s; background: var(--h1); -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 42%, transparent 100%); } /* один цвет: два разных оттенка в середине давали грязный тон */
 :root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-top { opacity: .5; }
 :root.is-home.has-top:not([data-theme="light"]):not(.no-bg-cover) .bg-glow { opacity: 0; }
+
+/* ---------- 1.10.4: светлая тема — «облака» из цветов обложки ---------- */
+/* Пять сильно размытых пятен, каждое берёт свой участок обложки. Пока музыка играет, они медленно плывут
+   и перетекают друг в друга; на паузе замирают на месте. Размытие у каждого пятна своё и считается один раз,
+   двигается уже готовая картинка — это не нагружает телефон. */
+.bg-clouds { position: absolute; inset: 0; display: none; opacity: 0; transition: opacity 1.4s; }
+:root[data-theme="light"] .bg-clouds { display: block; }
+:root[data-theme="light"]:not(.no-bg-cover) .bg-clouds.on { opacity: .6; }
+.bg-clouds i { position: absolute; width: 62vmax; height: 62vmax; border-radius: 50%; background-image: var(--img); background-size: 260% 260%; filter: blur(60px) saturate(1.6); -webkit-mask-image: radial-gradient(circle, #000 28%, transparent 70%); mask-image: radial-gradient(circle, #000 28%, transparent 70%); will-change: transform; animation: 22s ease-in-out infinite alternate; }
+.bg-clouds i:nth-child(1) { left: -14vmax; top: -20vmax; background-position: 0% 0%; animation-name: cloud1; animation-duration: 19s; }
+.bg-clouds i:nth-child(2) { right: -16vmax; top: -12vmax; background-position: 100% 0%; animation-name: cloud2; animation-duration: 23s; }
+.bg-clouds i:nth-child(3) { left: 20vmax; top: 16vmax; background-position: 50% 50%; animation-name: cloud3; animation-duration: 27s; }
+.bg-clouds i:nth-child(4) { left: -12vmax; bottom: -24vmax; background-position: 0% 100%; animation-name: cloud4; animation-duration: 21s; }
+.bg-clouds i:nth-child(5) { right: -10vmax; bottom: -20vmax; background-position: 100% 100%; animation-name: cloud5; animation-duration: 25s; }
+@keyframes cloud1 { 0% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(16vmax, 9vmax) scale(1.2) rotate(24deg); } 100% { transform: translate(5vmax, 20vmax) scale(.9) rotate(-14deg); } }
+@keyframes cloud2 { 0% { transform: translate(0, 0) scale(1.1) rotate(0deg); } 50% { transform: translate(-18vmax, 12vmax) scale(.9) rotate(-20deg); } 100% { transform: translate(-6vmax, 24vmax) scale(1.2) rotate(16deg); } }
+@keyframes cloud3 { 0% { transform: translate(0, 0) scale(.95) rotate(0deg); } 50% { transform: translate(-14vmax, -10vmax) scale(1.22) rotate(30deg); } 100% { transform: translate(12vmax, 8vmax) scale(1) rotate(-18deg); } }
+@keyframes cloud4 { 0% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(20vmax, -12vmax) scale(1.15) rotate(-26deg); } 100% { transform: translate(8vmax, -22vmax) scale(.92) rotate(12deg); } }
+@keyframes cloud5 { 0% { transform: translate(0, 0) scale(1.08) rotate(0deg); } 50% { transform: translate(-16vmax, -14vmax) scale(.92) rotate(22deg); } 100% { transform: translate(-24vmax, -4vmax) scale(1.18) rotate(-16deg); } }
+/* музыка не играет — облака и сам фон стоят на месте */
+:root:not(.is-playing) .bg-clouds i, :root:not(.is-playing) .bg-cover, :root.no-bg-anim .bg-clouds i { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .bg-clouds i { animation: none; } }

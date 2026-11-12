@@ -88,6 +88,39 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 
 };
 defs["app.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -255,7 +288,7 @@ function playlistMenu(anchor, id) {
         return;
     (0, ui_js_1.openMenu)(anchor, [
         { icon: 'edit', label: 'Переименовать', onClick: async () => {
-                const { promptText } = await Promise.resolve().then(() => require('./ui.js'));
+                const { promptText } = await Promise.resolve().then(() => __importStar(require('./ui.js')));
                 const n = await promptText({ title: 'Переименовать плейлист', label: 'Название', value: p.name, ok: 'Сохранить' });
                 if (n)
                     (0, state_js_1.renamePlaylist)(id, n);
@@ -1059,8 +1092,15 @@ addEventListener('drop', async (e) => {
 (0, state_js_1.on)('track', syncRows);
 // карточка «Продолжить» на главной показывает ту песню, что играет сейчас
 (0, state_js_1.on)('track', () => {
-    const el = route().name === 'home' && (0, util_js_1.$)('.cont');
-    if (el && el.dataset.trackId !== (0, player_js_1.current)()?.id) {
+    if (route().name !== 'home')
+        return;
+    const el = (0, util_js_1.$)('.cont');
+    if (!el) { // карточки ещё не было (до этого ничего не слушали) — перерисовываем главную, чтобы она появилась
+        if ((0, player_js_1.current)() && !(0, views_js_1.homeHidden)().has('continue') && (0, util_js_1.$)('.quick, .section'))
+            render({ keepScroll: true });
+        return;
+    }
+    if (el.dataset.trackId !== (0, player_js_1.current)()?.id) {
         const html = (0, views_js_1.continueCard)();
         if (html)
             el.outerHTML = html;
@@ -1357,7 +1397,7 @@ const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
 const icons_js_1 = require("./icons.js");
 // Фон по теме. Тёмная: почти чёрный и одно мягкое свечение в цвет обложки. Светлая: свет от самой обложки
-// (она сильно размыта и медленно плывёт). Больше на фоне ничего нет.
+// (она сильно размыта, а поверх плывут «облака» её цветов — пока музыка играет; на паузе они замирают).
 const $ = s => document.querySelector(s);
 const GRAPHITE = ['#5b5d66', '#3d3f47', '#7a7c86', '#2c2d33'];
 // ---------- цвета обложки ----------
@@ -1417,7 +1457,7 @@ function paletteFrom(url) {
     });
 }
 function initBgFx() {
-    const cover = $('#bg-cover'), root = document.documentElement;
+    const cover = $('#bg-cover'), clouds = $('#bg-clouds'), root = document.documentElement;
     const sync = () => root.classList.toggle('is-playing', !player_js_1.audio.paused && !player_js_1.audio.ended && !!(0, player_js_1.current)());
     for (const e of ['play', 'pause', 'ended', 'emptied'])
         player_js_1.audio.addEventListener(e, sync);
@@ -1431,6 +1471,11 @@ function initBgFx() {
         if (cover) {
             cover.style.backgroundImage = t?.cover ? `url("${t.cover}")` : '';
             cover.classList.toggle('on', !!t?.cover);
+        }
+        if (clouds) { // «облака»: те же цвета обложки, несколько размытых пятен, которые плывут, пока играет музыка
+            if (t?.cover)
+                clouds.style.setProperty('--img', `url("${t.cover}")`);
+            clouds.classList.toggle('on', !!t?.cover);
         }
         sync();
         if (url === lastUrl)
@@ -6956,6 +7001,39 @@ function pickImage(w = 600, h = 600) {
 
 };
 defs["util.js"]=function(module,exports,require){"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SESSION_SEED = exports.extOf = exports.stripExt = exports.baseName = exports.uid = exports.clamp = exports.enc = exports.esc = exports.$$ = exports.$ = void 0;
 exports.fmtTime = fmtTime;
@@ -6967,7 +7045,7 @@ exports.debounce = debounce;
 exports.shuffleArray = shuffleArray;
 exports.seededShuffle = seededShuffle;
 exports.stripSource = stripSource;
-const i18n = require("./i18n.js");
+const i18n = __importStar(require("./i18n.js"));
 const $ = (s, r = document) => r.querySelector(s);
 exports.$ = $;
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
