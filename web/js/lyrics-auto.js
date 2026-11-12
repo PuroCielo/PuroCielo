@@ -144,6 +144,26 @@ export function pickBest(list, dur) {
 }
 // У файла нет артиста в тегах — узнаём его по названию и длине в каталогах Deezer и iTunes.
 // Берём, только если название совпало, а длина отличается не больше чем на 2 секунды.
+export async function identifyArtist(t) {
+    t._guess = undefined;
+    await identify(t);
+    return t._guess || '';
+}
+// Текст, который уже лежит на устройстве (свой, точный или из кэша), — без интернета. Нужен, чтобы честно посчитать «песни без текста».
+export async function peekLyrics(t) {
+    if (!t || t.lyrics)
+        return !!t?.lyrics;
+    if (!t._manualChecked && await applyManual(t))
+        return true;
+    for (const k of [okKey(t), keyOf(t)]) {
+        const r = await lyGet(k).catch(() => null);
+        if (r && r.ly) {
+            t.lyrics = r.ly;
+            return true;
+        }
+    }
+    return false;
+}
 async function identify(t) {
     if (t._guess !== undefined || typeof document === 'undefined')
         return;

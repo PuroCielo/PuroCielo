@@ -8,6 +8,7 @@ import { activeLine } from './lrc.js';
 import { $, clamp, esc, fmtTime } from './util.js';
 import { albumLink, artistLinks, artistsOf, cov } from './views.js';
 import { trackMenu } from './actions.js';
+import { canMiniWindow, toggleMiniWindow } from './miniwin.js';
 
 const mini = $('#mini'), np = $('#np'), lyBox = $('#np-lyrics'), qBox = $('#np-queue');
 const miniSeek = $('#mini-seek'), npSeek = $('#np-seek'), miniVol = $('#mini-vol'), npVol = $('#np-vol');
@@ -32,7 +33,7 @@ export function techParts(t) {
 const setIc = (id, name) => { const el = document.getElementById(id); if (el)
     el.innerHTML = icon(name); };
 function initIcons() {
-    [['m-shuffle', 'shuffle'], ['m-prev', 'prev'], ['m-next', 'next'], ['m-repeat', 'repeat'], ['m-like', 'heart'], ['m-lyrics', 'lyrics'], ['m-queue', 'queue'], ['m-expand', 'chev-up'],
+    [['m-shuffle', 'shuffle'], ['m-prev', 'prev'], ['m-next', 'next'], ['m-repeat', 'repeat'], ['m-like', 'heart'], ['m-lyrics', 'lyrics'], ['m-queue', 'queue'], ['m-expand', 'chev-up'], ['m-pip', 'pip'],
         ['mm-next', 'next'], ['np-close', 'chev-down'], ['np-more', 'more'], ['np-like', 'heart'], ['n-shuffle', 'shuffle'], ['n-prev', 'prev'], ['n-next', 'next'], ['n-repeat', 'repeat'],
         ['n-vol-hi', 'vol-high'], ['np-edit', 'edit'], ['np-pane-toggle', 'lyrics']].forEach(([a, b]) => setIc(a, b));
     ['m-play', 'mm-play', 'n-play'].forEach(id => setIc(id, 'play'));
@@ -449,6 +450,8 @@ export function initPlayerUI() {
     bindSeek(miniSeek);
     bindSeek(npSeek);
     bindVol(miniVol);
+    if (canMiniWindow() && $('#m-pip'))
+        $('#m-pip').hidden = false;
     bindVol(npVol);
     setPane('player');
     syncModes();
@@ -485,6 +488,9 @@ export function initPlayerUI() {
             }
             case 'open':
                 openNP('player');
+                break;
+            case 'mini-window':
+                toggleMiniWindow();
                 break;
             case 'open-lyrics':
                 openNP('lyrics');

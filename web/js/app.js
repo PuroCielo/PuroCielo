@@ -1,15 +1,17 @@
-import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, deleteSmart, derived, emit, flushSave, hasAlbumCover, likedTracks, load, on, playlistTracks, renamePlaylist, save, saveSmart, setAlbumCover, setCovers, setSetting, smartTracks, state, toggleLike, touchLibrary } from './state.js';
-import { P, addNext, addToQueue, audio, current, cycleRepeat, next, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
+import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, deleteSmart, derived, emit, flushSave, getTrack, hasAlbumCover, likedTracks, load, on, playlistTracks, renamePlaylist, save, saveSmart, setAlbumCover, setCovers, setSetting, setTagEdit, smartTracks, state, toggleLike, touchLibrary } from './state.js';
+import { P, addNext, addToQueue, audio, current, cycleRepeat, next, normInfo, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
 import { filesFromDrop, importFiles, restoreLibrary, syncNativeLibrary } from './importer.js';
 import { forgetFile, isNative, onNativeFetch, pickFiles, pickFolder, rescan, setPlayback } from './native.js';
 import { closeNP, initPlayerUI, isNPOpen, openNP, setPane } from './nowplaying.js';
-import { albumView, artistView, avatarHTML, continueCard, homeHidden, homeOrder, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
-import { deleteTrackFlow, newPlaylistFlow, trackMenu } from './actions.js';
+import { albumView, artistView, avatarHTML, continueCard, duplicatesView, fixView, homeHidden, homeOrder, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
+import { dedupeFlow, deleteTrackFlow, newPlaylistFlow, trackMenu } from './actions.js';
+import { missing } from './tools.js';
+import { runAutoCoversNow } from './covers-auto.js';
 import { closeMenu, closeTopModal, openMenu, openModal, pickImage, toast } from './ui.js';
 import { applySettings, applyTheme, toggleTheme } from './theme.js';
 import { icon } from './icons.js';
 import { initBgFx, runSplash } from './bgfx.js';
-import { ensureLyrics } from './lyrics-auto.js';
+import { ensureLyrics, identifyArtist, peekLyrics } from './lyrics-auto.js';
 import { $, $$, debounce, esc, plural, shuffleArray } from './util.js';
 import { buildM3U } from './m3u.js';
 import { clearFiles } from './db.js';
@@ -81,6 +83,13 @@ function render({ keepScroll = false, restore = null } = {}) {
             break;
         case 'settings':
             html = settingsView();
+            break;
+        case 'duplicates':
+            html = duplicatesView();
+            break;
+        case 'fix':
+            html = fixView(fixBusy);
+            peekAll();
             break;
         default: html = homeView();
     }
@@ -249,6 +258,17 @@ function doAction(el, e) {
             ]);
             break;
         }
+        case 'dedupe':
+            dedupeFlow(d.key || null);
+            break;
+        case 'fix-all':
+            fixAll();
+            break;
+        case 'play-id':
+            e.stopPropagation();
+            if (getTrack(d.id))
+                playList([d.id], 0);
+            break;
         case 'delete-track':
             e.stopPropagation();
             deleteTrackFlow(d.id);
@@ -599,6 +619,79 @@ document.addEventListener('input', e => {
 });
 // ================= настройки: тексты, резервная копия, сброс =================
 let lyBusy = false;
+// ---------- «Песни без данных» ----------
+let fixBusy = '', peeked = 0;
+// тексты, уже лежащие на устройстве, подтягиваем без интернета — иначе счётчик «без текста» врёт
+async function peekAll() {
+    const list = derived().all.filter(t => !t.lyrics && !t._peeked);
+    if (!list.length || peeked)
+        return;
+    peeked = 1;
+    let got = 0;
+    for (const t of list) {
+        t._peeked = true;
+        if (await peekLyrics(t))
+            got++;
+    }
+    peeked = 0;
+    if (got && route().name === 'fix')
+        render({ keepScroll: true });
+}
+const fixStep = label => { fixBusy = label; if (route().name === 'fix')
+    render({ keepScroll: true }); };
+async function fixAll() {
+    if (fixBusy)
+        return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false)
+        return toast('Нет интернета — искать негде', 'err');
+    let artists = 0, texts = 0, covers = 0;
+    try {
+        // 1) артисты: «Артист - Название» в названии, иначе — каталог по названию и длине
+        const noArtist = missing().artist;
+        fixStep(`Артисты: 0 из ${noArtist.length}`);
+        for (const [i, t] of noArtist.entries()) {
+            const own = state.tagEdits[t.id] || {};
+            const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(t.title);
+            let edit = null;
+            if (dash)
+                edit = { artist: dash[1].trim(), title: dash[2].trim() };
+            else {
+                const a = await identifyArtist(t);
+                if (a)
+                    edit = { artist: a };
+            }
+            if (edit) {
+                setTagEdit(t.id, { ...own, ...edit });
+                artists++;
+            }
+            if (i % 3 === 2)
+                fixStep(`Артисты: ${i + 1} из ${noArtist.length}`);
+        }
+        // 2) обложки
+        fixStep('Ищу обложки…');
+        covers = await runAutoCoversNow();
+        // 3) тексты
+        const noText = derived().all.filter(t => !t.lyrics);
+        let i = 0;
+        fixStep(`Тексты: 0 из ${noText.length}`);
+        const worker = async () => { while (i < noText.length) {
+            const t = noText[i++];
+            t._ly = undefined;
+            if (await ensureLyrics(t))
+                texts++;
+            if (i % 5 === 0)
+                fixStep(`Тексты: ${i} из ${noText.length}`);
+        } };
+        await Promise.all([worker(), worker(), worker()]);
+    }
+    finally {
+        fixBusy = '';
+        if (route().name === 'fix')
+            render({ keepScroll: true });
+    }
+    const left = missing();
+    toast(`Готово. Найдено: артистов — ${artists}, обложек — ${covers}, текстов — ${texts}. Осталось без данных: ${new Set([...left.artist, ...left.cover, ...left.lyrics]).size}.`, 'ok', 7000);
+}
 async function findAllLyrics() {
     if (lyBusy)
         return toast('Поиск уже идёт…', 'info');
@@ -1125,4 +1218,4 @@ if (isNative) {
 // PWA: офлайн-кэш оболочки (только при открытии по http/https, не внутри приложения)
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !isNative)
     navigator.serviceWorker.register('sw.js').catch(() => { });
-window.__puro = { state: state, P: P, audio: audio, importFiles: importFiles, derived: derived };
+window.__puro = { state: state, P: P, audio: audio, importFiles: importFiles, derived: derived, normInfo: normInfo };

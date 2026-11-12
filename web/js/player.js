@@ -1,5 +1,6 @@
 import { bumpPlay, emit, getTrack, on, pushRecent, save, state } from './state.js';
 import { clamp, shuffleArray } from './util.js';
+import { gainFor, guessGain, loadLoud, measure } from './loudness.js';
 
 export const audio = new Audio();
 audio.preload = 'auto';
@@ -11,7 +12,7 @@ export const P = {
     repeat: 'off', // off | all | one
     muted: false,
 };
-let actx, analyser, fadeGain, eqNodes = [];
+let actx, analyser, fadeGain, normGain, eqNodes = [];
 export const getAnalyser = () => analyser;
 // ---------- эквалайзер: 6 полос ----------
 export const EQ_BANDS = [60, 230, 910, 3600, 9000, 14000];
@@ -29,6 +30,46 @@ function applyEq() {
     eqNodes.forEach((n, i) => { n.gain.value = g[i] || 0; });
 }
 export const current = () => getTrack(P.queue[P.idx]) || null;
+// ---------- одинаковая громкость ----------
+const normOn = () => state.settings.normalize !== false;
+const normDb = t => { if (!normOn() || !t)
+    return 0; const g = gainFor(t.id); return g == null ? Math.min(0, guessGain()) : g; };
+const lin = db => Math.pow(10, db / 20);
+// ramp — за сколько секунд плавно перейти к новой громкости (0 — сразу, для начала песни)
+function applyNorm(ramp = 0) {
+    if (!normGain || !actx)
+        return;
+    const v = lin(normDb(current())), now = actx.currentTime;
+    normGain.gain.cancelScheduledValues(now);
+    if (ramp)
+        normGain.gain.setTargetAtTime(v, now, ramp / 3);
+    else
+        normGain.gain.setValueAtTime(v, now);
+}
+export const normInfo = () => ({ on: normOn(), db: normDb(current()), measured: !!current() && gainFor(current().id) != null, node: normGain ? normGain.gain.value : null });
+// измеряем играющую песню и заранее — следующую, чтобы она сразу началась с нужной громкостью
+async function normTrack() {
+    if (!normOn())
+        return;
+    await loadLoud();
+    const t = current();
+    if (!t)
+        return;
+    if (gainFor(t.id) == null) {
+        await measure(t);
+        if (current() === t)
+            applyNorm(1.2);
+    }
+    const ni = nextIndex(), nx = ni >= 0 ? getTrack(P.queue[ni]) : null;
+    if (nx && gainFor(nx.id) == null)
+        setTimeout(() => { if (current() === t)
+            measure(nx); }, 4000);
+}
+on('track', () => { normTrack(); });
+on('settings', k => { if (k === 'normalize' || k === 'all') {
+    applyNorm(0.4);
+    normTrack();
+} });
 export const isPlaying = () => !audio.paused && !audio.ended;
 function ensureGraph() {
     if (actx) {
@@ -42,7 +83,7 @@ function ensureGraph() {
         analyser.fftSize = 512;
         analyser.smoothingTimeConstant = 0.8;
         const src = actx.createMediaElementSource(audio);
-        // звук → эквалайзер → громкость перехода → анализатор (спектр) → колонки
+        // звук → эквалайзер → громкость перехода → выравнивание громкости → анализатор (спектр) → колонки
         eqNodes = EQ_BANDS.map((f, i) => {
             const n = actx.createBiquadFilter();
             n.type = i === 0 ? 'lowshelf' : i === EQ_BANDS.length - 1 ? 'highshelf' : 'peaking';
@@ -57,9 +98,12 @@ function ensureGraph() {
             node = n;
         }
         node.connect(fadeGain);
-        fadeGain.connect(analyser);
+        normGain = actx.createGain();
+        fadeGain.connect(normGain);
+        normGain.connect(analyser);
         analyser.connect(actx.destination);
         applyEq();
+        applyNorm(0);
         if (actx.state === 'suspended')
             actx.resume();
     }
@@ -105,7 +149,7 @@ function crossfade(sec) {
     const ghost = new Audio(audio.currentSrc || audio.src);
     ghost.playbackRate = audio.playbackRate;
     ghost.currentTime = audio.currentTime;
-    const vol = P.muted ? 0 : state.volume;
+    const vol = (P.muted ? 0 : state.volume) * Math.min(1, lin(normDb(current()))); // уходящая песня — с её поправкой громкости
     ghost.volume = vol;
     ghost.play().catch(() => { });
     const t0 = performance.now(), ms = sec * 1000;
@@ -175,6 +219,7 @@ function load(autoplay = true, { fadeIn = 0 } = {}) {
     emit('queue');
     if (autoplay) {
         ensureGraph();
+        applyNorm(0);
         if (fadeGain && actx) {
             fadeGain.gain.cancelScheduledValues(actx.currentTime);
             fadeGain.gain.setValueAtTime(fadeIn ? 0.0001 : 1, actx.currentTime);

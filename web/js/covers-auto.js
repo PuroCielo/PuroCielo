@@ -154,15 +154,15 @@ function todo() {
             jobs.push({ kind: 'ar', key: a.key, name: a.name, tracks: [...a.tracks.filter(t => t._artistKey === a.key), ...a.tracks.filter(t => t._artistKey !== a.key)].slice(0, 3).map(t => ({ title: t.title, artists: (t._artists || []).filter(x => x !== UNKNOWN) })) });
     return jobs;
 }
-async function run() {
-    if (running || state.settings.autoCovers === false || (typeof navigator !== 'undefined' && navigator.onLine === false))
+async function run(force = false) {
+    if (running || (!force && state.settings.autoCovers === false) || (typeof navigator !== 'undefined' && navigator.onLine === false))
         return;
     running = true;
     await loadAuto();
     let found = 0;
     try {
         for (const j of todo()) {
-            if (state.settings.autoCovers === false)
+            if (!force && state.settings.autoCovers === false)
                 break;
             let url = j.kind === 'ar' ? await findArtist(j.name, j.tracks) : j.kind === 'a' ? await findAlbum(j.name, j.artists, j.first) : await findSong(j.name, j.artists);
             if (!url && j.kind === 't' && j.album)
@@ -192,6 +192,20 @@ async function run() {
             emit('covers');
         }
     }
+}
+// поиск по кнопке «Исправить всё»: забываем прежние «не нашлось» и ищем прямо сейчас; возвращает, сколько обложек добавилось
+export async function runAutoCoversNow() {
+    await loadAuto();
+    const count = () => Object.keys(auto.t).length + Object.keys(auto.a).length;
+    const before = count();
+    for (const k of Object.keys(auto.miss))
+        if (!k.startsWith('ar:'))
+            delete auto.miss[k];
+    clearTimeout(timer);
+    for (let i = 0; i < 40 && running; i++) // идёт фоновый поиск — ждём, пока закончит
+        await new Promise(r => setTimeout(r, 500));
+    await run(true);
+    return count() - before;
 }
 export function scheduleAutoCovers(ms = 2500) {
     clearTimeout(timer);

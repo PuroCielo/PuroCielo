@@ -1,6 +1,7 @@
 import { openTrackInfo } from './tagedit.js';
 import { addToPlaylist, createPlaylist, derived, getTrack, playlistTracks, removeFromPlaylist, removeTracks, setSetting, state, toggleLike } from './state.js';
 import { forgetFile } from './native.js';
+import { duplicateGroups, inherit } from './tools.js';
 import { addNext, addToQueue, purge } from './player.js';
 import { confirmBox, openMenu, openModal, promptText, toast } from './ui.js';
 import { icon } from './icons.js';
@@ -48,6 +49,23 @@ export async function deleteTrackFlow(id) {
     forgetFile(id);
     removeTracks([id]);
     toast(`Песня «${t.title}» удалена`);
+}
+// Дубликаты: удалить лишние копии (в одной группе или во всех). Лайки, плейлисты и прослушивания переходят на оставшуюся копию.
+export async function dedupeFlow(key) {
+    const groups = duplicateGroups().filter(g => !key || g.key === key);
+    const extra = groups.flatMap(g => g.extra);
+    if (!extra.length)
+        return;
+    const yes = await confirmBox({ title: extra.length === 1 ? 'Удалить лишнюю копию?' : 'Удалить лишние копии?', text: `Будет удалено песен: ${extra.length}. В каждой группе останется лучшая копия; лайки и плейлисты перейдут на неё. Сами файлы на устройстве останутся.`, ok: 'Удалить', danger: true });
+    if (!yes)
+        return;
+    for (const g of groups)
+        inherit(g.keep, g.extra);
+    const ids = extra.map(t => t.id);
+    purge(ids);
+    ids.forEach(forgetFile);
+    removeTracks(ids);
+    toast(`Удалено лишних копий: ${ids.length}`);
 }
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 const fmtSpeed = v => String(v).replace('.', ',') + '×';

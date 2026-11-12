@@ -2,6 +2,7 @@ import { derived, getTrack, likedTracks, playlistTracks, smartTracks, state } fr
 import { icon } from './icons.js';
 import { SESSION_SEED, enc, esc, fmtTime, fmtTotal, hash, norm, plural, seededShuffle } from './util.js';
 import { UNKNOWN, artistKey, trackArtists } from './artists.js';
+import { duplicateGroups, extOf as fileExt, missing, sizeMB } from './tools.js';
 import { canGoogle, sync } from './sync.js';
 import { isEn } from './i18n.js';
 import { EQ_BANDS, EQ_PRESETS, current, sleepState } from './player.js';
@@ -567,11 +568,18 @@ export function settingsView() {
         ${srow('Свой сервер текстов', s.lyricsProxy ? esc(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${icon('edit')}Указать</button>`)}
         ${srow('Размер текста', 'Строки в режиме караоке.', seg('lyricsSize', [['s', 'Мелкий'], ['m', 'Средний'], ['l', 'Крупный']], s.lyricsSize))}
         ${srow('Таймер сна', `Музыка плавно затихнет и остановится. Сейчас: ${sleepLabel()}.`, `<div class="seg">${sleepOpts.map(([v, n]) => `<button class="${String(sleepCur) === String(v) ? 'on' : ''}" data-action="sleep" data-v="${v}">${n}</button>`).join('')}</div>`)}
+        ${srow('Одинаковая громкость', 'Тихие песни звучат громче, громкие — тише, и не нужно тянуться к регулятору. Плеер измеряет громкость, когда песня включается первый раз; файлы не меняются.', sw('normalize', s.normalize !== false))}
         ${srow('Переход между треками', 'Плавный: конец песни затихает, следующая нарастает. «Без пауз» — для альбомов, где песни перетекают одна в другую.', seg('transition', [[0, 'Обычный'], [-1, 'Без пауз'], [3, '3 с'], [6, '6 с'], [10, '10 с']], s.transition || 0))}
         ${srow('Эквалайзер', 'Подстройка звука: готовая настройка или своя.', seg('eq', [...Object.entries(EQ_PRESETS).map(([k, p]) => [k, p.name]), ['custom', 'Своя']], s.eq || 'flat'))}
         ${s.eq === 'custom' ? `<div class="setting eq-row">${EQ_BANDS.map((f, i) => `<label class="eq-band"><input type="range" class="eq-slider" min="-12" max="12" step="1" value="${(s.eqCustom || [])[i] || 0}" data-i="${i}" aria-label="${f < 1000 ? f + ' Гц' : f / 1000 + ' кГц'}"><b>${(s.eqCustom || [])[i] > 0 ? '+' : ''}${(s.eqCustom || [])[i] || 0}</b><span>${f < 1000 ? f + ' Гц' : f / 1000 + ' кГц'}</span></label>`).join('')}</div>` : ''}
         ${srow('Шаг перемотки', 'Стрелки ← / → на клавиатуре.', seg('seekStep', [[5, '5 с'], [10, '10 с'], [15, '15 с'], [30, '30 с']], s.seekStep))}
         ${srow('Спектр в Now Playing', 'Анимация звука рядом с обложкой.', sw('visualizer', s.visualizer))}
+      </div>
+
+      <h2 class="sg-title">Порядок в медиатеке</h2>
+      <div class="settings">
+        ${srow('Песни без данных', 'Песни без артиста, обложки или текста. Плеер попробует найти всё сам.', `<a class="btn btn-soft sm" href="#/fix">${icon('sparkle')}Открыть</a>`)}
+        ${srow('Дубликаты', 'Песни, которые есть в медиатеке дважды. Лишние копии можно удалить одной кнопкой.', `<a class="btn btn-soft sm" href="#/duplicates">${icon('copy')}Открыть</a>`)}
       </div>
 
       <h2 class="sg-title">Приложение</h2>
@@ -586,6 +594,35 @@ export function settingsView() {
         ${srow('Библиотека', isNative ? 'Можно выбрать папку целиком или добавлять треки по одному. Сами файлы остаются на устройстве.' : 'Файлы хранятся только в вашем браузере (IndexedDB).', `<div class="row-btns"><button class="btn btn-soft sm" data-action="add-files">${icon('plus')}Добавить</button><button class="btn btn-soft sm btn-danger" data-action="clear-library">${icon('trash')}Очистить</button></div>`)}
       </div>
   </div>`;
+}
+// ---------- Дубликаты ----------
+export function duplicatesView() {
+    const groups = duplicateGroups(), extra = groups.reduce((n, g) => n + g.extra.length, 0);
+    const back = `<a class="btn btn-soft sm" href="#/settings">${icon('chev-left')}Настройки</a>`;
+    if (!groups.length)
+        return pageHead('Дубликаты', 'Повторов нет', back) + `<div class="empty compact"><div class="empty-icon">${icon('check')}</div><h2>Повторов не найдено</h2><p>Плеер сравнил названия, артистов и длину всех песен — одинаковых нет.</p></div>`;
+    const row = (t, keep) => `<div class="dup-row ${keep ? 'keep' : ''}" data-track-id="${esc(t.id)}">
+      <button class="dup-cover" data-action="play-id" data-id="${esc(t.id)}" aria-label="Слушать">${cov(t.cover, t._albumKey || t.id)}<span>${icon('play')}</span></button>
+      <div class="dup-main"><div class="dup-name">${esc(t.name || t.title)}</div><div class="dup-meta">${[fileExt(t), t.bitrate ? `${Math.round(t.bitrate)} кбит/с` : '', sizeMB(t), fmtTime(t.duration), t.album ? esc(t.album) : ''].filter(Boolean).join(' · ')}</div></div>
+      <span class="dup-badge">${keep ? 'Оставить' : 'Лишняя'}</span>
+      <button class="icon-btn" data-action="delete-track" data-id="${esc(t.id)}" aria-label="Удалить песню" title="Удалить песню">${icon('trash')}</button>
+    </div>`;
+    return pageHead('Дубликаты', `Лишних копий: ${extra}`, `${back}<button class="btn btn-primary sm" data-action="dedupe">${icon('trash')}Удалить все лишние</button>`) +
+        `<p class="tool-note">Повтор — это песня с тем же названием, артистом и длиной. В каждой группе плеер оставляет лучшую копию: без потерь качества, с большим битрейтом, с обложкой и текстом.</p>` +
+        groups.map(g => `<section class="dup-group"><header><div><h3>${esc(g.keep.title)}</h3><p>${esc(g.keep.artist || '')}</p></div><button class="btn btn-soft sm" data-action="dedupe" data-key="${esc(g.key)}">Удалить лишние (${g.extra.length})</button></header>${row(g.keep, true)}${g.extra.map(t => row(t, false)).join('')}</section>`).join('');
+}
+// ---------- Песни без данных ----------
+export function fixView(busy = '') {
+    const m = missing(), back = `<a class="btn btn-soft sm" href="#/settings">${icon('chev-left')}Настройки</a>`;
+    const total = new Set([...m.artist, ...m.cover, ...m.lyrics]).size;
+    if (!m.all.length)
+        return pageHead('Песни без данных', '', back) + emptyState(true);
+    if (!total)
+        return pageHead('Песни без данных', 'Всё на месте', back) + `<div class="empty compact"><div class="empty-icon">${icon('check')}</div><h2>Всё на месте</h2><p>У каждой песни есть артист, обложка и текст.</p></div>`;
+    const part = (title, list, note) => list.length ? `<section class="section"><div class="section-head"><h2>${title} · ${list.length}</h2></div><p class="tool-note">${note}</p>${trackList(list.slice(0, 30), { cover: true })}${list.length > 30 ? `<p class="tool-note">…и ещё ${list.length - 30}</p>` : ''}</section>` : '';
+    return pageHead('Песни без данных', `Чего-то не хватает у ${total} из ${m.all.length} песен`, `${back}<button class="btn btn-primary sm" data-action="fix-all" ${busy ? 'disabled' : ''}>${icon('sparkle')}${busy || 'Исправить всё'}</button>`) +
+        `<p class="tool-note">«Исправить всё» по очереди ищет артистов (по названию и длине песни), обложки и тексты. Найденное записывается в плеере, сами файлы не меняются. Любую песню можно поправить и вручную — через «⋯» в её строке.</p>` +
+        part('Без артиста', m.artist, 'В файле не указан артист.') + part('Без обложки', m.cover, 'Нет картинки ни в файле, ни в плеере.') + part('Без текста', m.lyrics, 'Текст ещё не найден или его нет в открытых источниках.');
 }
 export function sidebarPlaylists() {
     const items = [`<a class="side-link sub" href="#/liked" data-route="liked"><span class="mini-cov liked">${icon('heart-fill')}</span><span>Понравившееся</span></a>`];

@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
     lang: 'ru', // ru | en — язык интерфейса
     lyricsProxy: '', // адрес Cloudflare Worker для NetEase / Genius
     homeRecents: true, // блок «Недавно прослушанное» (старый выключатель; теперь см. homeHidden)
+    normalize: true, // одинаковая громкость песен
     homeOrder: [], // порядок разделов главной (пусто — обычный)
     homeHidden: [], // скрытые разделы главной
     keepAwake: false, // не гасить экран во время музыки
