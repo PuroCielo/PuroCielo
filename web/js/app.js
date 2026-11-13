@@ -20,6 +20,7 @@ import { initAutoCovers, setArtistPhoto } from './covers-auto.js';
 import { initSync, signInEmail, signInGoogle, signOutSync, sync, syncNow } from './sync.js';
 
 import { revealView } from './motion.js';
+import { initLinkImport, openLinkImport } from './link-import.js';
 
 const view = $('#view');
 let query = '';
@@ -334,6 +335,9 @@ function doAction(el, e) {
             e.stopPropagation();
             newPlaylistFlow().then(p => { if (p)
                 location.hash = '#/playlist/' + p.id; });
+            break;
+        case 'import-link':
+            openLinkImport();
             break;
         case 'add-files':
             isNative ? pickFiles() : $('#file-input').click();
@@ -1193,6 +1197,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
     setSpeed(state.settings.speed);
     renderChrome();
     initPlayerUI();
+    initLinkImport();
     initBgFx();
     runSplash();
     render();

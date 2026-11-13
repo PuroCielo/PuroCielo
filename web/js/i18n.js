@@ -4,6 +4,30 @@ let lang = 'ru';
 export const getLang = () => lang;
 export const isEn = () => lang === 'en';
 const D = {
+    "Загрузить по ссылке": "Import from link",
+    "Скачать в медиатеку": "Download to library",
+    "Отменить загрузку": "Cancel download",
+    "Прямая ссылка на аудио · до 100 МБ": "Direct audio link · up to 100 MB",
+    "Загрузка аудио": "Audio download",
+    "Подключаюсь…": "Connecting…",
+    "Сохраняю в медиатеку…": "Saving to library…",
+    "Трек добавлен в медиатеку": "Track added to library",
+    "Этот файл уже есть в медиатеке": "This file is already in your library",
+    "Загрузка заняла слишком много времени. Попробуйте ещё раз.": "The download took too long. Try again.",
+    "Загрузка отменена": "Download cancelled",
+    "Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.": "Could not download the file. The website may block direct downloads; try downloading the file manually.",
+    "Введите полную ссылку, начиная с https://": "Enter a full URL starting with https://",
+    "Нужна ссылка HTTP или HTTPS без логина и пароля.": "Use an HTTP or HTTPS URL without a username or password.",
+    "Загрузка со страниц SoundCloud ещё не подключена. Вставьте прямую ссылку на аудиофайл.": "SoundCloud page downloads are not connected yet. Paste a direct audio file URL.",
+    "По ссылке не найден поддерживаемый аудиофайл.": "No supported audio file was found at this URL.",
+    "Сайт не отдал файл. Проверьте ссылку и доступ к нему.": "The website did not return the file. Check the URL and access.",
+    "Это ссылка на страницу или плейлист. Нужна прямая ссылка на аудиофайл.": "This links to a page or playlist. Use a direct audio file URL.",
+    "Файл слишком большой. Максимум — 100 МБ.": "The file is too large. The limit is 100 MB.",
+    "Этот браузер не поддерживает загрузку по ссылке.": "This browser does not support link downloads.",
+    "По ссылке пришёл пустой файл.": "The URL returned an empty file.",
+    "Не удалось прочитать аудио. Проверьте формат файла.": "Could not read the audio. Check the file format.",
+    "Не удалось сохранить трек. Проверьте свободное место и доступ к хранилищу браузера.": "Could not save the track. Check free space and browser storage access.",
+
     // навигация и разделы
     'Главная': 'Home', 'Медиатека': 'Media library', 'Альбомы': 'Albums', 'Синглы': 'Singles', 'Плейлисты': 'Playlists', 'Артисты': 'Artists', 'Песни': 'Songs',
     'Поиск': 'Search', 'Библиотека': 'Library', 'Профиль': 'Profile', 'Настройки': 'Settings', 'Навигация': 'Navigation', 'Нижняя навигация': 'Bottom navigation',

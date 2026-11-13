@@ -983,3 +983,18 @@ html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: n
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
 }
+
+/* Загрузка аудио по ссылке рядом с добавлением локальных файлов. */
+.link-import { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--hover); min-width: 0; }
+.link-import > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--text-2); }
+.link-import-entry { display: flex; gap: 4px; align-items: center; border-radius: 10px; background: var(--card); border: 1px solid var(--line); transition: border-color .2s; }
+.link-import-entry:focus-within { border-color: var(--accent); }
+.link-import-entry input { min-width: 0; width: 100%; padding: 10px 8px; color: var(--text); background: transparent; border: 0; outline: 0; font: inherit; font-size: 12px; }
+.link-import-entry input::placeholder { color: var(--text-3); }
+.link-import-entry .icon-btn { flex: none; width: 34px; height: 36px; }
+.link-import small { display: block; margin-top: 7px; font-size: 10px; line-height: 1.45; color: var(--text-3); }
+.link-import progress { display: block; width: 100%; height: 4px; margin-top: 10px; accent-color: var(--accent); }
+.link-import-status { font-size: 11px; line-height: 1.45; margin-top: 8px; color: var(--text-2); overflow-wrap: anywhere; }
+.link-import-status.error { color: var(--danger); }
+.link-import [hidden], .import-link-mobile { display: none !important; }
+@media (max-width: 899px) { .import-link-mobile { display: inline-flex !important; } }

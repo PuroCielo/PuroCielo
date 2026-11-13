@@ -2,7 +2,7 @@ import { AUDIO_EXT, readMeta } from './tags.js';
 import { parseLrc } from './lrc.js';
 import { parseM3U } from './m3u.js';
 import { createPlaylist, emit, state, touchLibrary } from './state.js';
-import { allFiles, delFile, putFile } from './db.js';
+import { allFiles, delFile, putFile, putFileChecked } from './db.js';
 import { RemoteFile, isNative, isNativeId, nativeId, nativeUrl } from './native.js';
 import { extOf, norm, stripExt } from './util.js';
 import { confirmBox, toast } from './ui.js';
@@ -120,6 +120,25 @@ function findTrackByName(base, title) {
             hit = t;
     }
     return hit;
+}
+// Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
+export async function importDownloadedAudio(file) {
+    const id = trackId(file);
+    if (state.tracks.has(id)) return { added: false };
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now() };
+    const track = await buildTrack(rec);
+    try {
+        if (!track.duration) throw new Error('Не удалось прочитать аудио. Проверьте формат файла.');
+        try { await putFileChecked(rec); }
+        catch { throw new Error('Не удалось сохранить трек. Проверьте свободное место и доступ к хранилищу браузера.'); }
+        state.tracks.set(id, track);
+        touchLibrary();
+        return { added: true };
+    } catch (e) {
+        URL.revokeObjectURL(track.url);
+        if (track.cover) URL.revokeObjectURL(track.cover);
+        throw e;
+    }
 }
 export async function importFiles(fileList) {
     const files = [...fileList];

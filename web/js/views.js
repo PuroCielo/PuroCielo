@@ -109,7 +109,7 @@ function emptyState(compact) {
 }
 const themeBtn = () => `<button class="icon-btn lg theme-btn" data-action="toggle-theme" aria-label="Сменить тему" title="Сменить тему (D)">${icon(state.theme === 'dark' ? 'sun' : 'moon')}</button>`;
 function pageHead(title, sub = '', extra = '') {
-    return `<header class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p class="page-sub">${esc(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${icon('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${avatarHTML()}</button></div></header>`;
+    return `<header class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<p class="page-sub">${esc(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg import-link-mobile" data-action="import-link" aria-label="Загрузить по ссылке" title="Загрузить по ссылке">${icon('download')}</button><button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${icon('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${avatarHTML()}</button></div></header>`;
 }
 function hero({ art, eyebrow, title, subHTML = '', meta = '', actions = '', bg = '', round = false }) {
     return `<section class="hero">

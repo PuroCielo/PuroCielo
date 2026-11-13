@@ -41,7 +41,8 @@ catch (e) {
     console.warn('IndexedDB:', e);
     return undefined;
 } };
-export const putFile = safe(rec => tx('files', 'readwrite', s => s.put(rec)));
+export const putFileChecked = rec => tx('files', 'readwrite', s => s.put(rec));
+export const putFile = safe(putFileChecked);
 export const allFiles = safe(async () => (await tx('files', 'readonly', s => s.getAll())) || []);
 export const delFile = safe(id => tx('files', 'readwrite', s => s.delete(id)));
 export const clearFiles = safe(() => tx('files', 'readwrite', s => s.clear()));

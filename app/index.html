@@ -997,6 +997,21 @@ html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: n
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
 }
+
+/* Загрузка аудио по ссылке рядом с добавлением локальных файлов. */
+.link-import { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--hover); min-width: 0; }
+.link-import > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--text-2); }
+.link-import-entry { display: flex; gap: 4px; align-items: center; border-radius: 10px; background: var(--card); border: 1px solid var(--line); transition: border-color .2s; }
+.link-import-entry:focus-within { border-color: var(--accent); }
+.link-import-entry input { min-width: 0; width: 100%; padding: 10px 8px; color: var(--text); background: transparent; border: 0; outline: 0; font: inherit; font-size: 12px; }
+.link-import-entry input::placeholder { color: var(--text-3); }
+.link-import-entry .icon-btn { flex: none; width: 34px; height: 36px; }
+.link-import small { display: block; margin-top: 7px; font-size: 10px; line-height: 1.45; color: var(--text-3); }
+.link-import progress { display: block; width: 100%; height: 4px; margin-top: 10px; accent-color: var(--accent); }
+.link-import-status { font-size: 11px; line-height: 1.45; margin-top: 8px; color: var(--text-2); overflow-wrap: anywhere; }
+.link-import-status.error { color: var(--danger); }
+.link-import [hidden], .import-link-mobile { display: none !important; }
+@media (max-width: 899px) { .import-link-mobile { display: inline-flex !important; } }
 </style>
 </head>
 <body>
@@ -1017,6 +1032,7 @@ html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: n
     <div class="side-group"><span>Плейлисты</span><button class="icon-btn sm" data-action="new-playlist" aria-label="Новый плейлист" id="side-add"></button></div>
     <nav class="side-playlists" id="side-playlists"></nav>
     <div class="side-foot">
+      <div id="side-link-import"></div>
       <button class="btn btn-primary block" data-action="add-files" id="side-upload"></button>
       <div class="side-row"><a class="side-profile" href="#/profile" id="side-profile"></a><button class="icon-btn" id="side-settings" data-nav="#/settings" aria-label="Настройки" title="Настройки"></button><button class="icon-btn" id="side-theme" data-action="toggle-theme" aria-label="Сменить тему" title="Сменить тему (D)"></button></div>
     </div>
@@ -1243,6 +1259,7 @@ const i18n_js_1 = require("./i18n.js");
 const covers_auto_js_2 = require("./covers-auto.js");
 const sync_js_1 = require("./sync.js");
 const motion_js_1 = require("./motion.js");
+const link_import_js_1 = require("./link-import.js");
 const view = (0, util_js_1.$)('#view');
 let query = '';
 // ================= роутер =================
@@ -1577,6 +1594,9 @@ function doAction(el, e) {
                 if (p)
                     location.hash = '#/playlist/' + p.id;
             });
+            break;
+        case 'import-link':
+            (0, link_import_js_1.openLinkImport)();
             break;
         case 'add-files':
             native_js_1.isNative ? (0, native_js_1.pickFiles)() : (0, util_js_1.$)('#file-input').click();
@@ -2487,6 +2507,7 @@ document.addEventListener('visibilitychange', () => {
     (0, player_js_1.setSpeed)(state_js_1.state.settings.speed);
     renderChrome();
     (0, nowplaying_js_1.initPlayerUI)();
+    (0, link_import_js_1.initLinkImport)();
     (0, bgfx_js_1.initBgFx)();
     (0, bgfx_js_1.runSplash)();
     render();
@@ -3000,7 +3021,7 @@ async function setArtistPhoto(key, data) {
 };
 defs["db.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lySet = exports.lyKeys = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = void 0;
+exports.lySet = exports.lyKeys = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = exports.putFileChecked = void 0;
 // IndexedDB: файлы библиотеки ('files'), состояние приложения ('kv'), кэш текстов ('lyrics')
 let dbp;
 function open() {
@@ -3046,7 +3067,9 @@ const safe = f => async (...a) => {
         return undefined;
     }
 };
-exports.putFile = safe(rec => tx('files', 'readwrite', s => s.put(rec)));
+const putFileChecked = rec => tx('files', 'readwrite', s => s.put(rec));
+exports.putFileChecked = putFileChecked;
+exports.putFile = safe(exports.putFileChecked);
 exports.allFiles = safe(async () => (await tx('files', 'readonly', s => s.getAll())) || []);
 exports.delFile = safe(id => tx('files', 'readwrite', s => s.delete(id)));
 exports.clearFiles = safe(() => tx('files', 'readwrite', s => s.clear()));
@@ -3282,6 +3305,29 @@ exports.getLang = getLang;
 const isEn = () => lang === 'en';
 exports.isEn = isEn;
 const D = {
+    "Загрузить по ссылке": "Import from link",
+    "Скачать в медиатеку": "Download to library",
+    "Отменить загрузку": "Cancel download",
+    "Прямая ссылка на аудио · до 100 МБ": "Direct audio link · up to 100 MB",
+    "Загрузка аудио": "Audio download",
+    "Подключаюсь…": "Connecting…",
+    "Сохраняю в медиатеку…": "Saving to library…",
+    "Трек добавлен в медиатеку": "Track added to library",
+    "Этот файл уже есть в медиатеке": "This file is already in your library",
+    "Загрузка заняла слишком много времени. Попробуйте ещё раз.": "The download took too long. Try again.",
+    "Загрузка отменена": "Download cancelled",
+    "Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.": "Could not download the file. The website may block direct downloads; try downloading the file manually.",
+    "Введите полную ссылку, начиная с https://": "Enter a full URL starting with https://",
+    "Нужна ссылка HTTP или HTTPS без логина и пароля.": "Use an HTTP or HTTPS URL without a username or password.",
+    "Загрузка со страниц SoundCloud ещё не подключена. Вставьте прямую ссылку на аудиофайл.": "SoundCloud page downloads are not connected yet. Paste a direct audio file URL.",
+    "По ссылке не найден поддерживаемый аудиофайл.": "No supported audio file was found at this URL.",
+    "Сайт не отдал файл. Проверьте ссылку и доступ к нему.": "The website did not return the file. Check the URL and access.",
+    "Это ссылка на страницу или плейлист. Нужна прямая ссылка на аудиофайл.": "This links to a page or playlist. Use a direct audio file URL.",
+    "Файл слишком большой. Максимум — 100 МБ.": "The file is too large. The limit is 100 MB.",
+    "Этот браузер не поддерживает загрузку по ссылке.": "This browser does not support link downloads.",
+    "По ссылке пришёл пустой файл.": "The URL returned an empty file.",
+    "Не удалось прочитать аудио. Проверьте формат файла.": "Could not read the audio. Check the file format.",
+    "Не удалось сохранить трек. Проверьте свободное место и доступ к хранилищу браузера.": "Could not save the track. Check free space and browser storage access.",
     // навигация и разделы
     'Главная': 'Home', 'Медиатека': 'Media library', 'Альбомы': 'Albums', 'Синглы': 'Singles', 'Плейлисты': 'Playlists', 'Артисты': 'Artists', 'Песни': 'Songs',
     'Поиск': 'Search', 'Библиотека': 'Library', 'Профиль': 'Profile', 'Настройки': 'Settings', 'Навигация': 'Navigation', 'Нижняя навигация': 'Bottom navigation',
@@ -3664,6 +3710,7 @@ defs["importer.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildTrack = buildTrack;
 exports.restoreLibrary = restoreLibrary;
+exports.importDownloadedAudio = importDownloadedAudio;
 exports.importFiles = importFiles;
 exports.filesFromDrop = filesFromDrop;
 exports.syncNativeLibrary = syncNativeLibrary;
@@ -3794,6 +3841,33 @@ function findTrackByName(base, title) {
             hit = t;
     }
     return hit;
+}
+// Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
+async function importDownloadedAudio(file) {
+    const id = trackId(file);
+    if (state_js_1.state.tracks.has(id))
+        return { added: false };
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now() };
+    const track = await buildTrack(rec);
+    try {
+        if (!track.duration)
+            throw new Error('Не удалось прочитать аудио. Проверьте формат файла.');
+        try {
+            await (0, db_js_1.putFileChecked)(rec);
+        }
+        catch {
+            throw new Error('Не удалось сохранить трек. Проверьте свободное место и доступ к хранилищу браузера.');
+        }
+        state_js_1.state.tracks.set(id, track);
+        (0, state_js_1.touchLibrary)();
+        return { added: true };
+    }
+    catch (e) {
+        URL.revokeObjectURL(track.url);
+        if (track.cover)
+            URL.revokeObjectURL(track.cover);
+        throw e;
+    }
 }
 async function importFiles(fileList) {
     const files = [...fileList];
@@ -4097,6 +4171,204 @@ function jsonp(url, param = 'callback') {
         sc.src = url + (url.includes('?') ? '&' : '?') + param + '=' + cb;
         document.head.appendChild(sc);
     });
+}
+
+};
+defs["link-download.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_DOWNLOAD = void 0;
+exports.audioLink = audioLink;
+exports.downloadAudio = downloadAudio;
+const tags_js_1 = require("./tags.js");
+const util_js_1 = require("./util.js");
+exports.MAX_DOWNLOAD = 100 * 1024 * 1024;
+const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
+function audioLink(raw) {
+    let url;
+    try {
+        url = new URL(raw.trim());
+    }
+    catch {
+        throw new Error('Введите полную ссылку, начиная с https://');
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+        throw new Error('Нужна ссылка HTTP или HTTPS без логина и пароля.');
+    if (/(^|\.)soundcloud\.com$/.test(url.hostname) || url.hostname === 'snd.sc')
+        throw new Error('Загрузка со страниц SoundCloud ещё не подключена. Вставьте прямую ссылку на аудиофайл.');
+    url.hash = '';
+    return url;
+}
+function filename(response, url, mime) {
+    const disposition = response.headers.get('content-disposition') || '';
+    const utf = /filename\*=UTF-8''([^;]+)/i.exec(disposition), plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(disposition);
+    let name = utf?.[1] || plain?.[1] || plain?.[2] || new URL(response.url || url).pathname.split('/').pop() || 'Track';
+    try {
+        name = decodeURIComponent(name);
+    }
+    catch { /* Keep literal name. */ }
+    name = name.split(/[\\/]/).pop().replace(/[\x00-\x1f\x7f<>:"|?*]/g, '_').trim().slice(0, 160) || 'Track';
+    if (!tags_js_1.AUDIO_EXT.has((0, util_js_1.extOf)(name))) {
+        if (!TYPES[mime])
+            throw new Error('По ссылке не найден поддерживаемый аудиофайл.');
+        name += '.' + TYPES[mime];
+    }
+    return name;
+}
+async function downloadAudio(raw, { signal, onProgress = () => { } } = {}) {
+    const url = audioLink(raw);
+    const response = await fetch(url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.');
+    }
+    const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (/html|json|xml|mpegurl/.test(mime) || mime.startsWith('text/')) {
+        await response.body?.cancel();
+        throw new Error('Это ссылка на страницу или плейлист. Нужна прямая ссылка на аудиофайл.');
+    }
+    let name;
+    try {
+        name = filename(response, url.href, mime);
+    }
+    catch (e) {
+        await response.body?.cancel();
+        throw e;
+    }
+    const total = Number(response.headers.get('content-length')) || 0;
+    if (total > exports.MAX_DOWNLOAD) {
+        await response.body?.cancel();
+        throw new Error('Файл слишком большой. Максимум — 100 МБ.');
+    }
+    if (!response.body?.getReader)
+        throw new Error('Этот браузер не поддерживает загрузку по ссылке.');
+    const reader = response.body.getReader(), parts = [];
+    let received = 0;
+    try {
+        while (true) {
+            if (signal?.aborted)
+                throw new DOMException('Cancelled', 'AbortError');
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            received += value.byteLength;
+            if (received > exports.MAX_DOWNLOAD)
+                throw new Error('Файл слишком большой. Максимум — 100 МБ.');
+            parts.push(value);
+            onProgress(received, total);
+        }
+    }
+    catch (e) {
+        await reader.cancel().catch(() => { });
+        throw e;
+    }
+    finally {
+        reader.releaseLock();
+    }
+    if (signal?.aborted)
+        throw new DOMException('Cancelled', 'AbortError');
+    if (!received)
+        throw new Error('По ссылке пришёл пустой файл.');
+    return new File(parts, name, { type: mime || 'application/octet-stream' });
+}
+
+};
+defs["link-import.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.initLinkImport = initLinkImport;
+exports.openLinkImport = openLinkImport;
+const link_download_js_1 = require("./link-download.js");
+const importer_js_1 = require("./importer.js");
+const icons_js_1 = require("./icons.js");
+const i18n_js_1 = require("./i18n.js");
+const ui_js_1 = require("./ui.js");
+let job = null, message = '', error = false, received = 0, total = 0, phase = '', lastURL = '';
+let modal = null, formNumber = 0;
+const forms = () => [...document.querySelectorAll('.link-import')];
+function markup() {
+    const id = 'audio-link-' + (++formNumber);
+    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://…/track.mp3" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${(0, icons_js_1.icon)('close')}</button></div><small id="${id}-hint">Прямая ссылка на аудио · до 100 МБ</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
+}
+function paint() {
+    for (const form of forms()) {
+        form.setAttribute('aria-busy', String(!!job));
+        form.querySelector('input').disabled = !!job;
+        form.querySelector('[type=submit]').hidden = !!job;
+        const cancel = form.querySelector('[data-link-cancel]');
+        cancel.hidden = !job;
+        cancel.disabled = phase === 'saving';
+        const progress = form.querySelector('progress');
+        progress.hidden = !job;
+        if (total)
+            progress.value = Math.min(100, received / total * 100);
+        else
+            progress.removeAttribute('value');
+        const status = form.querySelector('.link-import-status');
+        status.hidden = !message;
+        status.classList.toggle('error', error);
+        status.textContent = message;
+    }
+}
+function bind(form) {
+    form.querySelector('input').value = lastURL;
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (job)
+            return;
+        lastURL = form.querySelector('input').value.trim();
+        const controller = new AbortController();
+        job = controller;
+        phase = 'download';
+        error = false;
+        received = total = 0;
+        message = 'Подключаюсь…';
+        paint();
+        let timedOut = false, lastPaint = 0;
+        const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+        try {
+            const file = await (0, link_download_js_1.downloadAudio)(lastURL, { signal: controller.signal, onProgress: (bytes, size) => {
+                    received = bytes;
+                    total = size;
+                    if (Date.now() - lastPaint < 160)
+                        return;
+                    lastPaint = Date.now();
+                    message = total ? `${(0, i18n_js_1.isEn)() ? 'Downloading' : 'Загрузка'}: ${Math.min(100, Math.round(received / total * 100))}%` : `${(0, i18n_js_1.isEn)() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${(0, i18n_js_1.isEn)() ? 'MB' : 'МБ'}`;
+                    paint();
+                } });
+            clearTimeout(timer);
+            if (controller.signal.aborted)
+                throw new DOMException('Cancelled', 'AbortError');
+            phase = 'saving';
+            message = 'Сохраняю в медиатеку…';
+            paint();
+            const result = await (0, importer_js_1.importDownloadedAudio)(file);
+            message = result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+        }
+        catch (e) {
+            error = e.name !== 'AbortError' || timedOut;
+            message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
+        }
+        finally {
+            clearTimeout(timer);
+            job = null;
+            phase = '';
+            paint();
+        }
+    });
+    form.querySelector('[data-link-cancel]').addEventListener('click', () => { if (phase !== 'saving')
+        job?.abort(); });
+    paint();
+}
+function initLinkImport() {
+    const host = document.getElementById('side-link-import');
+    host.innerHTML = markup();
+    bind(host.querySelector('form'));
+}
+function openLinkImport() {
+    if (modal?.el.isConnected && !modal.el.inert) {
+        modal.el.querySelector('input')?.focus();
+        return;
+    }
+    modal = (0, ui_js_1.openModal)({ title: 'Загрузить по ссылке', html: markup(), onMount: api => bind(api.el.querySelector('form')) });
 }
 
 };
@@ -9143,7 +9415,7 @@ function emptyState(compact) {
 }
 const themeBtn = () => `<button class="icon-btn lg theme-btn" data-action="toggle-theme" aria-label="Сменить тему" title="Сменить тему (D)">${(0, icons_js_1.icon)(state_js_1.state.theme === 'dark' ? 'sun' : 'moon')}</button>`;
 function pageHead(title, sub = '', extra = '') {
-    return `<header class="page-head"><div><h1>${(0, util_js_1.esc)(title)}</h1>${sub ? `<p class="page-sub">${(0, util_js_1.esc)(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${(0, icons_js_1.icon)('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${(0, exports.avatarHTML)()}</button></div></header>`;
+    return `<header class="page-head"><div><h1>${(0, util_js_1.esc)(title)}</h1>${sub ? `<p class="page-sub">${(0, util_js_1.esc)(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg import-link-mobile" data-action="import-link" aria-label="Загрузить по ссылке" title="Загрузить по ссылке">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${(0, icons_js_1.icon)('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${(0, exports.avatarHTML)()}</button></div></header>`;
 }
 function hero({ art, eyebrow, title, subHTML = '', meta = '', actions = '', bg = '', round = false }) {
     return `<section class="hero">
