@@ -3021,7 +3021,7 @@ async function setArtistPhoto(key, data) {
 };
 defs["db.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lySet = exports.lyKeys = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = exports.putFileChecked = void 0;
+exports.lySet = exports.lyKeys = exports.lyGet = exports.kvSet = exports.kvGet = exports.clearFiles = exports.delFile = exports.allFiles = exports.putFile = exports.putFileChecked = exports.getFileChecked = void 0;
 // IndexedDB: файлы библиотеки ('files'), состояние приложения ('kv'), кэш текстов ('lyrics')
 let dbp;
 function open() {
@@ -3067,6 +3067,8 @@ const safe = f => async (...a) => {
         return undefined;
     }
 };
+const getFileChecked = id => tx('files', 'readonly', s => s.get(id));
+exports.getFileChecked = getFileChecked;
 const putFileChecked = rec => tx('files', 'readwrite', s => s.put(rec));
 exports.putFileChecked = putFileChecked;
 exports.putFile = safe(exports.putFileChecked);
@@ -3334,6 +3336,11 @@ const D = {
     "Загрузка аудио": "Audio download",
     "Подключаюсь…": "Connecting…",
     "Сохраняю в медиатеку…": "Saving to library…",
+    "Загружаю обложку…": "Downloading artwork…",
+    "Обложка сохранена": "Artwork saved",
+    "Трек добавлен. Обложка временно недоступна.": "Track added. Artwork is temporarily unavailable.",
+    "Трек уже есть. Обложка временно недоступна.": "Track already exists. Artwork is temporarily unavailable.",
+    "Не удалось сохранить обложку. Проверьте свободное место и доступ к хранилищу браузера.": "Could not save artwork. Check free space and browser storage access.",
     "Трек добавлен в медиатеку": "Track added to library",
     "Этот файл уже есть в медиатеке": "This file is already in your library",
     "Загрузка заняла слишком много времени. Попробуйте ещё раз.": "The download took too long. Try again.",
@@ -3781,7 +3788,7 @@ function lyricsFrom(meta, lrcText) {
     }
     return null;
 }
-async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl }) {
+async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null }) {
     const meta = await (0, tags_js_1.readMeta)(blob, name);
     const url = remoteUrl || URL.createObjectURL(blob);
     const base = (0, util_js_1.stripExt)(name);
@@ -3802,11 +3809,12 @@ async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl }) {
         bitrate = Math.round(((meta.audioBytes || size) * 8) / duration / 1000);
         approx = true;
     }
-    const cover = meta.cover ? URL.createObjectURL(meta.cover) : null;
+    const artwork = meta.cover || coverBlob;
+    const cover = artwork ? URL.createObjectURL(artwork) : null;
     return {
         id, name, url, size, title, artist: artist || '', albumArtist: meta.albumArtist || '', album: meta.album || '',
         year: meta.year || '', genre: meta.genre || '', trackNo: meta.trackNo || 0, discNo: meta.discNo || 0,
-        cover, _coverBlob: meta.cover || null, coverType: meta.cover?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
+        cover, _coverBlob: artwork || null, coverType: artwork?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
         bits: meta.bits || 0, codec: meta.codec || (0, util_js_1.extOf)(name).toUpperCase(), channels: meta.channels || 0,
         lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
@@ -3865,11 +3873,30 @@ function findTrackByName(base, title) {
     return hit;
 }
 // Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
-async function importDownloadedAudio(file) {
+async function importDownloadedAudio(file, { coverBlob = null } = {}) {
     const id = trackId(file);
-    if (state_js_1.state.tracks.has(id))
-        return { added: false };
-    const rec = { id, blob: file, name: file.name, addedAt: Date.now() };
+    if (state_js_1.state.tracks.has(id)) {
+        if (!coverBlob)
+            return { added: false };
+        const track = state_js_1.state.tracks.get(id);
+        try {
+            const saved = await (0, db_js_1.getFileChecked)(id);
+            await (0, db_js_1.putFileChecked)({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), coverBlob });
+        }
+        catch {
+            throw new Error('Не удалось сохранить обложку. Проверьте свободное место и доступ к хранилищу браузера.');
+        }
+        const old = track._tagCover;
+        track._tagCover = URL.createObjectURL(coverBlob);
+        track._coverBlob = coverBlob;
+        track.coverType = coverBlob.type;
+        (0, state_js_1.touchLibrary)();
+        (0, state_js_1.emit)('covers');
+        if (old?.startsWith('blob:'))
+            URL.revokeObjectURL(old);
+        return { added: false, coverUpdated: true };
+    }
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob };
     const track = await buildTrack(rec);
     try {
         if (!track.duration)
@@ -3995,7 +4022,7 @@ async function importFiles(fileList) {
         t.lyrics = p.synced ? { type: 'synced', lines: p.lines, source: 'lrc' } : { type: 'plain', text, source: 'lrc' };
         t.hasLrc = true;
         lrcAttached++;
-        (0, db_js_1.putFile)({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt });
+        (0, db_js_1.putFile)({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null });
         (0, state_js_1.emit)('lyrics', t);
     }
     (0, state_js_1.touchLibrary)();
@@ -4201,6 +4228,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_DOWNLOAD = exports.isSoundCloudLink = void 0;
 exports.audioLink = audioLink;
 exports.downloadAudio = downloadAudio;
+exports.downloadArtwork = downloadArtwork;
 const tags_js_1 = require("./tags.js");
 const util_js_1 = require("./util.js");
 const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt.site/download';
@@ -4237,7 +4265,7 @@ function filename(response, url, mime) {
     }
     return name;
 }
-async function downloadAudio(raw, { signal, onProgress = () => { } } = {}) {
+async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL = () => { } } = {}) {
     const url = audioLink(raw);
     const soundcloud = (0, exports.isSoundCloudLink)(url);
     const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
@@ -4255,6 +4283,8 @@ async function downloadAudio(raw, { signal, onProgress = () => { } } = {}) {
         await response.body?.cancel();
         throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.');
     }
+    if (soundcloud)
+        onArtworkURL(artworkEndpoint(response.headers.get('X-Puro-Artwork')));
     const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     if (/html|json|xml|mpegurl/.test(mime) || mime.startsWith('text/')) {
         await response.body?.cancel();
@@ -4303,6 +4333,69 @@ async function downloadAudio(raw, { signal, onProgress = () => { } } = {}) {
     if (!received)
         throw new Error('По ссылке пришёл пустой файл.');
     return new File(parts, name, { type: mime || 'application/octet-stream' });
+}
+// Accept artwork only from the same service, never from an arbitrary response URL.
+function artworkEndpoint(raw) {
+    if (!raw)
+        return null;
+    try {
+        const url = new URL(raw, SOUNDCLOUD_SERVICE);
+        return url.origin === new URL(SOUNDCLOUD_SERVICE).origin && url.pathname === '/artwork' && !url.username && !url.password ? url.href : null;
+    }
+    catch {
+        return null;
+    }
+}
+async function downloadArtwork(raw, { signal } = {}) {
+    const url = artworkEndpoint(raw);
+    if (!url)
+        return null;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted)
+        cancel();
+    const timer = setTimeout(cancel, 12000), limit = 2 * 1024 * 1024;
+    let reader;
+    try {
+        const response = await fetch(url, { signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+        const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        if (!response.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(mime) || Number(response.headers.get('content-length')) > limit) {
+            await response.body?.cancel();
+            return null;
+        }
+        reader = response.body.getReader();
+        const parts = [];
+        let size = 0;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done)
+                break;
+            size += value.byteLength;
+            if (size > limit) {
+                await reader.cancel();
+                return null;
+            }
+            parts.push(value);
+        }
+        if (!size)
+            return null;
+        const blob = new Blob(parts, { type: mime });
+        // A successful HTTP response may still contain a corrupt image.
+        const bitmap = await createImageBitmap(blob);
+        bitmap.close();
+        return blob;
+    }
+    catch {
+        return null;
+    }
+    finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', cancel);
+        reader?.releaseLock();
+        if (signal?.aborted)
+            throw new DOMException('Cancelled', 'AbortError');
+    }
 }
 
 };
@@ -4356,10 +4449,10 @@ function bind(form) {
         received = total = 0;
         message = 'Подключаюсь…';
         paint();
-        let timedOut = false, lastPaint = 0;
+        let timedOut = false, lastPaint = 0, artworkURL = null;
         const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
         try {
-            const file = await (0, link_download_js_1.downloadAudio)(lastURL, { signal: controller.signal, onProgress: (bytes, size) => {
+            const file = await (0, link_download_js_1.downloadAudio)(lastURL, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                     received = bytes;
                     total = size;
                     if (Date.now() - lastPaint < 160)
@@ -4368,14 +4461,24 @@ function bind(form) {
                     message = total ? `${(0, i18n_js_1.isEn)() ? 'Downloading' : 'Загрузка'}: ${Math.min(100, Math.round(received / total * 100))}%` : `${(0, i18n_js_1.isEn)() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${(0, i18n_js_1.isEn)() ? 'MB' : 'МБ'}`;
                     paint();
                 } });
+            let coverBlob = null;
+            if (artworkURL) {
+                phase = 'artwork';
+                message = 'Загружаю обложку…';
+                received = total = 0;
+                paint();
+                coverBlob = await (0, link_download_js_1.downloadArtwork)(artworkURL, { signal: controller.signal });
+            }
             clearTimeout(timer);
             if (controller.signal.aborted)
                 throw new DOMException('Cancelled', 'AbortError');
             phase = 'saving';
             message = 'Сохраняю в медиатеку…';
             paint();
-            const result = await (0, importer_js_1.importDownloadedAudio)(file);
-            message = result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+            const result = await (0, importer_js_1.importDownloadedAudio)(file, { coverBlob });
+            message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+            if (artworkURL && !coverBlob)
+                message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
         }
         catch (e) {
             error = e.name !== 'AbortError' || timedOut;

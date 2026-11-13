@@ -2,7 +2,7 @@ import { AUDIO_EXT, readMeta } from './tags.js';
 import { parseLrc } from './lrc.js';
 import { parseM3U } from './m3u.js';
 import { createPlaylist, emit, state, touchLibrary } from './state.js';
-import { allFiles, delFile, putFile, putFileChecked } from './db.js';
+import { allFiles, delFile, putFile, putFileChecked, getFileChecked } from './db.js';
 import { RemoteFile, isNative, isNativeId, nativeId, nativeUrl } from './native.js';
 import { extOf, norm, stripExt } from './util.js';
 import { confirmBox, toast } from './ui.js';
@@ -38,7 +38,7 @@ function lyricsFrom(meta, lrcText) {
     }
     return null;
 }
-export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl }) {
+export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null }) {
     const meta = await readMeta(blob, name);
     const url = remoteUrl || URL.createObjectURL(blob);
     const base = stripExt(name);
@@ -59,11 +59,12 @@ export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl 
         bitrate = Math.round(((meta.audioBytes || size) * 8) / duration / 1000);
         approx = true;
     }
-    const cover = meta.cover ? URL.createObjectURL(meta.cover) : null;
+    const artwork = meta.cover || coverBlob;
+    const cover = artwork ? URL.createObjectURL(artwork) : null;
     return {
         id, name, url, size, title, artist: artist || '', albumArtist: meta.albumArtist || '', album: meta.album || '',
         year: meta.year || '', genre: meta.genre || '', trackNo: meta.trackNo || 0, discNo: meta.discNo || 0,
-        cover, _coverBlob: meta.cover || null, coverType: meta.cover?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
+        cover, _coverBlob: artwork || null, coverType: artwork?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
         bits: meta.bits || 0, codec: meta.codec || extOf(name).toUpperCase(), channels: meta.channels || 0,
         lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
@@ -122,10 +123,25 @@ function findTrackByName(base, title) {
     return hit;
 }
 // Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
-export async function importDownloadedAudio(file) {
+export async function importDownloadedAudio(file, { coverBlob = null } = {}) {
     const id = trackId(file);
-    if (state.tracks.has(id)) return { added: false };
-    const rec = { id, blob: file, name: file.name, addedAt: Date.now() };
+    if (state.tracks.has(id)) {
+        if (!coverBlob) return { added: false };
+        const track = state.tracks.get(id);
+        try {
+            const saved = await getFileChecked(id);
+            await putFileChecked({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), coverBlob });
+        } catch { throw new Error('Не удалось сохранить обложку. Проверьте свободное место и доступ к хранилищу браузера.'); }
+        const old = track._tagCover;
+        track._tagCover = URL.createObjectURL(coverBlob);
+        track._coverBlob = coverBlob;
+        track.coverType = coverBlob.type;
+        touchLibrary();
+        emit('covers');
+        if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+        return { added: false, coverUpdated: true };
+    }
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob };
     const track = await buildTrack(rec);
     try {
         if (!track.duration) throw new Error('Не удалось прочитать аудио. Проверьте формат файла.');
@@ -240,7 +256,7 @@ export async function importFiles(fileList) {
         t.lyrics = p.synced ? { type: 'synced', lines: p.lines, source: 'lrc' } : { type: 'plain', text, source: 'lrc' };
         t.hasLrc = true;
         lrcAttached++;
-        putFile({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt });
+        putFile({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null });
         emit('lyrics', t);
     }
     touchLibrary();

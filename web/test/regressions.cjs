@@ -65,6 +65,70 @@ const server = http.createServer((req, res) => {
       });
       assert.deepEqual(result, { afterPlay: false, afterPause: true });
     });
+    await check('downloaded artwork survives reload, duplicate import and lyrics attachment', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const s = await import('/web/js/state.js'), db = await import('/web/js/db.js');
+        const importer = await import('/web/js/importer.js'), dl = await import('/web/js/link-download.js');
+        const buffer = new ArrayBuffer(44 + 16000), v = new DataView(buffer), bytes = new Uint8Array(buffer);
+        const text = (at, s) => [...s].forEach((c, i) => bytes[at + i] = c.charCodeAt(0));
+        text(0, 'RIFF'); v.setUint32(4, buffer.byteLength - 8, true); text(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 16000, true);
+        v.setUint16(32, 2, true); v.setUint16(34, 16, true); text(36, 'data'); v.setUint32(40, 16000, true);
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 8;
+        canvas.getContext('2d').fillRect(0, 0, 8, 8);
+        const art = await new Promise(r => canvas.toBlob(r));
+        const realFetch = window.fetch;
+        let artMode = 'good';
+        window.fetch = async (url, options) => {
+          if (String(url).startsWith('blob:')) return realFetch(url, options);
+          if (String(url).includes('/download')) return new Response(buffer, { headers: { 'Content-Type': 'audio/wav', 'Content-Disposition': 'attachment; filename="Cover test.wav"', 'X-Puro-Artwork': '/artwork?url=fixture' } });
+          if (artMode === 'bad') return new Response('unavailable', { status: 503 });
+          if (artMode === 'oversize') return new Response(new Uint8Array(2 * 1024 * 1024 + 1), { headers: { 'Content-Type': 'image/png' } });
+          return new Response(art, { headers: { 'Content-Type': 'image/png' } });
+        };
+        let artworkURL;
+        const file = await dl.downloadAudio('https://soundcloud.com/artist/track', { onArtworkURL: u => { artworkURL = u; } });
+        const first = await importer.importDownloadedAudio(file);
+        const coverBlob = await dl.downloadArtwork(artworkURL);
+        const updated = await importer.importDownloadedAudio(file, { coverBlob });
+        s.derived(); const track = [...s.state.tracks.values()][0];
+        const rendered = await createImageBitmap(await (await realFetch(track.cover)).blob()); rendered.close();
+        await importer.importFiles([new File(['[00:00.00]Lyrics'], 'Cover test.lrc')]);
+        const saved = await db.getFileChecked(track.id);
+        s.state.covers.t[track.id] = 'data:image/png;base64,custom';
+        await importer.importDownloadedAudio(file, { coverBlob }); s.derived();
+        const customPreserved = track.cover === s.state.covers.t[track.id];
+        delete s.state.covers.t[track.id]; s.touchLibrary(); s.derived();
+        const before = track.cover;
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function () { throw new DOMException('Full', 'QuotaExceededError'); };
+        let storageRejected = false;
+        try { await importer.importDownloadedAudio(file, { coverBlob }); } catch { storageRejected = true; }
+        finally { IDBObjectStore.prototype.put = put; }
+        artMode = 'bad'; const failed = await dl.downloadArtwork(artworkURL);
+        artMode = 'oversize'; const oversized = await dl.downloadArtwork(artworkURL);
+        const controller = new AbortController(); controller.abort(); let aborted = false;
+        try { await dl.downloadArtwork(artworkURL, { signal: controller.signal }); } catch (e) { aborted = e.name === 'AbortError'; }
+        window.fetch = realFetch;
+        return { first, updated, count: s.state.tracks.size, savedCover: saved.coverBlob?.size, lyrics: saved.lrc,
+          customPreserved, storageRejected, unchanged: track.cover === before, failed, oversized, aborted };
+      });
+      assert.equal(result.first.added, true); assert.equal(result.updated.coverUpdated, true); assert.equal(result.count, 1);
+      assert(result.savedCover > 0); assert.equal(result.lyrics, '[00:00.00]Lyrics');
+      assert(result.customPreserved && result.storageRejected && result.unchanged && result.aborted);
+      assert.equal(result.failed, null); assert.equal(result.oversized, null);
+      await p.reload();
+      const restored = await p.evaluate(async () => {
+        const s = await import('/web/js/state.js'), importer = await import('/web/js/importer.js');
+        const original = window.fetch;
+        window.fetch = (url, options) => { if (!String(url).startsWith('blob:')) throw new Error('Offline'); return original(url, options); };
+        await importer.restoreLibrary(); s.derived(); const track = [...s.state.tracks.values()][0];
+        const image = await createImageBitmap(await (await fetch(track.cover)).blob());
+        const result = { count: s.state.tracks.size, width: image.width, lyrics: track.hasLrc }; image.close(); return result;
+      });
+      assert.deepEqual(restored, { count: 1, width: 8, lyrics: true });
+    });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {

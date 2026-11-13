@@ -24,7 +24,7 @@ function filename(response, url, mime) {
     }
     return name;
 }
-export async function downloadAudio(raw, { signal, onProgress = () => {} } = {}) {
+export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtworkURL = () => {} } = {}) {
     const url = audioLink(raw);
     const soundcloud = isSoundCloudLink(url);
     const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
@@ -36,6 +36,7 @@ export async function downloadAudio(raw, { signal, onProgress = () => {} } = {})
         throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
     }
     if (!response.ok) { await response.body?.cancel(); throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.'); }
+    if (soundcloud) onArtworkURL(artworkEndpoint(response.headers.get('X-Puro-Artwork')));
     const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     if (/html|json|xml|mpegurl/.test(mime) || mime.startsWith('text/')) {
         await response.body?.cancel();
@@ -63,4 +64,53 @@ export async function downloadAudio(raw, { signal, onProgress = () => {} } = {})
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (!received) throw new Error('По ссылке пришёл пустой файл.');
     return new File(parts, name, { type: mime || 'application/octet-stream' });
+}
+
+// Accept artwork only from the same service, never from an arbitrary response URL.
+function artworkEndpoint(raw) {
+    if (!raw) return null;
+    try {
+        const url = new URL(raw, SOUNDCLOUD_SERVICE);
+        return url.origin === new URL(SOUNDCLOUD_SERVICE).origin && url.pathname === '/artwork' && !url.username && !url.password ? url.href : null;
+    } catch { return null; }
+}
+export async function downloadArtwork(raw, { signal } = {}) {
+    const url = artworkEndpoint(raw);
+    if (!url) return null;
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    const timer = setTimeout(cancel, 12000), limit = 2 * 1024 * 1024;
+    let reader;
+    try {
+        const response = await fetch(url, { signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+        const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        if (!response.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(mime) || Number(response.headers.get('content-length')) > limit) {
+            await response.body?.cancel();
+            return null;
+        }
+        reader = response.body.getReader();
+        const parts = [];
+        let size = 0;
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > limit) { await reader.cancel(); return null; }
+            parts.push(value);
+        }
+        if (!size) return null;
+        const blob = new Blob(parts, { type: mime });
+        // A successful HTTP response may still contain a corrupt image.
+        const bitmap = await createImageBitmap(blob);
+        bitmap.close();
+        return blob;
+    } catch { return null; }
+    finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', cancel);
+        reader?.releaseLock();
+        if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    }
 }

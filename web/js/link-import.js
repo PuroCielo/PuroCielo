@@ -1,4 +1,4 @@
-import { downloadAudio } from './link-download.js';
+import { downloadAudio, downloadArtwork } from './link-download.js';
 import { importDownloadedAudio } from './importer.js';
 import { icon } from './icons.js';
 import { isEn } from './i18n.js';
@@ -37,21 +37,27 @@ function bind(form) {
         const controller = new AbortController();
         job = controller; phase = 'download'; error = false; received = total = 0;
         message = 'Подключаюсь…'; paint();
-        let timedOut = false, lastPaint = 0;
+        let timedOut = false, lastPaint = 0, artworkURL = null;
         const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
         try {
-            const file = await downloadAudio(lastURL, { signal: controller.signal, onProgress: (bytes, size) => {
+            const file = await downloadAudio(lastURL, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                 received = bytes; total = size;
                 if (Date.now() - lastPaint < 160) return;
                 lastPaint = Date.now();
                 message = total ? `${isEn() ? 'Downloading' : 'Загрузка'}: ${Math.min(100,Math.round(received / total * 100))}%` : `${isEn() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${isEn() ? 'MB' : 'МБ'}`;
                 paint();
             } });
+            let coverBlob = null;
+            if (artworkURL) {
+                phase = 'artwork'; message = 'Загружаю обложку…'; received = total = 0; paint();
+                coverBlob = await downloadArtwork(artworkURL, { signal: controller.signal });
+            }
             clearTimeout(timer);
             if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
             phase = 'saving'; message = 'Сохраняю в медиатеку…'; paint();
-            const result = await importDownloadedAudio(file);
-            message = result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+            const result = await importDownloadedAudio(file, { coverBlob });
+            message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+            if (artworkURL && !coverBlob) message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
         } catch (e) {
             error = e.name !== 'AbortError' || timedOut;
             message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
