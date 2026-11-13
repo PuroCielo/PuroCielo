@@ -114,3 +114,21 @@ export async function downloadArtwork(raw, { signal } = {}) {
         if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     }
 }
+
+export async function resolveAudioLink(raw, { signal } = {}) {
+    const url = audioLink(raw);
+    const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
+    if (!isSoundCloudLink(url) || !collection) return { kind: 'track', url: url.href };
+    const response = await fetch(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
+    const publicTrack = raw => {
+        const u = audioLink(raw);
+        if (!isSoundCloudLink(u) || u.protocol !== 'https:') throw new Error('Некорректная ссылка на трек альбома.');
+        return u.href;
+    };
+    if (data.kind === 'track') return { kind: 'track', url: publicTrack(data.url) };
+    if (data.kind !== 'album' || !Array.isArray(data.tracks) || !data.tracks.length || data.tracks.length > 100) throw new Error('Поддерживаются альбомы до 100 треков.');
+    return { kind: 'album', title: String(data.title || 'SoundCloud').slice(0,200), artist: String(data.artist || 'SoundCloud').slice(0,200), artwork: artworkEndpoint(data.artwork),
+        tracks: data.tracks.map((t, i) => ({ url: t.url ? publicTrack(t.url) : null, position: i + 1 })) };
+}

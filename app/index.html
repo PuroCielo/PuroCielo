@@ -3336,6 +3336,10 @@ const D = {
     "Загрузка аудио": "Audio download",
     "Подключаюсь…": "Connecting…",
     "Сохраняю в медиатеку…": "Saving to library…",
+    "Трек или альбом SoundCloud · до 100 МБ на трек": "SoundCloud track or album · up to 100 MB per track",
+    "Поддерживаются альбомы до 100 треков.": "Albums with up to 100 tracks are supported.",
+    "Не удалось получить альбом SoundCloud.": "Could not load the SoundCloud album.",
+    "Альбом превышает 1 ГБ. Уже загруженные треки сохранены.": "Album exceeds 1 GB. Downloaded tracks have been saved.",
     "Загружаю обложку…": "Downloading artwork…",
     "Обложка сохранена": "Artwork saved",
     "Трек добавлен. Обложка временно недоступна.": "Track added. Artwork is temporarily unavailable.",
@@ -3373,6 +3377,7 @@ const D = {
     'Играть': 'Play', 'Пауза': 'Pause', 'Играть / пауза': 'Play / pause', 'Перемешать': 'Shuffle', 'Предыдущий': 'Previous', 'Следующий': 'Next', 'Повтор': 'Repeat',
     'Нравится': 'Like', 'Звук': 'Sound', 'Громкость': 'Volume', 'Текст': 'Lyrics', 'Очередь': 'Queue', 'Развернуть': 'Expand', 'Свернуть': 'Collapse', 'Перемотка': 'Seek',
     'Ещё': 'More', 'Открыть Now Playing': 'Open Now Playing', 'Скрыть текст': 'Hide lyrics', 'Показать текст': 'Show lyrics', 'Показать или скрыть текст': 'Show or hide lyrics',
+    'Для поиска текста нужен интернет': 'Connect to the internet to find lyrics', 'Поиск текста временно недоступен': 'Lyrics search is temporarily unavailable', 'Искать снова': 'Search again',
     'Изменить текст': 'Edit lyrics', 'Добавить текст': 'Add lyrics', 'Текст не найден': 'Lyrics not found', 'Ищу текст…': 'Looking for lyrics…', 'Очередь пуста': 'Queue is empty',
     'Запустите альбом, плейлист или трек — они появятся здесь.': 'Play an album, playlist or track — it will show up here.', 'Ранее': 'Earlier', 'Сейчас играет': 'Now playing', 'Далее': 'Up next',
     'Дальше ничего нет. Добавьте треки через меню «⋯».': 'Nothing up next. Add tracks from the «⋯» menu.', 'Убрать из очереди': 'Remove from queue', 'Очистить': 'Clear',
@@ -3788,7 +3793,7 @@ function lyricsFrom(meta, lrcText) {
     }
     return null;
 }
-async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null }) {
+async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null, albumInfo = null }) {
     const meta = await (0, tags_js_1.readMeta)(blob, name);
     const url = remoteUrl || URL.createObjectURL(blob);
     const base = (0, util_js_1.stripExt)(name);
@@ -3812,11 +3817,11 @@ async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverB
     const artwork = meta.cover || coverBlob;
     const cover = artwork ? URL.createObjectURL(artwork) : null;
     return {
-        id, name, url, size, title, artist: artist || '', albumArtist: meta.albumArtist || '', album: meta.album || '',
-        year: meta.year || '', genre: meta.genre || '', trackNo: meta.trackNo || 0, discNo: meta.discNo || 0,
+        id, name, url, size, title, artist: artist || '', albumArtist: albumInfo?.artist || meta.albumArtist || '', album: albumInfo?.title || meta.album || '',
+        year: meta.year || '', genre: meta.genre || '', trackNo: albumInfo?.position || meta.trackNo || 0, discNo: meta.discNo || 0,
         cover, _coverBlob: artwork || null, coverType: artwork?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
         bits: meta.bits || 0, codec: meta.codec || (0, util_js_1.extOf)(name).toUpperCase(), channels: meta.channels || 0,
-        lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
+        _albumInfo: albumInfo, lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
 }
 async function restoreLibrary() {
@@ -3873,30 +3878,40 @@ function findTrackByName(base, title) {
     return hit;
 }
 // Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
-async function importDownloadedAudio(file, { coverBlob = null } = {}) {
+async function importDownloadedAudio(file, { coverBlob = null, albumInfo = null } = {}) {
     const id = trackId(file);
     if (state_js_1.state.tracks.has(id)) {
-        if (!coverBlob)
+        if (!coverBlob && !albumInfo)
             return { added: false };
         const track = state_js_1.state.tracks.get(id);
         try {
             const saved = await (0, db_js_1.getFileChecked)(id);
-            await (0, db_js_1.putFileChecked)({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), coverBlob });
+            await (0, db_js_1.putFileChecked)({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), ...(coverBlob ? { coverBlob } : {}), ...(albumInfo ? { albumInfo } : {}) });
         }
         catch {
             throw new Error('Не удалось сохранить обложку. Проверьте свободное место и доступ к хранилищу браузера.');
         }
         const old = track._tagCover;
-        track._tagCover = URL.createObjectURL(coverBlob);
-        track._coverBlob = coverBlob;
-        track.coverType = coverBlob.type;
+        if (coverBlob) {
+            track._tagCover = URL.createObjectURL(coverBlob);
+            track._coverBlob = coverBlob;
+            track.coverType = coverBlob.type;
+        }
+        if (albumInfo) {
+            track._albumInfo = albumInfo;
+            track.album = albumInfo.title;
+            track.albumArtist = albumInfo.artist;
+            track.trackNo = albumInfo.position;
+            if (track._orig)
+                Object.assign(track._orig, { album: track.album, albumArtist: track.albumArtist });
+        }
         (0, state_js_1.touchLibrary)();
         (0, state_js_1.emit)('covers');
-        if (old?.startsWith('blob:'))
+        if (coverBlob && old?.startsWith('blob:'))
             URL.revokeObjectURL(old);
-        return { added: false, coverUpdated: true };
+        return { added: false, coverUpdated: !!coverBlob };
     }
-    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob };
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob, albumInfo };
     const track = await buildTrack(rec);
     try {
         if (!track.duration)
@@ -4022,7 +4037,7 @@ async function importFiles(fileList) {
         t.lyrics = p.synced ? { type: 'synced', lines: p.lines, source: 'lrc' } : { type: 'plain', text, source: 'lrc' };
         t.hasLrc = true;
         lrcAttached++;
-        (0, db_js_1.putFile)({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null });
+        (0, db_js_1.putFile)({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null, albumInfo: t._albumInfo || null });
         (0, state_js_1.emit)('lyrics', t);
     }
     (0, state_js_1.touchLibrary)();
@@ -4229,6 +4244,7 @@ exports.MAX_DOWNLOAD = exports.isSoundCloudLink = void 0;
 exports.audioLink = audioLink;
 exports.downloadAudio = downloadAudio;
 exports.downloadArtwork = downloadArtwork;
+exports.resolveAudioLink = resolveAudioLink;
 const tags_js_1 = require("./tags.js");
 const util_js_1 = require("./util.js");
 const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt.site/download';
@@ -4397,6 +4413,28 @@ async function downloadArtwork(raw, { signal } = {}) {
             throw new DOMException('Cancelled', 'AbortError');
     }
 }
+async function resolveAudioLink(raw, { signal } = {}) {
+    const url = audioLink(raw);
+    const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
+    if (!(0, exports.isSoundCloudLink)(url) || !collection)
+        return { kind: 'track', url: url.href };
+    const response = await fetch(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) });
+    const data = await response.json();
+    if (!response.ok)
+        throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
+    const publicTrack = raw => {
+        const u = audioLink(raw);
+        if (!(0, exports.isSoundCloudLink)(u) || u.protocol !== 'https:')
+            throw new Error('Некорректная ссылка на трек альбома.');
+        return u.href;
+    };
+    if (data.kind === 'track')
+        return { kind: 'track', url: publicTrack(data.url) };
+    if (data.kind !== 'album' || !Array.isArray(data.tracks) || !data.tracks.length || data.tracks.length > 100)
+        throw new Error('Поддерживаются альбомы до 100 треков.');
+    return { kind: 'album', title: String(data.title || 'SoundCloud').slice(0, 200), artist: String(data.artist || 'SoundCloud').slice(0, 200), artwork: artworkEndpoint(data.artwork),
+        tracks: data.tracks.map((t, i) => ({ url: t.url ? publicTrack(t.url) : null, position: i + 1 })) };
+}
 
 };
 defs["link-import.js"]=function(module,exports,require){"use strict";
@@ -4413,7 +4451,7 @@ let modal = null, formNumber = 0;
 const forms = () => [...document.querySelectorAll('.link-import')];
 function markup() {
     const id = 'audio-link-' + (++formNumber);
-    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://soundcloud.com/…" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${(0, icons_js_1.icon)('close')}</button></div><small id="${id}-hint">SoundCloud или аудиофайл · до 100 МБ</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
+    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://soundcloud.com/…" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${(0, icons_js_1.icon)('close')}</button></div><small id="${id}-hint">Трек или альбом SoundCloud · до 100 МБ на трек</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
 }
 function paint() {
     for (const form of forms()) {
@@ -4449,40 +4487,90 @@ function bind(form) {
         received = total = 0;
         message = 'Подключаюсь…';
         paint();
-        let timedOut = false, lastPaint = 0, artworkURL = null;
-        const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+        let timedOut = false, timer, lastPaint = 0, album = false, completed = 0, added = 0, skipped = 0, failed = 0, missingCovers = 0;
+        const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
+        const savedMessage = () => (0, i18n_js_1.isEn)() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
+        armTimer();
         try {
-            const file = await (0, link_download_js_1.downloadAudio)(lastURL, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
-                    received = bytes;
-                    total = size;
-                    if (Date.now() - lastPaint < 160)
-                        return;
-                    lastPaint = Date.now();
-                    message = total ? `${(0, i18n_js_1.isEn)() ? 'Downloading' : 'Загрузка'}: ${Math.min(100, Math.round(received / total * 100))}%` : `${(0, i18n_js_1.isEn)() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${(0, i18n_js_1.isEn)() ? 'MB' : 'МБ'}`;
-                    paint();
-                } });
-            let coverBlob = null;
-            if (artworkURL) {
+            const source = await (0, link_download_js_1.resolveAudioLink)(lastURL, { signal: controller.signal });
+            album = source.kind === 'album';
+            let albumCover = null;
+            if (album && source.artwork) {
                 phase = 'artwork';
                 message = 'Загружаю обложку…';
-                received = total = 0;
                 paint();
-                coverBlob = await (0, link_download_js_1.downloadArtwork)(artworkURL, { signal: controller.signal });
+                albumCover = await (0, link_download_js_1.downloadArtwork)(source.artwork, { signal: controller.signal });
             }
-            clearTimeout(timer);
-            if (controller.signal.aborted)
-                throw new DOMException('Cancelled', 'AbortError');
-            phase = 'saving';
-            message = 'Сохраняю в медиатеку…';
-            paint();
-            const result = await (0, importer_js_1.importDownloadedAudio)(file, { coverBlob });
-            message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
-            if (artworkURL && !coverBlob)
-                message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
+            const entries = album ? source.tracks : [{ url: source.url }];
+            let albumBytes = 0;
+            for (const [index, entry] of entries.entries()) {
+                if (controller.signal.aborted)
+                    throw new DOMException('Cancelled', 'AbortError');
+                if (!entry.url) {
+                    failed++;
+                    continue;
+                }
+                armTimer();
+                const prefix = album ? `${index + 1}/${entries.length} · ` : '';
+                phase = 'download';
+                received = total = 0;
+                message = prefix + ((0, i18n_js_1.isEn)() ? 'Connecting…' : 'Подключаюсь…');
+                paint();
+                let artworkURL = null;
+                try {
+                    const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                            received = bytes;
+                            total = size;
+                            if (Date.now() - lastPaint < 160)
+                                return;
+                            lastPaint = Date.now();
+                            message = prefix + (total ? `${(0, i18n_js_1.isEn)() ? 'Downloading' : 'Загрузка'}: ${Math.min(100, Math.round(received / total * 100))}%` : `${(0, i18n_js_1.isEn)() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${(0, i18n_js_1.isEn)() ? 'MB' : 'МБ'}`);
+                            paint();
+                        } });
+                    albumBytes += file.size;
+                    if (albumBytes > 1024 * 1024 * 1024)
+                        throw new Error('Альбом превышает 1 ГБ. Уже загруженные треки сохранены.');
+                    let coverBlob = albumCover;
+                    if (!coverBlob && artworkURL) {
+                        phase = 'artwork';
+                        message = prefix + ((0, i18n_js_1.isEn)() ? 'Downloading artwork…' : 'Загружаю обложку…');
+                        received = total = 0;
+                        paint();
+                        coverBlob = await (0, link_download_js_1.downloadArtwork)(artworkURL, { signal: controller.signal });
+                    }
+                    clearTimeout(timer);
+                    if (controller.signal.aborted)
+                        throw new DOMException('Cancelled', 'AbortError');
+                    phase = 'saving';
+                    message = prefix + ((0, i18n_js_1.isEn)() ? 'Saving to library…' : 'Сохраняю в медиатеку…');
+                    paint();
+                    const result = await (0, importer_js_1.importDownloadedAudio)(file, { coverBlob, albumInfo: album ? { title: source.title, artist: source.artist, position: entry.position } : null });
+                    completed++;
+                    result.added ? added++ : skipped++;
+                    if ((artworkURL || source.artwork) && !coverBlob)
+                        missingCovers++;
+                    message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+                    if (artworkURL && !coverBlob)
+                        message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
+                }
+                catch (e) {
+                    if (!album || controller.signal.aborted || phase === 'saving' || albumBytes > 1024 * 1024 * 1024)
+                        throw e;
+                    failed++;
+                }
+            }
+            if (album) {
+                message = (0, i18n_js_1.isEn)() ? `Album: added ${added}, already in library ${skipped}, unavailable ${failed}.` : `Альбом: добавлено ${added}, уже в медиатеке ${skipped}, недоступно ${failed}.`;
+                if (missingCovers)
+                    message += (0, i18n_js_1.isEn)() ? ` Without artwork: ${missingCovers}.` : ` Без обложки: ${missingCovers}.`;
+                error = failed > 0;
+            }
         }
         catch (e) {
             error = e.name !== 'AbortError' || timedOut;
             message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
+            if (album && completed)
+                message += ` ${savedMessage()}.`;
         }
         finally {
             clearTimeout(timer);
@@ -4745,10 +4833,9 @@ function candidates(t) {
     const arts = realArtists(t);
     const title = cleanTitle(t.title);
     const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
-    if (dash) { // «hitmar - plan»: слева артист (тот же, что в теге, или вообще без тега)
-        const left = (0, util_js_1.norm)(dash[1]);
-        if (!arts.length || arts.some(a => (0, util_js_1.norm)(a) === left || left.includes((0, util_js_1.norm)(a))))
-            add(arts[0] || dash[1], dash[2]);
+    if (dash) { // «hitmar - plan»: пробуем артиста из названия, затем исходные теги
+        // SoundCloud uploader names often differ from the artist inside the title.
+        add(dash[1], dash[2]);
     }
     for (const a of arts)
         add(a, title);
@@ -5101,17 +5188,22 @@ async function rejectLyrics(t) {
     (0, state_js_1.emit)('lyrics', t);
     return ensureLyrics(t);
 }
-function ensureLyrics(t) {
-    if (t && !t._manualChecked)
-        return applyManual(t).then(ok => ok || ensureLyrics(t));
-    if (!t || t.lyrics)
+function ensureLyrics(t, { retryMiss = false } = {}) {
+    if (!t || (t.lyrics && t._manualChecked))
         return Promise.resolve(!!t?.lyrics);
+    if (retryMiss)
+        t._lyRetryRequested = true;
     if (running.has(t.id))
         return running.get(t.id);
-    t._ly = 'loading';
+    if (!t.lyrics)
+        t._ly = 'loading';
     const p = (async () => {
         const key = keyOf(t);
         try {
+            if (!t._manualChecked && await applyManual(t))
+                return true;
+            if (t.lyrics)
+                return true;
             const use = ly => { t.lyrics = ly; t._ly = undefined; (0, state_js_1.emit)('lyrics', t); return true; };
             // 1) точный текст, сохранённый на этом устройстве
             const sure = await (0, db_js_1.lyGet)(okKey(t)).catch(() => null);
@@ -5136,12 +5228,12 @@ function ensureLyrics(t) {
                 t._ly = 'none';
                 return false;
             }
-            if (cached && cached.miss && Date.now() - cached.at < MISS_TTL) {
+            if (cached && cached.miss && Date.now() - cached.at < MISS_TTL && !(t._lyRetryRequested && (!t._lyAttempt || Date.now() - t._lyAttempt > 60000))) {
                 t._ly = 'none';
                 return false;
             }
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-                t._ly = 'none';
+                t._ly = 'offline';
                 return false;
             }
             // варианты, которые пользователь отметил «Это не тот текст»
@@ -5151,6 +5243,7 @@ function ensureLyrics(t) {
                 (0, db_js_1.lySet)(key, { miss: true, at: Date.now() });
                 return false;
             }
+            t._lyAttempt = Date.now();
             const d = await lookup(t, bad.ids || []);
             let ly = d && !d.instrumental ? toLyrics(d) : null;
             // с метками времени (LRCLIB) — лучше всего; иначе обычный текст сначала ищем на Genius
@@ -5202,15 +5295,17 @@ function ensureLyrics(t) {
             return false;
         }
         catch (e) {
-            t._ly = 'none';
+            t._ly = 'error';
             return false;
         } // нет сети / сервис недоступен — не запоминаем как «нет текста»
         finally {
             running.delete(t.id);
+            t._lyRetryRequested = false;
             (0, state_js_1.emit)('lyrics-state', t);
         }
     })();
     running.set(t.id, p);
+    (0, state_js_1.emit)('lyrics-state', t);
     return p;
 }
 
@@ -6037,9 +6132,10 @@ function renderLyrics(t) {
     curOff = 0;
     if (!ly) {
         const loading = t && t._ly === 'loading';
+        const missing = t?._ly === 'offline' ? 'Для поиска текста нужен интернет' : t?._ly === 'error' ? 'Поиск текста временно недоступен' : 'Текст не найден';
         lyBox.innerHTML = loading
             ? `<div class="ly-empty"><span class="ly-spin"></span><h3>Ищу текст…</h3></div>`
-            : `<div class="ly-empty">${(0, icons_js_1.icon)('lyrics')}<h3>Текст не найден</h3><button class="btn btn-soft sm" data-ly="edit">${(0, icons_js_1.icon)('edit')}Добавить текст</button></div>`;
+            : `<div class="ly-empty">${(0, icons_js_1.icon)('lyrics')}<h3>${missing}</h3>${state_js_1.state.settings.autoLyrics ? '<button class="btn btn-soft sm" data-ly="retry">Искать снова</button>' : ''}<button class="btn btn-soft sm" data-ly="edit">${(0, icons_js_1.icon)('edit')}Добавить текст</button></div>`;
         return;
     }
     lyType = ly.type;
@@ -6272,6 +6368,8 @@ function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
     const changed = np.dataset.pane !== p;
+    if (changed && p === 'lyrics' && (0, player_js_1.current)())
+        (0, lyrics_auto_js_1.ensureLyrics)((0, player_js_1.current)(), { retryMiss: true });
     np.dataset.pane = p;
     if (changed && npOpen)
         (0, motion_js_1.revealElement)(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
@@ -6306,6 +6404,8 @@ function applyLyricsMode(redo) {
 function openNP(pane) {
     if (!(0, player_js_1.current)())
         return;
+    (0, lyrics_auto_js_1.ensureLyrics)((0, player_js_1.current)(), { retryMiss: true });
+    renderLyrics((0, player_js_1.current)());
     if (pane)
         setPane(pane);
     else
@@ -6512,6 +6612,12 @@ function initPlayerUI() {
     });
     syncPlay();
 }
+lyBox.addEventListener('click', e => {
+    if (!e.target.closest('[data-ly="retry"]') || !(0, player_js_1.current)())
+        return;
+    (0, player_js_1.current)()._lyAttempt = 0;
+    (0, lyrics_auto_js_1.ensureLyrics)((0, player_js_1.current)(), { retryMiss: true });
+});
 
 };
 defs["player.js"]=function(module,exports,require){"use strict";

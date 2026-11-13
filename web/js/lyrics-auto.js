@@ -44,10 +44,9 @@ export function candidates(t) {
     const arts = realArtists(t);
     const title = cleanTitle(t.title);
     const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
-    if (dash) { // «hitmar - plan»: слева артист (тот же, что в теге, или вообще без тега)
-        const left = norm(dash[1]);
-        if (!arts.length || arts.some(a => norm(a) === left || left.includes(norm(a))))
-            add(arts[0] || dash[1], dash[2]);
+    if (dash) { // «hitmar - plan»: пробуем артиста из названия, затем исходные теги
+        // SoundCloud uploader names often differ from the artist inside the title.
+        add(dash[1], dash[2]);
     }
     for (const a of arts)
         add(a, title);
@@ -391,17 +390,18 @@ export async function rejectLyrics(t) {
     emit('lyrics', t);
     return ensureLyrics(t);
 }
-export function ensureLyrics(t) {
-    if (t && !t._manualChecked)
-        return applyManual(t).then(ok => ok || ensureLyrics(t));
-    if (!t || t.lyrics)
+export function ensureLyrics(t, { retryMiss = false } = {}) {
+    if (!t || (t.lyrics && t._manualChecked))
         return Promise.resolve(!!t?.lyrics);
+    if (retryMiss) t._lyRetryRequested = true;
     if (running.has(t.id))
         return running.get(t.id);
-    t._ly = 'loading';
+    if (!t.lyrics) t._ly = 'loading';
     const p = (async () => {
         const key = keyOf(t);
         try {
+            if (!t._manualChecked && await applyManual(t)) return true;
+            if (t.lyrics) return true;
             const use = ly => { t.lyrics = ly; t._ly = undefined; emit('lyrics', t); return true; };
             // 1) точный текст, сохранённый на этом устройстве
             const sure = await lyGet(okKey(t)).catch(() => null);
@@ -426,12 +426,12 @@ export function ensureLyrics(t) {
                 t._ly = 'none';
                 return false;
             }
-            if (cached && cached.miss && Date.now() - cached.at < MISS_TTL) {
+            if (cached && cached.miss && Date.now() - cached.at < MISS_TTL && !(t._lyRetryRequested && (!t._lyAttempt || Date.now() - t._lyAttempt > 60000))) {
                 t._ly = 'none';
                 return false;
             }
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-                t._ly = 'none';
+                t._ly = 'offline';
                 return false;
             }
             // варианты, которые пользователь отметил «Это не тот текст»
@@ -441,6 +441,7 @@ export function ensureLyrics(t) {
                 lySet(key, { miss: true, at: Date.now() });
                 return false;
             }
+            t._lyAttempt = Date.now();
             const d = await lookup(t, bad.ids || []);
             let ly = d && !d.instrumental ? toLyrics(d) : null;
             // с метками времени (LRCLIB) — лучше всего; иначе обычный текст сначала ищем на Genius
@@ -491,14 +492,16 @@ export function ensureLyrics(t) {
             return false;
         }
         catch (e) {
-            t._ly = 'none';
+            t._ly = 'error';
             return false;
         } // нет сети / сервис недоступен — не запоминаем как «нет текста»
         finally {
             running.delete(t.id);
+            t._lyRetryRequested = false;
             emit('lyrics-state', t);
         }
     })();
     running.set(t.id, p);
+    emit('lyrics-state', t);
     return p;
 }

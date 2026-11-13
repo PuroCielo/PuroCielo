@@ -38,7 +38,7 @@ function lyricsFrom(meta, lrcText) {
     }
     return null;
 }
-export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null }) {
+export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverBlob = null, albumInfo = null }) {
     const meta = await readMeta(blob, name);
     const url = remoteUrl || URL.createObjectURL(blob);
     const base = stripExt(name);
@@ -62,11 +62,11 @@ export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl,
     const artwork = meta.cover || coverBlob;
     const cover = artwork ? URL.createObjectURL(artwork) : null;
     return {
-        id, name, url, size, title, artist: artist || '', albumArtist: meta.albumArtist || '', album: meta.album || '',
-        year: meta.year || '', genre: meta.genre || '', trackNo: meta.trackNo || 0, discNo: meta.discNo || 0,
+        id, name, url, size, title, artist: artist || '', albumArtist: albumInfo?.artist || meta.albumArtist || '', album: albumInfo?.title || meta.album || '',
+        year: meta.year || '', genre: meta.genre || '', trackNo: albumInfo?.position || meta.trackNo || 0, discNo: meta.discNo || 0,
         cover, _coverBlob: artwork || null, coverType: artwork?.type || '', duration, sampleRate: meta.sampleRate || 0, bitrate, approx,
         bits: meta.bits || 0, codec: meta.codec || extOf(name).toUpperCase(), channels: meta.channels || 0,
-        lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
+        _albumInfo: albumInfo, lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
 }
 export async function restoreLibrary() {
@@ -123,25 +123,34 @@ function findTrackByName(base, title) {
     return hit;
 }
 // Для загрузки по ссылке сообщаем об успехе только после записи файла на устройство.
-export async function importDownloadedAudio(file, { coverBlob = null } = {}) {
+export async function importDownloadedAudio(file, { coverBlob = null, albumInfo = null } = {}) {
     const id = trackId(file);
     if (state.tracks.has(id)) {
-        if (!coverBlob) return { added: false };
+        if (!coverBlob && !albumInfo) return { added: false };
         const track = state.tracks.get(id);
         try {
             const saved = await getFileChecked(id);
-            await putFileChecked({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), coverBlob });
+            await putFileChecked({ ...(saved || { id, blob: file, name: file.name, addedAt: track.addedAt }), ...(coverBlob ? { coverBlob } : {}), ...(albumInfo ? { albumInfo } : {}) });
         } catch { throw new Error('Не удалось сохранить обложку. Проверьте свободное место и доступ к хранилищу браузера.'); }
         const old = track._tagCover;
-        track._tagCover = URL.createObjectURL(coverBlob);
-        track._coverBlob = coverBlob;
-        track.coverType = coverBlob.type;
+        if (coverBlob) {
+            track._tagCover = URL.createObjectURL(coverBlob);
+            track._coverBlob = coverBlob;
+            track.coverType = coverBlob.type;
+        }
+        if (albumInfo) {
+            track._albumInfo = albumInfo;
+            track.album = albumInfo.title;
+            track.albumArtist = albumInfo.artist;
+            track.trackNo = albumInfo.position;
+            if (track._orig) Object.assign(track._orig, { album: track.album, albumArtist: track.albumArtist });
+        }
         touchLibrary();
         emit('covers');
-        if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
-        return { added: false, coverUpdated: true };
+        if (coverBlob && old?.startsWith('blob:')) URL.revokeObjectURL(old);
+        return { added: false, coverUpdated: !!coverBlob };
     }
-    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob };
+    const rec = { id, blob: file, name: file.name, addedAt: Date.now(), coverBlob, albumInfo };
     const track = await buildTrack(rec);
     try {
         if (!track.duration) throw new Error('Не удалось прочитать аудио. Проверьте формат файла.');
@@ -256,7 +265,7 @@ export async function importFiles(fileList) {
         t.lyrics = p.synced ? { type: 'synced', lines: p.lines, source: 'lrc' } : { type: 'plain', text, source: 'lrc' };
         t.hasLrc = true;
         lrcAttached++;
-        putFile({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null });
+        putFile({ id: t.id, blob: await (await fetch(t.url)).blob(), name: t.name, lrc: text, addedAt: t.addedAt, coverBlob: t._coverBlob || null, albumInfo: t._albumInfo || null });
         emit('lyrics', t);
     }
     touchLibrary();

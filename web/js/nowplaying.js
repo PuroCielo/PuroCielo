@@ -170,9 +170,10 @@ function renderLyrics(t) {
     curOff = 0;
     if (!ly) {
         const loading = t && t._ly === 'loading';
+        const missing = t?._ly === 'offline' ? 'Для поиска текста нужен интернет' : t?._ly === 'error' ? 'Поиск текста временно недоступен' : 'Текст не найден';
         lyBox.innerHTML = loading
             ? `<div class="ly-empty"><span class="ly-spin"></span><h3>Ищу текст…</h3></div>`
-            : `<div class="ly-empty">${icon('lyrics')}<h3>Текст не найден</h3><button class="btn btn-soft sm" data-ly="edit">${icon('edit')}Добавить текст</button></div>`;
+            : `<div class="ly-empty">${icon('lyrics')}<h3>${missing}</h3>${state.settings.autoLyrics ? '<button class="btn btn-soft sm" data-ly="retry">Искать снова</button>' : ''}<button class="btn btn-soft sm" data-ly="edit">${icon('edit')}Добавить текст</button></div>`;
         return;
     }
     lyType = ly.type;
@@ -396,6 +397,7 @@ export function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
     const changed = np.dataset.pane !== p;
+    if (changed && p === 'lyrics' && current()) ensureLyrics(current(), { retryMiss: true });
     np.dataset.pane = p;
     if (changed && npOpen) revealElement(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
     $('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
@@ -429,6 +431,8 @@ function applyLyricsMode(redo) {
 export function openNP(pane) {
     if (!current())
         return;
+    ensureLyrics(current(), { retryMiss: true });
+    renderLyrics(current());
     if (pane)
         setPane(pane);
     else
@@ -608,3 +612,9 @@ export function initPlayerUI() {
         renderLyrics(t); });
     syncPlay();
 }
+
+lyBox.addEventListener('click', e => {
+    if (!e.target.closest('[data-ly="retry"]') || !current()) return;
+    current()._lyAttempt = 0;
+    ensureLyrics(current(), { retryMiss: true });
+});

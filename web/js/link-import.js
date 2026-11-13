@@ -1,4 +1,4 @@
-import { downloadAudio, downloadArtwork } from './link-download.js';
+import { downloadAudio, downloadArtwork, resolveAudioLink } from './link-download.js';
 import { importDownloadedAudio } from './importer.js';
 import { icon } from './icons.js';
 import { isEn } from './i18n.js';
@@ -9,7 +9,7 @@ let modal = null, formNumber = 0;
 const forms = () => [...document.querySelectorAll('.link-import')];
 function markup() {
     const id = 'audio-link-' + (++formNumber);
-    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://soundcloud.com/…" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${icon('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${icon('close')}</button></div><small id="${id}-hint">SoundCloud или аудиофайл · до 100 МБ</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
+    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://soundcloud.com/…" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${icon('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${icon('close')}</button></div><small id="${id}-hint">Трек или альбом SoundCloud · до 100 МБ на трек</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
 }
 function paint() {
     for (const form of forms()) {
@@ -37,30 +37,64 @@ function bind(form) {
         const controller = new AbortController();
         job = controller; phase = 'download'; error = false; received = total = 0;
         message = 'Подключаюсь…'; paint();
-        let timedOut = false, lastPaint = 0, artworkURL = null;
-        const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+        let timedOut = false, timer, lastPaint = 0, album = false, completed = 0, added = 0, skipped = 0, failed = 0, missingCovers = 0;
+        const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
+        const savedMessage = () => isEn() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
+        armTimer();
         try {
-            const file = await downloadAudio(lastURL, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
-                received = bytes; total = size;
-                if (Date.now() - lastPaint < 160) return;
-                lastPaint = Date.now();
-                message = total ? `${isEn() ? 'Downloading' : 'Загрузка'}: ${Math.min(100,Math.round(received / total * 100))}%` : `${isEn() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${isEn() ? 'MB' : 'МБ'}`;
-                paint();
-            } });
-            let coverBlob = null;
-            if (artworkURL) {
-                phase = 'artwork'; message = 'Загружаю обложку…'; received = total = 0; paint();
-                coverBlob = await downloadArtwork(artworkURL, { signal: controller.signal });
+            const source = await resolveAudioLink(lastURL, { signal: controller.signal });
+            album = source.kind === 'album';
+            let albumCover = null;
+            if (album && source.artwork) {
+                phase = 'artwork'; message = 'Загружаю обложку…'; paint();
+                albumCover = await downloadArtwork(source.artwork, { signal: controller.signal });
             }
-            clearTimeout(timer);
-            if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-            phase = 'saving'; message = 'Сохраняю в медиатеку…'; paint();
-            const result = await importDownloadedAudio(file, { coverBlob });
-            message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
-            if (artworkURL && !coverBlob) message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
+            const entries = album ? source.tracks : [{ url: source.url }];
+            let albumBytes = 0;
+            for (const [index, entry] of entries.entries()) {
+                if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+                if (!entry.url) { failed++; continue; }
+                armTimer();
+                const prefix = album ? `${index + 1}/${entries.length} · ` : '';
+                phase = 'download'; received = total = 0; message = prefix + (isEn() ? 'Connecting…' : 'Подключаюсь…'); paint();
+                let artworkURL = null;
+                try {
+                    const file = await downloadAudio(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                        received = bytes; total = size;
+                        if (Date.now() - lastPaint < 160) return;
+                        lastPaint = Date.now();
+                        message = prefix + (total ? `${isEn() ? 'Downloading' : 'Загрузка'}: ${Math.min(100,Math.round(received / total * 100))}%` : `${isEn() ? 'Downloaded' : 'Загружено'}: ${(received / 1048576).toFixed(1)} ${isEn() ? 'MB' : 'МБ'}`);
+                        paint();
+                    } });
+                    albumBytes += file.size;
+                    if (albumBytes > 1024 * 1024 * 1024) throw new Error('Альбом превышает 1 ГБ. Уже загруженные треки сохранены.');
+                    let coverBlob = albumCover;
+                    if (!coverBlob && artworkURL) {
+                        phase = 'artwork'; message = prefix + (isEn() ? 'Downloading artwork…' : 'Загружаю обложку…'); received = total = 0; paint();
+                        coverBlob = await downloadArtwork(artworkURL, { signal: controller.signal });
+                    }
+                    clearTimeout(timer);
+                    if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+                    phase = 'saving'; message = prefix + (isEn() ? 'Saving to library…' : 'Сохраняю в медиатеку…'); paint();
+                    const result = await importDownloadedAudio(file, { coverBlob, albumInfo: album ? { title: source.title, artist: source.artist, position: entry.position } : null });
+                    completed++; result.added ? added++ : skipped++;
+                    if ((artworkURL || source.artwork) && !coverBlob) missingCovers++;
+                    message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
+                    if (artworkURL && !coverBlob) message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
+                } catch (e) {
+                    if (!album || controller.signal.aborted || phase === 'saving' || albumBytes > 1024 * 1024 * 1024) throw e;
+                    failed++;
+                }
+            }
+            if (album) {
+                message = isEn() ? `Album: added ${added}, already in library ${skipped}, unavailable ${failed}.` : `Альбом: добавлено ${added}, уже в медиатеке ${skipped}, недоступно ${failed}.`;
+                if (missingCovers) message += isEn() ? ` Without artwork: ${missingCovers}.` : ` Без обложки: ${missingCovers}.`;
+                error = failed > 0;
+            }
         } catch (e) {
             error = e.name !== 'AbortError' || timedOut;
             message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
+            if (album && completed) message += ` ${savedMessage()}.`;
         } finally { clearTimeout(timer); job = null; phase = ''; paint(); }
     });
     form.querySelector('[data-link-cancel]').addEventListener('click', () => { if (phase !== 'saving') job?.abort(); });

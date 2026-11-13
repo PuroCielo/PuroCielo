@@ -129,6 +129,62 @@ const server = http.createServer((req, res) => {
       });
       assert.deepEqual(restored, { count: 1, width: 8, lyrics: true });
     });
+    await check('lyrics search enters loading immediately, retries cached misses and keeps one request', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const { ensureLyrics, candidates } = await import('/web/js/lyrics-auto.js');
+        const { state } = await import('/web/js/state.js'), { lySet } = await import('/web/js/db.js');
+        const t = { id: 'lyrics-test', title: 'Song', artist: 'Artist', duration: 10 };
+        await lySet('v7|artist|song|10', { miss: true, at: Date.now() });
+        let calls = 0, release;
+        const gate = new Promise(r => { release = r; });
+        window.fetch = async () => { calls++; await gate; return Response.json({ id: 1, trackName: 'Song', artistName: 'Artist', duration: 10, syncedLyrics: '[00:00.00]Hello\n[00:05.00]World' }); };
+        const first = ensureLyrics(t), loading = t._ly;
+        const second = ensureLyrics(t, { retryMiss: true });
+        await new Promise(r => setTimeout(r, 50)); release();
+        const found = await first; await second;
+        state.settings.autoLyrics = false;
+        const disabled = { id: 'disabled', title: 'No lookup', artist: 'Artist' }; await ensureLyrics(disabled, { retryMiss: true });
+        state.settings.autoLyrics = true;
+        await lySet('manual:manual', { text: 'My own lyrics' });
+        const manual = { id: 'manual', title: 'Manual', artist: 'Artist' }; await ensureLyrics(manual, { retryMiss: true });
+        const beforeError = calls; window.fetch = async () => { throw new TypeError('Network unavailable'); };
+        const err = { id: 'error', title: 'Error', artist: 'Artist' }; await ensureLyrics(err);
+        return { loading, same: first === second, found, calls: beforeError, lyrics: t.lyrics?.lines?.length, disabled: disabled._ly,
+          manual: manual.lyrics?.text, error: err._ly, candidate: candidates({ title: 'Real Artist - Song [remix]', artist: 'Upload Channel' })[0] };
+      });
+      assert.deepEqual(result, { loading: 'loading', same: true, found: true, calls: 1, lyrics: 2, disabled: 'none', manual: 'My own lyrics', error: 'error', candidate: { artist: 'Real Artist', title: 'Song' } });
+    });
+    await check('SoundCloud albums keep covers and ordering, deduplicate and preserve partial cancellation', async ctx => {
+      const p = await ctx.newPage(); await p.route('https://www.gstatic.com/firebasejs/**', r => r.abort());
+      const wav = Buffer.alloc(44 + 16000); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16);
+      wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(16000,40);
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+      const headers = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'Content-Disposition, X-Puro-Artwork' };
+      let mode = 'normal', hold, held;
+      await p.route('https://purocielo-audio-service.pipeddahlia1.chatgpt.site/**', async r => {
+        if (mode === 'offline') return r.abort();
+        const path = new URL(r.request().url()).pathname;
+        if (path === '/resolve') return r.fulfill({ json: { kind: 'album', title: 'Test Album', artist: 'Artist', artwork: '/artwork?url=fixture', tracks: [1,2,3].map(i => ({ url: `https://soundcloud.com/artist/${mode === 'cancel' ? 'new' : 'song'}${i}` })).concat([{ url: null }]) }, headers });
+        if (path === '/artwork') return r.fulfill({ body: png, contentType: 'image/png', headers });
+        const name = r.request().postDataJSON().url.split('/').pop();
+        if (mode === 'cancel' && name === 'new2') { held(); await new Promise(resolve => { hold = resolve; }); return r.abort().catch(() => {}); }
+        return r.fulfill({ body: wav, contentType: 'audio/wav', headers: { ...headers, 'content-disposition': `attachment; filename="Artist - ${name}.wav"` } });
+      });
+      await p.goto(base + '/app/'); const form = p.locator('#side-link-import form');
+      const submit = async () => { await form.locator('input').fill('https://soundcloud.com/artist/sets/album'); await form.locator('[type=submit]').click(); };
+      const done = () => p.waitForFunction(() => document.querySelector('#side-link-import form').getAttribute('aria-busy') === 'false');
+      await submit(); await done(); assert.match(await form.locator('.link-import-status').innerText(), /добавлено 3, уже в медиатеке 0, недоступно 1/);
+      await submit(); await done(); assert.match(await form.locator('.link-import-status').innerText(), /добавлено 0, уже в медиатеке 3/);
+      mode = 'offline'; await p.reload(); await p.evaluate(() => { location.hash = '#/library/albums'; });
+      await p.waitForFunction(() => document.querySelector('#view').textContent.includes('Test Album'));
+      const records = await p.evaluate(async () => (await (await import('/web/js/db.js')).allFiles()).map(r => ({ title: r.albumInfo?.title, position: r.albumInfo?.position, cover: r.coverBlob?.size > 0 })));
+      assert.deepEqual(records.map(r => r.position).sort(), [1,2,3]); assert(records.every(r => r.title === 'Test Album' && r.cover));
+      mode = 'cancel'; const waiting = new Promise(r => { held = r; }); await submit(); await waiting;
+      await form.locator('[data-link-cancel]').click(); hold(); await done();
+      assert.match(await form.locator('.link-import-status').innerText(), /Загрузка отменена.*Сохранено: 1/);
+      assert.equal(await p.evaluate(async () => (await (await import('/web/js/db.js')).allFiles()).length), 4);
+    });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {
