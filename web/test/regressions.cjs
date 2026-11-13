@@ -135,7 +135,7 @@ const server = http.createServer((req, res) => {
         const { ensureLyrics, candidates } = await import('/web/js/lyrics-auto.js');
         const { state } = await import('/web/js/state.js'), { lySet } = await import('/web/js/db.js');
         const t = { id: 'lyrics-test', title: 'Song', artist: 'Artist', duration: 10 };
-        await lySet('v7|artist|song|10', { miss: true, at: Date.now() });
+        await lySet('v8|artist|song|10', { miss: true, at: Date.now() });
         let calls = 0, release;
         const gate = new Promise(r => { release = r; });
         window.fetch = async () => { calls++; await gate; return Response.json({ id: 1, trackName: 'Song', artistName: 'Artist', duration: 10, syncedLyrics: '[00:00.00]Hello\n[00:05.00]World' }); };
@@ -184,6 +184,115 @@ const server = http.createServer((req, res) => {
       await form.locator('[data-link-cancel]').click(); hold(); await done();
       assert.match(await form.locator('.link-import-status').innerText(), /Загрузка отменена.*Сохранено: 1/);
       assert.equal(await p.evaluate(async () => (await (await import('/web/js/db.js')).allFiles()).length), 4);
+    });
+    await check('lyrics matching rejects wrong artists and unsafe timing while preserving real titles', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const { cleanTitle, pickBest, searchLyrics, recordingVariant } = await import('/web/js/lyrics-search.js');
+        const { candidates } = await import('/web/js/lyrics-auto.js');
+        const record = { id: 1, trackName: 'Song', artistName: 'Artist', duration: 10, syncedLyrics: '[00:00.00]One\n[00:05.00]Two', _sure: true };
+        const normal = pickBest([record], 10), remix = pickBest([record], 10, 'remix'), unknown = pickBest([record], 0);
+        const far = pickBest([{ ...record, syncedLyrics: '[00:00.00]One\n[09:00.00]Too late' }], 10);
+        let calls = 0;
+        window.fetch = async url => {
+          calls++;
+          if (String(url).includes('/get?')) return new Response('Unavailable', { status: 503 });
+          return Response.json([{ ...record, id: 2, artistName: 'Someone Else' }, record]);
+        };
+        const recovered = await searchLyrics({ candidates: [{ artist: 'Artist', title: 'Song' }], duration: 10 });
+        window.fetch = async () => Response.json([{ ...record, id: 2, artistName: 'Someone Else' }]);
+        const wrong = await searchLyrics({ candidates: [{ artist: 'Artist', title: 'Song' }], duration: 10 });
+        window.fetch = async () => Response.json(record);
+        const rejected = await searchLyrics({ candidates: [{ artist: 'Artist', title: 'Song' }], duration: 10, bad: [1] });
+        return { title: cleanTitle('Song (Part II) [Official Audio]'), candidates: candidates({ title: 'Artist - Song (Part II) [Official Audio]', artist: 'Upload Channel' }).slice(0,2),
+          variant: recordingVariant('Song (sped up remix)'), normal: !!normal?.syncedLyrics, remix: remix?.syncedLyrics, unknown: unknown?.syncedLyrics,
+          far: far?.syncedLyrics, recovered: recovered.record?.id, calls, wrong: wrong.record, rejected: rejected.record };
+      });
+      assert.equal(result.title, 'Song (Part II)'); assert.equal(result.variant, 'fast+remix');
+      assert.deepEqual(result.candidates, [{ artist: 'Artist', title: 'Song (Part II)' }, { artist: 'Artist', title: 'Song' }]);
+      assert(result.normal); assert.equal(result.remix, null); assert.equal(result.unknown, null); assert.equal(result.far, null);
+      assert.equal(result.recovered, 1); assert.equal(result.calls, 2); assert.equal(result.wrong, null); assert.equal(result.rejected, null);
+    });
+    await check('lyrics fallback survives provider failure and late responses preserve manual edits', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const { ensureLyrics, setManualLyrics } = await import('/web/js/lyrics-auto.js');
+        let aborted = 0;
+        window.fetch = async (url, options = {}) => {
+          if (String(url).includes('lrclib.net')) throw new TypeError('First provider down');
+          if (String(url).includes('lyrist.vercel.app')) return Response.json({ title: 'Fallback Song', artist: 'Artist', lyrics: 'Fallback Song\nTest lyric line' });
+          if (String(url).includes('api.lyrics.ovh')) return new Response('', { status: 404 });
+          return new Promise((resolve, reject) => { options.signal?.addEventListener('abort', () => { aborted++; reject(new DOMException('Cancelled', 'AbortError')); }, { once: true }); });
+        };
+        const t = { id: 'fallback', title: 'Fallback Song', artist: 'Artist', duration: 10 };
+        const found = await ensureLyrics(t), fallback = t.lyrics?.source;
+        let release, started;
+        const waiting = new Promise(r => { started = r; });
+        window.fetch = async () => { started(); await new Promise(r => { release = r; }); return Response.json({ id: 3, trackName: 'Edited Song', artistName: 'Artist', duration: 10, plainLyrics: 'Stale result' }); };
+        const edited = { id: 'manual-race', title: 'Edited Song', artist: 'Artist', duration: 10 };
+        const search = ensureLyrics(edited); await waiting; await setManualLyrics(edited, 'My own words'); release(); await search;
+        let external = 0, primary = 0;
+        window.fetch = async url => { if (!String(url).includes('lrclib.net')) external++; else primary++; return Response.json([]); };
+        const next = { id: 'prefetch', title: 'Next Song', artist: 'Artist', duration: 10 };
+        await ensureLyrics(next, { prefetch: true });
+        return { found, fallback, aborted, manual: edited.lyrics?.text, source: edited.lyrics?.source, external, primary, prefetchState: next._ly || null };
+      });
+      assert(result.found); assert.equal(result.fallback, 'lyrist'); assert(result.aborted > 0);
+      assert.equal(result.manual, 'My own words'); assert.equal(result.source, 'manual'); assert.equal(result.external, 0);
+      assert(result.primary > 0); assert.equal(result.prefetchState, null);
+    });
+    await check('verified plain lyrics display without slow providers and persist offline', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const found = await p.evaluate(async () => {
+        const { ensureLyrics } = await import('/web/js/lyrics-auto.js');
+        let other = 0;
+        window.fetch = async url => {
+          if (!String(url).includes('lrclib.net')) { other++; throw new Error('Must not wait for another source'); }
+          return Response.json({ id: 91, trackName: 'Plain Song', artistName: 'Artist', duration: 10, plainLyrics: 'Saved lyric line' });
+        };
+        const t = { id: 'plain-test', title: 'Plain Song', artist: 'Artist', duration: 10 };
+        await ensureLyrics(t); await new Promise(r => setTimeout(r, 50));
+        return { text: t.lyrics?.text, other };
+      });
+      assert.deepEqual(found, { text: 'Saved lyric line', other: 0 });
+      await p.reload();
+      const saved = await p.evaluate(async () => {
+        window.fetch = async () => { throw new Error('Offline'); };
+        const { ensureLyrics } = await import('/web/js/lyrics-auto.js');
+        const t = { id: 'plain-test', title: 'Plain Song', artist: 'Artist', duration: 10 };
+        await ensureLyrics(t); return t.lyrics?.text;
+      });
+      assert.equal(saved, 'Saved lyric line');
+    });
+    await check('player prepares the next song lyrics before the listener opens it', async ctx => {
+      const p = await ctx.newPage(); await p.route('https://www.gstatic.com/firebasejs/**', r => r.abort());
+      const wav = Buffer.alloc(44 + 160000); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16);
+      wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(160000,40);
+      await p.route('https://music.example/**', r => r.fulfill({ body: wav, contentType: 'audio/wav', headers: { 'access-control-allow-origin': '*' } }));
+      let secondReady, calls = 0;
+      const prefetched = new Promise(r => { secondReady = r; });
+      await p.route('https://lrclib.net/api/**', async r => {
+        calls++;
+        const title = new URL(r.request().url()).searchParams.get('track_name');
+        await r.fulfill({ json: { id: title === 'First Song' ? 101 : 102, trackName: title, artistName: 'Artist', duration: 10, syncedLyrics: `[00:00.00]${title}\n[00:05.00]Second line` }, headers: { 'access-control-allow-origin': '*' } });
+        if (title === 'Second Song') secondReady();
+      });
+      await p.goto(base + '/app/'); const form = p.locator('#side-link-import form');
+      for (const name of ['First Song', 'Second Song']) {
+        await form.locator('input').fill('https://music.example/' + encodeURIComponent('Artist - ' + name + '.wav'));
+        await form.locator('[type=submit]').click();
+        await p.waitForFunction(() => document.querySelector('#side-link-import form').getAttribute('aria-busy') === 'false');
+      }
+      await p.evaluate(() => { location.hash = '#/library/songs'; });
+      await p.locator('.row[data-track]').filter({ hasText: 'First Song' }).click();
+      let timeout;
+      try { await Promise.race([prefetched, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Next song was not prepared')), 6000); })]); }
+      finally { clearTimeout(timeout); }
+      assert.equal(calls, 2);
+      await p.locator('.row[data-track]').filter({ hasText: 'Second Song' }).click();
+      await p.locator('#m-expand').click();
+      await p.waitForFunction(() => document.querySelector('#np-lyrics').textContent.includes('Second Song'));
+      assert.equal(calls, 2);
     });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');

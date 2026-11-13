@@ -113,7 +113,16 @@ export function syncLikeBtns() {
         b.innerHTML = icon(on_ ? 'heart-fill' : 'heart');
     }
 }
-let displayedTrack = null;
+let displayedTrack = null, lyricsPrefetchTimer;
+function prepareNextLyrics(track) {
+    clearTimeout(lyricsPrefetchTimer);
+    lyricsPrefetchTimer = setTimeout(() => {
+        if (!track || current()?.id !== track.id || !isPlaying() || !state.settings.autoLyrics || navigator.onLine === false || navigator.connection?.saveData || P.repeat === 'one') return;
+        const index = P.idx + 1 < P.queue.length ? P.idx + 1 : P.repeat === 'all' ? 0 : -1;
+        const next = state.tracks.get(P.queue[index]);
+        if (next && next.id !== track.id && !next.lyrics) ensureLyrics(next, { prefetch: true });
+    }, 1800);
+}
 function renderTrack(t) {
     const changed = !!t && displayedTrack !== t.id;
     displayedTrack = t?.id || null;
@@ -142,7 +151,8 @@ function renderTrack(t) {
             revealElement($('#' + id), { distance: 0, delay: i % 2 * 35, duration: 320 });
         });
     }
-    ensureLyrics(t);
+    const lyricsReady = ensureLyrics(t);
+    if (changed) lyricsReady.then(() => prepareNextLyrics(t));
     syncLikeBtns();
     renderLyrics(t);
     renderQueue();

@@ -13,8 +13,10 @@ const PUBLIC = [
     u => 'https://api.cors.lol/?url=' + encodeURIComponent(u),
     u => 'https://cors.eu.org/' + u,
 ];
-async function get(u, ms = 9000) {
-    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms);
+async function get(u, ms = 4000, signal) {
+    const ctl = new AbortController(), abort = () => ctl.abort(), tm = setTimeout(abort, ms);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     try {
         const r = await fetch(u, { signal: ctl.signal });
         return r.ok ? await r.text() : '';
@@ -23,21 +25,22 @@ async function get(u, ms = 9000) {
         return '';
     }
     finally {
-        clearTimeout(tm);
+        clearTimeout(tm); signal?.removeEventListener('abort', abort);
     }
 }
 // по очереди: посредник приложения → напрямую → публичные посредники; запоминаем, какой путь сработал
 let goodRoute = -1;
-async function fetchAny(u, fetchText, test) {
+async function fetchAny(u, fetchText, test, signal) {
     const routes = [
         fetchText ? () => fetchText(u) : null,
-        () => get(u),
-        ...PUBLIC.map(p => () => get(p(u))),
+        () => get(u, 4000, signal),
+        ...PUBLIC.map(p => () => get(p(u), 4000, signal)),
     ];
     const order = routes.map((_, i) => i);
     if (goodRoute >= 0)
         order.sort((a, b) => (b === goodRoute) - (a === goodRoute));
     for (const i of order) {
+        if (signal?.aborted) return '';
         if (!routes[i])
             continue;
         let txt = '';
@@ -77,8 +80,9 @@ export function pickGenius(json, artists, title, skip = []) {
 // Виджет Genius: https://genius.com/songs/<id>/embed.js вызывает document.write(<html с текстом>).
 // Подменяем document.write на время загрузки и забираем этот html. Загружаем по одному.
 let embedQueue = Promise.resolve();
-export function geniusEmbed(id, ms = 9000) {
+export function geniusEmbed(id, ms = 5000, signal) {
     const job = () => new Promise(res => {
+        if (signal?.aborted) return res('');
         const doc = document, orig = doc.write, sc = doc.createElement('script');
         let html = '', done = false;
         // на случай, если виджет вставляет текст рядом со своей ссылкой, а не через document.write
@@ -91,7 +95,7 @@ export function geniusEmbed(id, ms = 9000) {
             if (done)
                 return;
             done = true;
-            clearTimeout(tm);
+            clearTimeout(tm); signal?.removeEventListener('abort', end);
             doc.write = orig;
             if (!html) {
                 const body = doc.querySelector('.rg_embed_body');
@@ -104,6 +108,7 @@ export function geniusEmbed(id, ms = 9000) {
             res(html);
         };
         const tm = setTimeout(end, ms);
+        signal?.addEventListener('abort', end, { once: true });
         doc.write = (...a) => { html += a.join(''); };
         sc.onload = () => setTimeout(end, 150);
         sc.onerror = end;
@@ -145,7 +150,7 @@ export function cleanup(t) {
 const enough = t => !!t && t.split('\n').filter(l => l.trim()).length >= 4;
 const looksJson = s => /^\s*\{/.test(s) && s.includes('"response"');
 // cands: [{ artist, title }] — варианты из тегов/имени файла; artists — все артисты трека
-export async function geniusLyrics(cands, artists, fetchText, skip = []) {
+export async function geniusLyrics(cands, artists, fetchText, skip = [], { signal } = {}) {
     const seen = new Set();
     const queries = [];
     for (const c of cands) {
@@ -156,10 +161,11 @@ export async function geniusLyrics(cands, artists, fetchText, skip = []) {
             }
     }
     for (const { q, c } of queries.slice(0, 5)) {
+        if (signal?.aborted) return null;
         const arts = c.artist ? [...new Set([c.artist, ...artists])] : artists;
         let hit = null;
         for (const ep of ['search/song', 'search/multi']) {
-            const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson);
+            const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson, signal);
             if (!raw)
                 break; // поиск недоступен ни одним путём
             try {
@@ -174,11 +180,11 @@ export async function geniusLyrics(cands, artists, fetchText, skip = []) {
         // текст: виджет (без CORS) → страница песни
         let text = '';
         try {
-            text = await geniusEmbed(hit.id);
+            text = await geniusEmbed(hit.id, 5000, signal);
         }
         catch { /* дальше */ }
         if (!enough(text) && hit.url) {
-            const page = await fetchAny(hit.url, fetchText, s => s.includes('data-lyrics-container'));
+            const page = await fetchAny(hit.url, fetchText, s => s.includes('data-lyrics-container'), signal);
             text = cleanup(extractGenius(page));
         }
         if (enough(text))
