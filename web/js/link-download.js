@@ -1,13 +1,14 @@
 import { AUDIO_EXT } from './tags.js';
 import { extOf } from './util.js';
 
+const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt.site/download';
+export const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || ['snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
 export const MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
 export function audioLink(raw) {
     let url;
     try { url = new URL(raw.trim()); } catch { throw new Error('Введите полную ссылку, начиная с https://'); }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Нужна ссылка HTTP или HTTPS без логина и пароля.');
-    if (/(^|\.)soundcloud\.com$/.test(url.hostname) || url.hostname === 'snd.sc') throw new Error('Загрузка со страниц SoundCloud ещё не подключена. Вставьте прямую ссылку на аудиофайл.');
     url.hash = '';
     return url;
 }
@@ -25,7 +26,15 @@ function filename(response, url, mime) {
 }
 export async function downloadAudio(raw, { signal, onProgress = () => {} } = {}) {
     const url = audioLink(raw);
-    const response = await fetch(url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const soundcloud = isSoundCloudLink(url);
+    const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
+        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
+    });
+    if (soundcloud && !response.ok) {
+        let data;
+        try { data = await response.json(); } catch { /* Gateway errors may be HTML. */ }
+        throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
+    }
     if (!response.ok) { await response.body?.cancel(); throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.'); }
     const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     if (/html|json|xml|mpegurl/.test(mime) || mime.startsWith('text/')) {

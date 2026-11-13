@@ -2175,6 +2175,28 @@ exports.getLang = getLang;
 const isEn = () => lang === 'en';
 exports.isEn = isEn;
 const D = {
+    "SoundCloud или аудиофайл · до 100 МБ": "SoundCloud or audio file · up to 100 MB",
+    "Сервис SoundCloud временно недоступен. Попробуйте позже.": "The SoundCloud service is temporarily unavailable. Try again later.",
+    "Введите ссылку на трек SoundCloud.": "Enter a SoundCloud track URL.",
+    "Нужна HTTPS-ссылка на публичный трек SoundCloud.": "Use an HTTPS link to a public SoundCloud track.",
+    "Источник вернул неподдерживаемый адрес аудио.": "The source returned an unsupported audio address.",
+    "SoundCloud временно ограничил запросы. Попробуйте позже.": "SoundCloud is temporarily limiting requests. Try again later.",
+    "SoundCloud не предоставил аудио. Трек может быть удалён или недоступен.": "SoundCloud did not provide audio. The track may be removed or unavailable.",
+    "Не удалось открыть ссылку SoundCloud.": "Could not open the SoundCloud link.",
+    "Ответ источника слишком большой.": "The source response is too large.",
+    "SoundCloud изменил страницу или закрыл к ней доступ.": "SoundCloud changed the page or restricted access.",
+    "Нужна ссылка на один трек, а не профиль или плейлист.": "Use a link to one track, not a profile or playlist.",
+    "Полная запись недоступна для загрузки.": "The full recording is not available for download.",
+    "Поддерживаются треки длительностью до одного часа.": "Tracks up to one hour are supported.",
+    "Формат потока не поддерживается.": "This stream format is not supported.",
+    "Формат аудио не поддерживается.": "This audio format is not supported.",
+    "Источник вернул неполную запись.": "The source returned an incomplete recording.",
+    "У трека нет поддерживаемого открытого аудиопотока.": "This track has no supported public audio stream.",
+    "SoundCloud не предоставил аудио.": "SoundCloud did not provide audio.",
+    "Файл превышает 100 МБ.": "The file exceeds 100 MB.",
+    "Сервис занят. Попробуйте позже.": "The service is busy. Try again later.",
+    "Слишком много загрузок. Подождите минуту.": "Too many downloads. Wait a minute.",
+    "Не удалось получить аудио. Попробуйте позже.": "Could not get the audio. Try again later.",
     "Загрузить по ссылке": "Import from link",
     "Скачать в медиатеку": "Download to library",
     "Отменить загрузку": "Cancel download",
@@ -3046,11 +3068,14 @@ function jsonp(url, param = 'callback') {
 };
 defs["link-download.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MAX_DOWNLOAD = void 0;
+exports.MAX_DOWNLOAD = exports.isSoundCloudLink = void 0;
 exports.audioLink = audioLink;
 exports.downloadAudio = downloadAudio;
 const tags_js_1 = require("./tags.js");
 const util_js_1 = require("./util.js");
+const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt.site/download';
+const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || ['snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
+exports.isSoundCloudLink = isSoundCloudLink;
 exports.MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
 function audioLink(raw) {
@@ -3063,8 +3088,6 @@ function audioLink(raw) {
     }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
         throw new Error('Нужна ссылка HTTP или HTTPS без логина и пароля.');
-    if (/(^|\.)soundcloud\.com$/.test(url.hostname) || url.hostname === 'snd.sc')
-        throw new Error('Загрузка со страниц SoundCloud ещё не подключена. Вставьте прямую ссылку на аудиофайл.');
     url.hash = '';
     return url;
 }
@@ -3086,7 +3109,18 @@ function filename(response, url, mime) {
 }
 async function downloadAudio(raw, { signal, onProgress = () => { } } = {}) {
     const url = audioLink(raw);
-    const response = await fetch(url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const soundcloud = (0, exports.isSoundCloudLink)(url);
+    const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
+        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
+    });
+    if (soundcloud && !response.ok) {
+        let data;
+        try {
+            data = await response.json();
+        }
+        catch { /* Gateway errors may be HTML. */ }
+        throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
+    }
     if (!response.ok) {
         await response.body?.cancel();
         throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.');
@@ -3156,7 +3190,7 @@ let modal = null, formNumber = 0;
 const forms = () => [...document.querySelectorAll('.link-import')];
 function markup() {
     const id = 'audio-link-' + (++formNumber);
-    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://…/track.mp3" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${(0, icons_js_1.icon)('close')}</button></div><small id="${id}-hint">Прямая ссылка на аудио · до 100 МБ</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
+    return `<form class="link-import"><label for="${id}">Загрузить по ссылке</label><div class="link-import-entry"><input id="${id}" name="audio-url" type="url" placeholder="https://soundcloud.com/…" required autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"><button class="icon-btn" type="submit" title="Скачать в медиатеку" aria-label="Скачать в медиатеку">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn" type="button" data-link-cancel title="Отменить загрузку" aria-label="Отменить загрузку" hidden>${(0, icons_js_1.icon)('close')}</button></div><small id="${id}-hint">SoundCloud или аудиофайл · до 100 МБ</small><progress max="100" hidden aria-label="Загрузка аудио"></progress><p class="link-import-status" role="status" aria-live="polite" hidden></p></form>`;
 }
 function paint() {
     for (const form of forms()) {
