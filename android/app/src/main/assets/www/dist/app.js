@@ -3233,6 +3233,8 @@ async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL
         throw new DOMException('Cancelled', 'AbortError');
     if (!received)
         throw new Error('По ссылке пришёл пустой файл.');
+    if (total && !response.headers.get('content-encoding') && received !== total)
+        throw new Error('Файл загрузился не полностью. Попробуйте ещё раз.');
     return new File(parts, name, { type: mime || 'application/octet-stream' });
 }
 // Accept artwork only from the same service, never from an arbitrary response URL.
@@ -3404,6 +3406,7 @@ function bind(form) {
                 let artworkURL = null;
                 try {
                     const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                            armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                             received = bytes;
                             total = size;
                             if (Date.now() - lastPaint < 160)
@@ -4033,6 +4036,7 @@ async function rejectLyrics(t) {
     const ly = t && t.lyrics;
     if (!(0, exports.isFoundOnline)(ly))
         return false;
+    t._lyRevision = (t._lyRevision || 0) + 1;
     const bad = (await (0, db_js_1.lyGet)('bad|' + t.id).catch(() => null)) || { ids: [] };
     if (ly.ref != null)
         bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
@@ -4044,6 +4048,9 @@ async function rejectLyrics(t) {
     t.lyrics = null;
     t._ly = undefined;
     (0, state_js_1.emit)('lyrics', t);
+    // Let an invalidated lookup finish before starting the replacement search.
+    if (running.has(t.id))
+        await running.get(t.id);
     return ensureLyrics(t);
 }
 function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
@@ -4078,12 +4085,21 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             // 2) сохранённый текст из аккаунта, если на устройстве ещё ничего нет
             const sk = songKey(t);
             if (!prefetch && (0, sync_js_1.cloudReady)() && !cloudTried.has(sk) && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-                cloudTried.add(sk);
-                const c = await bounded(() => (0, sync_js_1.cloudLyricsGet)(sk), 1500);
-                if (c && (c.lines || c.text)) {
-                    (0, db_js_1.lySet)(okKey(t), { ly: c, at: Date.now(), up: true });
-                    return use(c);
-                }
+                // A slow or failed account request is not a permanent cache miss.
+                // Keep its result usable after the short foreground wait ends.
+                const pending = (0, sync_js_1.cloudLyricsGet)(sk).then(async (c) => {
+                    if (c !== undefined)
+                        cloudTried.add(sk);
+                    if (!c || !(c.lines || c.text) || !unchanged())
+                        return null;
+                    await (0, db_js_1.lySet)(okKey(t), { ly: c, at: Date.now(), up: true });
+                    if (unchanged() && (!t.lyrics || (0, exports.isFoundOnline)(t.lyrics)))
+                        use(c);
+                    return c;
+                });
+                const c = await bounded(() => pending, 1500);
+                if (c)
+                    return true;
             }
             // 3) онлайн-поиск с коротким кэшем промахов
             if (!state_js_1.state.settings.autoLyrics) {
@@ -4108,7 +4124,7 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             if (t._lyForeground)
                 t._lyAttempt = Date.now();
             const result = await lookup(t, bad.ids || []), d = result.record;
-            if (!unchanged())
+            if (!unchanged() || t.lyrics)
                 return !!t.lyrics;
             let ly = d && !d.instrumental ? toLyrics(d) : null;
             // Display a verified plain result immediately; optional providers are only for misses.
@@ -4118,7 +4134,7 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             }
             if (!ly && !d?.instrumental)
                 ly = await fallbackLyrics(t, bad.ids || []);
-            if (!unchanged())
+            if (!unchanged() || t.lyrics)
                 return !!t.lyrics;
             if (ly) {
                 (0, db_js_1.lySet)(key, { ly, at: Date.now() });
@@ -6210,6 +6226,7 @@ exports.likedTracks = likedTracks;
 const util_js_1 = require("./util.js");
 const artists_js_1 = require("./artists.js");
 const db_js_1 = require("./db.js");
+const track_identity_js_1 = require("./track-identity.js");
 const LS = 'puro.state.v1';
 exports.DEFAULT_SETTINGS = {
     accent: 'white', // white | gold | rose | sky | mint | violet
@@ -6391,7 +6408,7 @@ function derived() {
         if (!t._orig)
             t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
         const own = exports.state.tagEdits[t.id] || {};
-        Object.assign(t, t._orig, own);
+        Object.assign(t, t._orig, (0, track_identity_js_1.trackIdentity)(t._orig), own);
         // убираем приписки сайтов, откуда скачан трек (кроме полей, которые пользователь задал сам)
         if (exports.state.settings.stripSource !== false)
             for (const k of ['title', 'artist', 'album', 'albumArtist'])
@@ -6408,8 +6425,10 @@ function derived() {
     }
     // 2) релизы (альбомы / синглы)
     for (const t of all) {
-        const tag = t.albumArtist ? (0, artists_js_1.splitArtists)(t.albumArtist) : [];
-        const lead = tag[0] || t._artists[0];
+        const channelAlbum = (0, track_identity_js_1.isUploadChannel)(t.albumArtist) && !('albumArtist' in (exports.state.tagEdits[t.id] || {}));
+        const tag = t.albumArtist && !channelAlbum ? (0, artists_js_1.splitArtists)(t.albumArtist) : [];
+        // Keep existing album keys/covers and compilation grouping, but display performers.
+        const lead = channelAlbum ? (0, artists_js_1.splitArtists)(t.albumArtist)[0] : tag[0] || t._artists[0];
         const key = t.album ? 'a:' + (0, util_js_1.norm)(lead) + '::' + (0, util_js_1.norm)(t.album) : 's:' + t.id;
         let g = groups.get(key);
         if (!g) {
@@ -8036,6 +8055,24 @@ const extOf = t => (/\.([a-z0-9]{2,5})$/i.exec(t.name || '') || [])[1]?.toUpperC
 exports.extOf = extOf;
 const sizeMB = t => t.size ? (t.size / 1048576).toFixed(1).replace('.', ',') + ' МБ' : '';
 exports.sizeMB = sizeMB;
+
+};
+defs["track-identity.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isUploadChannel = void 0;
+exports.trackIdentity = trackIdentity;
+// Only explicit repost-channel labels are corrected. Ordinary artist names stay intact.
+const isUploadChannel = value => /\baudios?\s+station\b/i.test(String(value || ''));
+exports.isUploadChannel = isUploadChannel;
+function trackIdentity(raw) {
+    if (!(0, exports.isUploadChannel)(raw.artist))
+        return {};
+    const match = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(raw.title || '').trim());
+    if (!match || (0, exports.isUploadChannel)(match[1]))
+        return { artist: '' };
+    const title = match[2].replace(/\s*\[(?:slump(?:\s+audios?\s+station)?|[^\]]*\baudios?\s+station\b[^\]]*)\]\s*$/i, '').trim();
+    return title ? { artist: match[1].trim(), title } : { artist: '' };
+}
 
 };
 defs["translate.js"]=function(module,exports,require){"use strict";

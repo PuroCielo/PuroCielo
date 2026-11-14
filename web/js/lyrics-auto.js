@@ -326,6 +326,7 @@ export async function rejectLyrics(t) {
     const ly = t && t.lyrics;
     if (!isFoundOnline(ly))
         return false;
+    t._lyRevision = (t._lyRevision || 0) + 1;
     const bad = (await lyGet('bad|' + t.id).catch(() => null)) || { ids: [] };
     if (ly.ref != null)
         bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
@@ -337,6 +338,8 @@ export async function rejectLyrics(t) {
     t.lyrics = null;
     t._ly = undefined;
     emit('lyrics', t);
+    // Let an invalidated lookup finish before starting the replacement search.
+    if (running.has(t.id)) await running.get(t.id);
     return ensureLyrics(t);
 }
 export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
@@ -364,12 +367,17 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             // 2) сохранённый текст из аккаунта, если на устройстве ещё ничего нет
             const sk = songKey(t);
             if (!prefetch && cloudReady() && !cloudTried.has(sk) && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-                cloudTried.add(sk);
-                const c = await bounded(() => cloudLyricsGet(sk), 1500);
-                if (c && (c.lines || c.text)) {
-                    lySet(okKey(t), { ly: c, at: Date.now(), up: true });
-                    return use(c);
-                }
+                // A slow or failed account request is not a permanent cache miss.
+                // Keep its result usable after the short foreground wait ends.
+                const pending = cloudLyricsGet(sk).then(async c => {
+                    if (c !== undefined) cloudTried.add(sk);
+                    if (!c || !(c.lines || c.text) || !unchanged()) return null;
+                    await lySet(okKey(t), { ly: c, at: Date.now(), up: true });
+                    if (unchanged() && (!t.lyrics || isFoundOnline(t.lyrics))) use(c);
+                    return c;
+                });
+                const c = await bounded(() => pending, 1500);
+                if (c) return true;
             }
             // 3) онлайн-поиск с коротким кэшем промахов
             if (!state.settings.autoLyrics) {
@@ -393,12 +401,12 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             }
             if (t._lyForeground) t._lyAttempt = Date.now();
             const result = await lookup(t, bad.ids || []), d = result.record;
-            if (!unchanged()) return !!t.lyrics;
+            if (!unchanged() || t.lyrics) return !!t.lyrics;
             let ly = d && !d.instrumental ? toLyrics(d) : null;
             // Display a verified plain result immediately; optional providers are only for misses.
             if (!ly && !t._lyForeground) { t._ly = undefined; return false; }
             if (!ly && !d?.instrumental) ly = await fallbackLyrics(t, bad.ids || []);
-            if (!unchanged()) return !!t.lyrics;
+            if (!unchanged() || t.lyrics) return !!t.lyrics;
             if (ly) {
                 lySet(key, { ly, at: Date.now() });
                 if (ly.sure) keepSure(t, ly);

@@ -1,6 +1,7 @@
 import { SESSION_SEED, hash, norm, seededShuffle, stripSource, uid } from './util.js';
 import { artistKey, splitArtists, trackArtists } from './artists.js';
 import { delFile, kvGet, kvSet } from './db.js';
+import { isUploadChannel, trackIdentity } from './track-identity.js';
 
 const LS = 'puro.state.v1';
 export const DEFAULT_SETTINGS = {
@@ -171,7 +172,7 @@ export function derived() {
         if (!t._orig)
             t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
         const own = state.tagEdits[t.id] || {};
-        Object.assign(t, t._orig, own);
+        Object.assign(t, t._orig, trackIdentity(t._orig), own);
         // убираем приписки сайтов, откуда скачан трек (кроме полей, которые пользователь задал сам)
         if (state.settings.stripSource !== false)
             for (const k of ['title', 'artist', 'album', 'albumArtist'])
@@ -188,8 +189,10 @@ export function derived() {
     }
     // 2) релизы (альбомы / синглы)
     for (const t of all) {
-        const tag = t.albumArtist ? splitArtists(t.albumArtist) : [];
-        const lead = tag[0] || t._artists[0];
+        const channelAlbum = isUploadChannel(t.albumArtist) && !('albumArtist' in (state.tagEdits[t.id] || {}));
+        const tag = t.albumArtist && !channelAlbum ? splitArtists(t.albumArtist) : [];
+        // Keep existing album keys/covers and compilation grouping, but display performers.
+        const lead = channelAlbum ? splitArtists(t.albumArtist)[0] : tag[0] || t._artists[0];
         const key = t.album ? 'a:' + norm(lead) + '::' + norm(t.album) : 's:' + t.id;
         let g = groups.get(key);
         if (!g) {

@@ -60,6 +60,7 @@ function bind(form) {
                 let artworkURL = null;
                 try {
                     const file = await downloadAudio(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                        armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                         received = bytes; total = size;
                         if (Date.now() - lastPaint < 160) return;
                         lastPaint = Date.now();

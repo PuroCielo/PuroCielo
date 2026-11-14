@@ -350,6 +350,50 @@ const server = http.createServer((req, res) => {
       await p.keyboard.press('KeyT'); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'player');
       await p.keyboard.press('KeyT'); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'lyrics');
     });
+    await check('repost channels become performers without changing IDs or manual edits', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const s = await import('/web/js/state.js');
+        const a = {id:'existing',artist:'☁ Slump Audios Station ☁',title:'lumioe - hating (toca) [slump]',album:'Mix',albumArtist:'Slump Audios Station'};
+        const b = {id:'other',artist:'Slump Audios Station',title:'Other - Song',album:'Mix',albumArtist:'Slump Audios Station'};
+        const c = {id:'real',artist:'Audioslave',title:'Like a Stone'};
+        [a,b,c].forEach(t => s.state.tracks.set(t.id,t)); s.touchLibrary(); s.derived();
+        const first = {artist:a.artist,title:a.title,id:a.id,sameAlbum:a._albumKey===b._albumKey,real:c.artist};
+        s.state.tagEdits[a.id] = {artist:'My artist',title:'My title'}; s.touchLibrary(); s.derived();
+        return {first,manual:[a.artist,a.title]};
+      });
+      assert.deepEqual(result,{first:{artist:'lumioe',title:'hating (toca)',id:'existing',sameAlbum:true,real:'Audioslave'},manual:['My artist','My title']});
+    });
+    await check('incomplete audio is rejected instead of entering the library', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const message = await p.evaluate(async () => {
+        window.fetch = async () => new Response(new Uint8Array(10), {headers:{'content-type':'audio/mpeg','content-length':'100'}});
+        try { await (await import('/web/js/link-download.js')).downloadAudio('https://example.com/test.mp3'); return ''; }
+        catch(e) { return e.message; }
+      });
+      assert.match(message,/не полностью/);
+    });
+    await check('late account lyrics are applied after the foreground deadline', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      await p.evaluate(async () => {
+        const s = await import('/web/js/state.js'); s.state.settings.autoLyrics = false;
+        const snap = data => ({ exists: () => !!data, data: () => data });
+        const fs = { getFirestore: () => ({}), doc: (_, ...parts) => parts.join('/'),
+          getDoc: async ref => {
+            if (!ref.includes('/blobs/ly_')) return snap(null);
+            await new Promise(r => setTimeout(r, 1800));
+            return snap({kind:'ly',key:'artist|saved song|10',data:JSON.stringify({type:'plain',text:'Saved in account',source:'manual',sure:true})});
+          }, onSnapshot: () => () => {}, setDoc: async () => {}, deleteDoc: async () => {} };
+        window.__puroFirebase = [{ initializeApp: () => ({}) }, { getAuth: () => ({}),
+          onAuthStateChanged: (_, cb) => queueMicrotask(() => cb({ uid: 'user' })), signInWithEmailAndPassword: async () => {} }, fs];
+        const sync = await import('/web/js/sync.js'); await sync.signInEmail('test@example.com','test-only');
+        window.fixture = { sync, t: {id:'late',artist:'Artist',title:'Saved Song',duration:10} };
+      });
+      await p.waitForFunction(() => fixture.sync.cloudReady());
+      await p.evaluate(async () => { await (await import('/web/js/lyrics-auto.js')).ensureLyrics(fixture.t); });
+      await p.waitForFunction(() => fixture.t.lyrics?.text === 'Saved in account');
+      assert.equal(await p.evaluate(() => fixture.t.lyrics.source), 'manual');
+    });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {

@@ -63,6 +63,7 @@ export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtw
     finally { reader.releaseLock(); }
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (!received) throw new Error('По ссылке пришёл пустой файл.');
+    if (total && !response.headers.get('content-encoding') && received !== total) throw new Error('Файл загрузился не полностью. Попробуйте ещё раз.');
     return new File(parts, name, { type: mime || 'application/octet-stream' });
 }
 
