@@ -12,6 +12,7 @@ import { applySettings, applyTheme, toggleTheme } from './theme.js';
 import { icon } from './icons.js';
 import { initBgFx, runSplash } from './bgfx.js';
 import { ensureLyrics, identifyArtist, peekLyrics } from './lyrics-auto.js';
+import { initBackgroundLyrics } from './lyrics-background.js';
 import { $, $$, debounce, esc, plural, shuffleArray } from './util.js';
 import { buildM3U } from './m3u.js';
 import { clearFiles } from './db.js';
@@ -1192,6 +1193,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden)
     initI18n(state.settings.lang);
     initSync();
     initAutoCovers();
+    initBackgroundLyrics();
     applyTheme(state.theme);
     applySettings();
     setVolume(state.volume);

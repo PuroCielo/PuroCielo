@@ -30,6 +30,37 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('background lyrics queue is silent, serial and respects offline and disabled settings', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      await p.evaluate(async () => {
+        const s = await import('/web/js/state.js');
+        let online = false, active = 0, peak = 0, calls = [];
+        Object.defineProperty(navigator, 'onLine', {configurable:true,get:()=>online});
+        window.fetch = async url => {
+          const title = new URL(url).searchParams.get('track_name');
+          calls.push(title); peak = Math.max(peak, ++active);
+          await new Promise(r => setTimeout(r, 120)); active--;
+          return Response.json({id:title,trackName:title,artistName:'Artist',duration:10,plainLyrics:'Lyrics for '+title});
+        };
+        s.state.settings.autoLyrics = false;
+        (await import('/web/js/lyrics-background.js')).initBackgroundLyrics();
+        const add = (id, lyrics) => s.state.tracks.set(id,{id,artist:'Artist',title:id,duration:10,lyrics});
+        add('First'); add('Second'); add('Own',{type:'plain',text:'My lyrics',source:'manual'}); add('Removed');
+        s.touchLibrary(); s.state.tracks.delete('Removed');
+        window.bg = {s,calls,peak:()=>peak,online:()=>{online=true;window.dispatchEvent(new Event('online'));}};
+      });
+      await p.waitForTimeout(400); assert.equal(await p.evaluate(()=>bg.calls.length),0);
+      await p.evaluate(()=>{bg.s.state.settings.autoLyrics=true;bg.s.emit('settings','autoLyrics');});
+      await p.waitForTimeout(400); assert.equal(await p.evaluate(()=>bg.calls.length),0);
+      await p.evaluate(()=>bg.online());
+      await p.waitForFunction(()=>bg.s.state.tracks.get('Second').lyrics);
+      assert.deepEqual(await p.evaluate(()=>({calls:bg.calls,peak:bg.peak(),own:bg.s.state.tracks.get('Own').lyrics.text})),{calls:['First','Second'],peak:1,own:'My lyrics'});
+      await p.evaluate(()=>bg.s.touchLibrary()); await p.waitForTimeout(400);
+      assert.equal(await p.evaluate(()=>bg.calls.length),2);
+      assert.equal(await p.locator('.modal').count(),0);
+      assert.equal(await p.locator('#toasts').innerText(),'');
+      assert.equal(await p.evaluate(async()=>!!(await (await import('/web/js/db.js')).lyGet('ok|artist|first|10'))?.ly),true);
+    });
     await check('mini-player recovers the same track after stop and refreshes metadata', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {
@@ -266,7 +297,7 @@ const server = http.createServer((req, res) => {
       });
       assert.equal(saved, 'Saved lyric line');
     });
-    await check('player prepares the next song lyrics before the listener opens it', async ctx => {
+    await check('imported songs get lyrics before playback without opening the player', async ctx => {
       const p = await ctx.newPage(); await p.route('https://www.gstatic.com/firebasejs/**', r => r.abort());
       const wav = Buffer.alloc(44 + 160000); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16);
       wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(160000,40);
@@ -286,11 +317,11 @@ const server = http.createServer((req, res) => {
         await p.waitForFunction(() => document.querySelector('#side-link-import form').getAttribute('aria-busy') === 'false');
       }
       await p.evaluate(() => { location.hash = '#/library/songs'; });
-      await p.locator('.row[data-track]').filter({ hasText: 'First Song' }).click();
       let timeout;
       try { await Promise.race([prefetched, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Next song was not prepared')), 6000); })]); }
       finally { clearTimeout(timeout); }
       assert.equal(calls, 2);
+      assert.equal(await p.locator('#np').evaluate(el => el.classList.contains('open')), false);
       await p.locator('.row[data-track]').filter({ hasText: 'Second Song' }).click();
       await p.locator('#m-expand').click();
       await p.waitForFunction(() => document.querySelector('#np-lyrics').textContent.includes('Second Song'));

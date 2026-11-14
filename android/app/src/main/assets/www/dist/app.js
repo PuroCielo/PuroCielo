@@ -122,6 +122,7 @@ const theme_js_1 = require("./theme.js");
 const icons_js_1 = require("./icons.js");
 const bgfx_js_1 = require("./bgfx.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
+const lyrics_background_js_1 = require("./lyrics-background.js");
 const util_js_1 = require("./util.js");
 const m3u_js_1 = require("./m3u.js");
 const db_js_1 = require("./db.js");
@@ -1373,6 +1374,7 @@ document.addEventListener('visibilitychange', () => {
     (0, i18n_js_1.initI18n)(state_js_1.state.settings.lang);
     (0, sync_js_1.initSync)();
     (0, covers_auto_js_2.initAutoCovers)();
+    (0, lyrics_background_js_1.initBackgroundLyrics)();
     (0, theme_js_1.applyTheme)(state_js_1.state.theme);
     (0, theme_js_1.applySettings)();
     (0, player_js_1.setVolume)(state_js_1.state.volume);
@@ -4165,6 +4167,69 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
     running.set(t.id, p);
     (0, state_js_1.emit)('lyrics-state', t);
     return p;
+}
+
+};
+defs["lyrics-background.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.initBackgroundLyrics = initBackgroundLyrics;
+const state_js_1 = require("./state.js");
+const lyrics_auto_js_1 = require("./lyrics-auto.js");
+// One song at a time: importing an album must not flood lyrics providers.
+// Results use the normal persistent cache; this module never opens player UI.
+let started = false, active = false, timer = null;
+const pending = new Map();
+const attempted = new WeakSet();
+const enabled = () => state_js_1.state.settings.autoLyrics && navigator.onLine !== false;
+function schedule() {
+    if (!active && !timer && pending.size && enabled())
+        timer = setTimeout(drain, 250);
+}
+function collect() {
+    (0, state_js_1.derived)(); // Apply artist corrections and user metadata before searching.
+    for (const t of state_js_1.state.tracks.values()) {
+        if (!t.lyrics && !attempted.has(t))
+            pending.set(t.id, t);
+    }
+    schedule();
+}
+async function drain() {
+    timer = null;
+    if (active || !enabled())
+        return;
+    const entry = pending.entries().next().value;
+    if (!entry)
+        return;
+    const [id, t] = entry;
+    pending.delete(id);
+    if (state_js_1.state.tracks.get(id) !== t || t.lyrics || attempted.has(t)) {
+        schedule();
+        return;
+    }
+    active = true;
+    attempted.add(t);
+    try {
+        await (0, lyrics_auto_js_1.ensureLyrics)(t);
+    }
+    catch { /* Search failure must never interrupt importing or playback. */ }
+    finally {
+        active = false;
+        schedule();
+    }
+}
+function initBackgroundLyrics() {
+    if (started)
+        return;
+    started = true;
+    (0, state_js_1.on)('library', collect);
+    (0, state_js_1.on)('settings', collect);
+    window.addEventListener('online', () => {
+        for (const t of state_js_1.state.tracks.values())
+            if (!t.lyrics && ['error', 'offline'].includes(t._ly))
+                attempted.delete(t);
+        collect();
+    });
+    collect();
 }
 
 };
