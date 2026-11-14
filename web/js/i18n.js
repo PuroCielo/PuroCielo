@@ -77,6 +77,7 @@ const D = {
     'Нравится': 'Like', 'Звук': 'Sound', 'Громкость': 'Volume', 'Текст': 'Lyrics', 'Очередь': 'Queue', 'Развернуть': 'Expand', 'Свернуть': 'Collapse', 'Перемотка': 'Seek',
     'Ещё': 'More', 'Открыть Now Playing': 'Open Now Playing', 'Скрыть текст': 'Hide lyrics', 'Показать текст': 'Show lyrics', 'Показать или скрыть текст': 'Show or hide lyrics',
     'Для поиска текста нужен интернет': 'Connect to the internet to find lyrics', 'Поиск текста временно недоступен': 'Lyrics search is temporarily unavailable', 'Искать снова': 'Search again',
+    'Показать или скрыть текст': 'Show or hide lyrics',
     'Изменить текст': 'Edit lyrics', 'Добавить текст': 'Add lyrics', 'Текст не найден': 'Lyrics not found', 'Ищу текст…': 'Looking for lyrics…', 'Очередь пуста': 'Queue is empty',
     'Запустите альбом, плейлист или трек — они появятся здесь.': 'Play an album, playlist or track — it will show up here.', 'Ранее': 'Earlier', 'Сейчас играет': 'Now playing', 'Далее': 'Up next',
     'Дальше ничего нет. Добавьте треки через меню «⋯».': 'Nothing up next. Add tracks from the «⋯» menu.', 'Убрать из очереди': 'Remove from queue', 'Очистить': 'Clear',

@@ -316,6 +316,40 @@ const server = http.createServer((req, res) => {
       });
       assert.deepEqual(result, { text: 'One\nTwo\nThree\nFour', sandbox: 'allow-scripts', cancelled: '', writeUnchanged: true, alive: true, frames: 0 });
     });
+    await check('T and lyrics buttons hide and restore lyrics across layouts and saved settings', async ctx => {
+      const p = await ctx.newPage(); await p.setViewportSize({ width: 1280, height: 900 });
+      await p.route('https://www.gstatic.com/firebasejs/**', r => r.abort());
+      await p.route('https://lrclib.net/api/**', r => r.fulfill({ json: { id: 501, trackName: 'Toggle Song', artistName: 'Artist', duration: 30, syncedLyrics: '[00:00.00]One\n[00:20.00]Two' }, headers: { 'access-control-allow-origin': '*' } }));
+      const wav = Buffer.alloc(44 + 480000); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16);
+      wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(480000,40);
+      await p.route('https://music.example/**', r => r.fulfill({ body: wav, contentType: 'audio/wav', headers: { 'access-control-allow-origin': '*' } }));
+      await p.goto(base + '/app/'); const form = p.locator('#side-link-import form');
+      await form.locator('input').fill('https://music.example/Artist%20-%20Toggle%20Song.wav'); await form.locator('[type=submit]').click();
+      await p.waitForFunction(() => document.querySelector('#side-link-import form').getAttribute('aria-busy') === 'false');
+      await p.evaluate(() => { location.hash = '#/library/songs'; }); await p.locator('.row[data-track]').click(); await p.locator('#m-expand').click();
+      await p.keyboard.press('KeyT');
+      await p.waitForFunction(() => document.querySelector('.np').classList.contains('nolyr') && +getComputedStyle(document.querySelector('.np-side')).opacity < .01);
+      assert.equal(await p.locator('#np-lyr-toggle').getAttribute('aria-pressed'), 'false');
+      await p.keyboard.press('KeyT');
+      await p.waitForFunction(() => !document.querySelector('.np').classList.contains('nolyr') && +getComputedStyle(document.querySelector('.np-side')).opacity > .99);
+      await p.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT', key: 't', repeat: true, bubbles: true })));
+      assert.equal(await p.locator('#np-lyr-toggle').getAttribute('aria-pressed'), 'true');
+      await p.locator('#np-lyr-toggle').click(); assert.equal(await p.locator('#np-lyr-toggle').getAttribute('aria-pressed'), 'false');
+      await p.reload(); await p.locator('.row[data-track]').click(); await p.locator('#m-expand').click();
+      assert.equal(await p.locator('#np-lyr-toggle').getAttribute('aria-pressed'), 'false');
+      await p.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT', key: 'е', bubbles: true })));
+      assert.equal(await p.locator('#np-lyr-toggle').getAttribute('aria-pressed'), 'true');
+      await p.keyboard.press('KeyQ'); await p.keyboard.press('KeyT');
+      assert.equal(await p.locator('.np').getAttribute('data-pane'), 'lyrics');
+      await p.locator('#np-close').click(); await form.locator('input').fill(''); await form.locator('input').press('t');
+      assert.equal(await p.locator('.np').getAttribute('aria-hidden'), 'true'); assert.equal(await form.locator('input').inputValue(), 't');
+      await p.locator('h1').first().click(); await p.keyboard.press('KeyT'); assert.equal(await p.locator('.np').getAttribute('aria-hidden'), 'false');
+      await p.setViewportSize({ width: 390, height: 844 });
+      await p.locator('#np-pane-toggle').click(); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'player');
+      await p.locator('#np-pane-toggle').click(); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'lyrics');
+      await p.keyboard.press('KeyT'); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'player');
+      await p.keyboard.press('KeyT'); assert.equal(await p.locator('.np').getAttribute('data-pane'), 'lyrics');
+    });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {

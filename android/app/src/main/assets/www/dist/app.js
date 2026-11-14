@@ -702,7 +702,9 @@ document.addEventListener('keydown', e => {
             (0, nowplaying_js_1.isNPOpen)() ? (0, nowplaying_js_1.setPane)('queue') : (0, nowplaying_js_1.openNP)('queue');
             break;
         case 'KeyT':
-            (0, nowplaying_js_1.isNPOpen)() ? (0, nowplaying_js_1.setPane)('lyrics') : (0, nowplaying_js_1.openNP)('lyrics');
+            e.preventDefault();
+            if (!e.repeat)
+                (0, nowplaying_js_1.toggleLyrics)();
             break;
         case 'Slash':
             if (e.shiftKey) {
@@ -735,7 +737,7 @@ function focusSearch() {
 }
 function showShortcuts() {
     const rows = [['Пробел', 'Играть / пауза'], ['← / →', 'Перемотка на 5 секунд'], ['Shift + ← / →', 'Предыдущий / следующий трек'], ['↑ / ↓', 'Громкость'], ['M', 'Выключить звук'], ['S', 'Перемешать'], ['R', 'Повтор: выкл → все → один'],
-        ['N / P', 'Следующий / предыдущий'], ['L', 'Нравится'], ['D', 'Сменить тему'], ['F', 'Открыть / закрыть Now Playing'], ['T', 'Текст песни'], ['Q', 'Очередь'], ['/', 'Поиск'], ['Esc', 'Назад, в конце — на главную']];
+        ['N / P', 'Следующий / предыдущий'], ['L', 'Нравится'], ['D', 'Сменить тему'], ['F', 'Открыть / закрыть Now Playing'], ['T', 'Показать или скрыть текст'], ['Q', 'Очередь'], ['/', 'Поиск'], ['Esc', 'Назад, в конце — на главную']];
     (0, ui_js_1.openModal)({ title: 'Горячие клавиши', html: `<div class="kbd-list">${rows.map(([k, d]) => `<div><span>${d}</span><kbd>${k}</kbd></div>`).join('')}</div>` });
 }
 // ================= поиск =================
@@ -2260,6 +2262,7 @@ const D = {
     'Нравится': 'Like', 'Звук': 'Sound', 'Громкость': 'Volume', 'Текст': 'Lyrics', 'Очередь': 'Queue', 'Развернуть': 'Expand', 'Свернуть': 'Collapse', 'Перемотка': 'Seek',
     'Ещё': 'More', 'Открыть Now Playing': 'Open Now Playing', 'Скрыть текст': 'Hide lyrics', 'Показать текст': 'Show lyrics', 'Показать или скрыть текст': 'Show or hide lyrics',
     'Для поиска текста нужен интернет': 'Connect to the internet to find lyrics', 'Поиск текста временно недоступен': 'Lyrics search is temporarily unavailable', 'Искать снова': 'Search again',
+    'Показать или скрыть текст': 'Show or hide lyrics',
     'Изменить текст': 'Edit lyrics', 'Добавить текст': 'Add lyrics', 'Текст не найден': 'Lyrics not found', 'Ищу текст…': 'Looking for lyrics…', 'Очередь пуста': 'Queue is empty',
     'Запустите альбом, плейлист или трек — они появятся здесь.': 'Play an album, playlist or track — it will show up here.', 'Ранее': 'Earlier', 'Сейчас играет': 'Now playing', 'Далее': 'Up next',
     'Дальше ничего нет. Добавьте треки через меню «⋯».': 'Nothing up next. Add tracks from the «⋯» menu.', 'Убрать из очереди': 'Remove from queue', 'Очистить': 'Clear',
@@ -4919,6 +4922,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.isNPOpen = exports.fmtBR = exports.fmtSR = void 0;
 exports.techParts = techParts;
 exports.syncLikeBtns = syncLikeBtns;
+exports.toggleLyrics = toggleLyrics;
 exports.setPane = setPane;
 exports.openNP = openNP;
 exports.closeNP = closeNP;
@@ -5347,6 +5351,19 @@ function startLoop() {
 }
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
+function toggleLyrics() {
+    if (!(0, player_js_1.current)())
+        return;
+    const visible = npOpen && lyricsOn() && (isDesktop() ? np.dataset.pane !== 'queue' : np.dataset.pane === 'lyrics');
+    state_js_1.state.settings.showLyrics = !visible;
+    (0, state_js_1.save)();
+    (0, state_js_1.emit)('settings', 'showLyrics');
+    if (!npOpen)
+        openNP('lyrics');
+    else
+        setPane(visible ? 'player' : 'lyrics');
+    updateLyrics(player_js_1.audio.currentTime, true);
+}
 function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
@@ -5466,7 +5483,7 @@ function initPlayerUI() {
                 (0, miniwin_js_1.toggleMiniWindow)();
                 break;
             case 'open-lyrics':
-                openNP('lyrics');
+                toggleLyrics();
                 break;
             case 'open-queue':
                 if (npOpen && np.dataset.pane === 'queue')
@@ -5489,12 +5506,8 @@ function initPlayerUI() {
             openNP();
     });
     (0, util_js_1.$)('#np-close').addEventListener('click', closeNP);
-    // на телефоне: кнопка вверху справа переключает плеер ↔ текст (из очереди — обратно к плееру)
-    (0, util_js_1.$)('#np-pane-toggle').addEventListener('click', () => {
-        setPane(np.dataset.pane === 'player' ? 'lyrics' : 'player');
-        if (np.dataset.pane === 'lyrics')
-            updateLyrics(player_js_1.audio.currentTime, true);
-    });
+    // На телефоне переключаем плеер ↔ текст; из очереди открываем текст.
+    (0, util_js_1.$)('#np-pane-toggle').addEventListener('click', toggleLyrics);
     // текст и обложка трека (карандаш рядом с лайком)
     (0, util_js_1.$)('#np-edit').addEventListener('click', e => {
         const t = (0, player_js_1.current)();
@@ -5517,16 +5530,7 @@ function initPlayerUI() {
             ...((0, state_js_1.hasOwnCover)(t.id) ? [{ icon: 'refresh', label: 'Вернуть обложку из файла', onClick: () => (0, state_js_1.setTrackCover)(t.id, null) }] : []),
         ]);
     });
-    (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', () => {
-        if (!isDesktop()) { // на телефоне — к тексту
-            setPane('lyrics');
-            updateLyrics(player_js_1.audio.currentTime, true);
-            return;
-        }
-        state_js_1.state.settings.showLyrics = !lyricsOn();
-        (0, state_js_1.save)();
-        (0, state_js_1.emit)('settings', 'showLyrics');
-    });
+    (0, util_js_1.$)('#np-lyr-toggle').addEventListener('click', toggleLyrics);
     (0, state_js_1.on)('settings', k => {
         if (k === 'showLyrics' || k === 'all')
             applyLyricsMode(true);

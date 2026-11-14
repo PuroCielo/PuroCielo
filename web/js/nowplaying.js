@@ -403,6 +403,16 @@ function startLoop() { if (raf)
     return; const loop = () => { const more = frame(); raf = isPlaying() || more ? requestAnimationFrame(loop) : 0; }; raf = requestAnimationFrame(loop); }
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state.settings.showLyrics !== false;
+export function toggleLyrics() {
+    if (!current()) return;
+    const visible = npOpen && lyricsOn() && (isDesktop() ? np.dataset.pane !== 'queue' : np.dataset.pane === 'lyrics');
+    state.settings.showLyrics = !visible;
+    save();
+    emit('settings', 'showLyrics');
+    if (!npOpen) openNP('lyrics');
+    else setPane(visible ? 'player' : 'lyrics');
+    updateLyrics(audio.currentTime, true);
+}
 export function setPane(p) {
     if (p === 'lyrics' && !lyricsOn())
         p = 'player';
@@ -519,7 +529,7 @@ export function initPlayerUI() {
                 toggleMiniWindow();
                 break;
             case 'open-lyrics':
-                openNP('lyrics');
+                toggleLyrics();
                 break;
             case 'open-queue':
                 if (npOpen && np.dataset.pane === 'queue')
@@ -537,12 +547,8 @@ export function initPlayerUI() {
     $('#mini-open').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === e.currentTarget)
         openNP(); });
     $('#np-close').addEventListener('click', closeNP);
-    // на телефоне: кнопка вверху справа переключает плеер ↔ текст (из очереди — обратно к плееру)
-    $('#np-pane-toggle').addEventListener('click', () => {
-        setPane(np.dataset.pane === 'player' ? 'lyrics' : 'player');
-        if (np.dataset.pane === 'lyrics')
-            updateLyrics(audio.currentTime, true);
-    });
+    // На телефоне переключаем плеер ↔ текст; из очереди открываем текст.
+    $('#np-pane-toggle').addEventListener('click', toggleLyrics);
     // текст и обложка трека (карандаш рядом с лайком)
     $('#np-edit').addEventListener('click', e => {
         const t = current();
@@ -562,16 +568,7 @@ export function initPlayerUI() {
             ...(hasOwnCover(t.id) ? [{ icon: 'refresh', label: 'Вернуть обложку из файла', onClick: () => setTrackCover(t.id, null) }] : []),
         ]);
     });
-    $('#np-lyr-toggle').addEventListener('click', () => {
-        if (!isDesktop()) { // на телефоне — к тексту
-            setPane('lyrics');
-            updateLyrics(audio.currentTime, true);
-            return;
-        }
-        state.settings.showLyrics = !lyricsOn();
-        save();
-        emit('settings', 'showLyrics');
-    });
+    $('#np-lyr-toggle').addEventListener('click', toggleLyrics);
     on('settings', k => { if (k === 'showLyrics' || k === 'all')
         applyLyricsMode(true); });
     applyLyricsMode(false);

@@ -2,7 +2,7 @@ import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, delete
 import { P, addNext, addToQueue, audio, current, cycleRepeat, next, normInfo, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
 import { filesFromDrop, importFiles, restoreLibrary, syncNativeLibrary } from './importer.js';
 import { forgetFile, isNative, onNativeFetch, pickFiles, pickFolder, rescan, setPlayback } from './native.js';
-import { closeNP, initPlayerUI, isNPOpen, openNP, setPane } from './nowplaying.js';
+import { closeNP, initPlayerUI, isNPOpen, openNP, setPane, toggleLyrics } from './nowplaying.js';
 import { albumView, artistView, avatarHTML, continueCard, duplicatesView, fixView, homeHidden, homeOrder, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
 import { dedupeFlow, deleteTrackFlow, newPlaylistFlow, trackMenu } from './actions.js';
 import { missing } from './tools.js';
@@ -573,7 +573,8 @@ document.addEventListener('keydown', e => {
             isNPOpen() ? setPane('queue') : openNP('queue');
             break;
         case 'KeyT':
-            isNPOpen() ? setPane('lyrics') : openNP('lyrics');
+            e.preventDefault();
+            if (!e.repeat) toggleLyrics();
             break;
         case 'Slash':
             if (e.shiftKey) {
@@ -602,7 +603,7 @@ function focusSearch() {
 }
 function showShortcuts() {
     const rows = [['Пробел', 'Играть / пауза'], ['← / →', 'Перемотка на 5 секунд'], ['Shift + ← / →', 'Предыдущий / следующий трек'], ['↑ / ↓', 'Громкость'], ['M', 'Выключить звук'], ['S', 'Перемешать'], ['R', 'Повтор: выкл → все → один'],
-        ['N / P', 'Следующий / предыдущий'], ['L', 'Нравится'], ['D', 'Сменить тему'], ['F', 'Открыть / закрыть Now Playing'], ['T', 'Текст песни'], ['Q', 'Очередь'], ['/', 'Поиск'], ['Esc', 'Назад, в конце — на главную']];
+        ['N / P', 'Следующий / предыдущий'], ['L', 'Нравится'], ['D', 'Сменить тему'], ['F', 'Открыть / закрыть Now Playing'], ['T', 'Показать или скрыть текст'], ['Q', 'Очередь'], ['/', 'Поиск'], ['Esc', 'Назад, в конце — на главную']];
     openModal({ title: 'Горячие клавиши', html: `<div class="kbd-list">${rows.map(([k, d]) => `<div><span>${d}</span><kbd>${k}</kbd></div>`).join('')}</div>` });
 }
 // ================= поиск =================
