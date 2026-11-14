@@ -8,6 +8,8 @@ const types = { '.js': 'text/javascript', '.html': 'text/html', '.css': 'text/cs
 const server = http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
   if (pathname === '/__fixture') { res.setHeader('content-type', 'text/html'); res.end('<button id="open">Open mini player</button><div id="toasts"></div>'); return; }
+  if (pathname === '/__genius-123.js') { res.setHeader('content-type', 'text/javascript'); res.end(`document.write("<div class='rg_embed_body'>One<br>Two<br>Three<br>Four</div><div class='rg_embed_footer'></div>");`); return; }
+  if (pathname === '/__genius-124.js') { setTimeout(() => { res.setHeader('content-type', 'text/javascript'); res.end('document.write("late result");'); }, 150); return; }
   const file = path.resolve(root, '.' + (pathname.endsWith('/') ? pathname + 'index.html' : pathname));
   if (!file.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (error, data) => {
@@ -293,6 +295,26 @@ const server = http.createServer((req, res) => {
       await p.locator('#m-expand').click();
       await p.waitForFunction(() => document.querySelector('#np-lyrics').textContent.includes('Second Song'));
       assert.equal(calls, 2);
+    });
+    await check('Genius widget runs in isolation and cancellation preserves the player document', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        // Serve the same widget protocol locally: sandboxed opaque-origin frames
+        // can bypass Playwright's network interception in Chromium.
+        const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+        Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', { ...descriptor, set(value) {
+          descriptor.set.call(this, value.replace(/https:\/\/genius\.com\/songs\/(123|124)\/embed\.js/g, (_, id) => location.origin + '/__genius-' + id + '.js'));
+        } });
+        const { geniusEmbed } = await import('/web/js/genius.js');
+        const write = document.write, text = await geniusEmbed(123);
+        const controller = new AbortController(), pending = geniusEmbed(124, 1000, controller.signal);
+        const frame = document.querySelector('iframe');
+        const sandbox = frame.getAttribute('sandbox');
+        controller.abort(); const cancelled = await pending;
+        await new Promise(r => setTimeout(r, 250));
+        return { text, sandbox, cancelled, writeUnchanged: document.write === write, alive: !!document.querySelector('#open'), frames: document.querySelectorAll('iframe').length };
+      });
+      assert.deepEqual(result, { text: 'One\nTwo\nThree\nFour', sandbox: 'allow-scripts', cancelled: '', writeUnchanged: true, alive: true, frames: 0 });
     });
     await check('cloud covers persist and late Android files inherit all synced track data', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');

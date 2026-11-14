@@ -2054,50 +2054,50 @@ function pickGenius(json, artists, title, skip = []) {
     const h = hits.find(ok);
     return h ? { id: h.result.id, url: h.result.url } : null;
 }
-// Виджет Genius: https://genius.com/songs/<id>/embed.js вызывает document.write(<html с текстом>).
-// Подменяем document.write на время загрузки и забираем этот html. Загружаем по одному.
-let embedQueue = Promise.resolve();
+// The official widget runs in an isolated document. Late document.write calls
+// must never replace the player page after a search is cancelled.
 function geniusEmbed(id, ms = 5000, signal) {
-    const job = () => new Promise(res => {
-        if (signal?.aborted)
-            return res('');
-        const doc = document, orig = doc.write, sc = doc.createElement('script');
-        let html = '', done = false;
-        // на случай, если виджет вставляет текст рядом со своей ссылкой, а не через document.write
-        const box = doc.createElement('div');
-        box.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
-        box.setAttribute('aria-hidden', 'true');
-        box.innerHTML = `<div id="rg_embed_link_${Number(id) || 0}" class="rg_embed_link" data-song-id="${Number(id) || 0}"></div>`;
-        doc.body.appendChild(box);
-        const end = () => {
+    return new Promise(resolve => {
+        if (signal?.aborted || !Number.isSafeInteger(Number(id)) || Number(id) <= 0)
+            return resolve('');
+        const frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('aria-hidden', 'true');
+        frame.tabIndex = -1;
+        frame.style.cssText = 'position:absolute;width:1px;height:1px;border:0;visibility:hidden';
+        const token = 'puro-lyrics-' + Math.random().toString(36).slice(2);
+        let done = false;
+        const end = html => {
             if (done)
                 return;
             done = true;
-            clearTimeout(tm);
-            signal?.removeEventListener('abort', end);
-            doc.write = orig;
-            if (!html) {
-                const body = doc.querySelector('.rg_embed_body');
-                if (body)
-                    html = `<div class='rg_embed_body'>${body.innerHTML}</div><div class='rg_embed_footer'></div>`;
-            }
-            doc.querySelectorAll('.rg_embed, .rg_embed_body').forEach(e => { if (!e.closest('#lyrics, .np'))
-                e.remove(); });
-            box.remove();
-            sc.remove();
-            res(html);
+            clearTimeout(timer);
+            window.removeEventListener('message', receive);
+            signal?.removeEventListener('abort', cancel);
+            frame.remove();
+            resolve(embedText(html));
         };
-        const tm = setTimeout(end, ms);
-        signal?.addEventListener('abort', end, { once: true });
-        doc.write = (...a) => { html += a.join(''); };
-        sc.onload = () => setTimeout(end, 150);
-        sc.onerror = end;
-        sc.src = `https://genius.com/songs/${encodeURIComponent(id)}/embed.js`;
-        doc.head.appendChild(sc);
+        const receive = event => {
+            if (event.source !== frame.contentWindow || event.data?.token !== token || typeof event.data.html !== 'string')
+                return;
+            end(event.data.html.slice(0, 500000));
+        };
+        const cancel = () => end('');
+        const timer = setTimeout(cancel, ms);
+        window.addEventListener('message', receive);
+        signal?.addEventListener('abort', cancel, { once: true });
+        frame.srcdoc = `<script>
+            let captured = '';
+            document.write = (...parts) => { captured += parts.join(''); };
+            function finish() {
+                const body = document.querySelector('.rg_embed_body');
+                const html = captured || (body ? '<div class="rg_embed_body">' + body.innerHTML + '</div><div class="rg_embed_footer"></div>' : '');
+                parent.postMessage({ token: ${JSON.stringify(token)}, html }, '*');
+            }
+        <\/script><div id="rg_embed_link_${Number(id)}" class="rg_embed_link" data-song-id="${Number(id)}"></div>
+        <script src="https://genius.com/songs/${Number(id)}/embed.js" onload="setTimeout(finish,150)" onerror="finish()"><\/script>`;
+        document.body.appendChild(frame);
     });
-    const p = embedQueue.then(job, job);
-    embedQueue = p.catch(() => { });
-    return p.then(embedText);
 }
 // html виджета → текст песни
 function embedText(html) {
