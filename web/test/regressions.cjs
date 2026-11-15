@@ -30,6 +30,66 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('catalog resolves TBK and uploader colin, persists identity and preserves manual edits', async ctx => {
+      const p = await ctx.newPage(); await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        const s = await import('/web/js/state.js'), db = await import('/web/js/db.js');
+        const auto = await import('/web/js/lyrics-auto.js'), search = await import('/web/js/lyrics-search.js');
+        const record = {id:10780734,trackName:'Schachter',artistName:'TIEFBASSKOMMANDO',duration:223,syncedLyrics:'[00:00.00]Test line one\n[00:10.00]Test line two'};
+        let rows = [record], calls = 0;
+        window.fetch = async url => { calls++; const u = new URL(url); return u.pathname.endsWith('/search') && !u.searchParams.has('artist_name') ? Response.json(rows) : new Response('',{status:404}); };
+        const t = {id:'tbk',artist:'colin',title:'Tbk - Schachter',duration:223};
+        s.state.tracks.set(t.id,t);s.touchLibrary();s.derived();
+        await db.lySet('v8|colin|tbk - schachter|223',{miss:true,at:Date.now()});
+        await auto.ensureLyrics(t);
+        const first = {artist:t.artist,title:t.title,lines:t.lyrics?.lines.length,sure:t.lyrics?.sure};
+        const options={candidates:[{artist:'TBK',title:'Schachter'}],duration:223};
+        rows=[record,{...record,id:2,artistName:'Other artist'}]; const ambiguous=await search.searchLyrics(options);
+        rows=[record]; const unknownDuration=await search.searchLyrics({...options,duration:0});
+        const wrongVersion=await search.searchLyrics({...options,variant:'fast'});
+        s.state.tagEdits.tbk={artist:'My Artist'};s.touchLibrary();s.derived();
+        return {first,ambiguous:!!ambiguous.record,unknownDuration:!!unknownDuration.record,wrongVersion:!!wrongVersion.record,manual:t.artist};
+      });
+      assert.deepEqual(result,{first:{artist:'TIEFBASSKOMMANDO',title:'Schachter',lines:2,sure:false},ambiguous:false,unknownDuration:false,wrongVersion:false,manual:'My Artist'});
+      await p.reload();
+      const restored = await p.evaluate(async () => {
+        const s=await import('/web/js/state.js');await (await import('/web/js/track-identity.js')).loadCatalogIdentities();
+        const t={id:'tbk',artist:'colin',title:'Tbk - Schachter',duration:223};s.state.tracks.set(t.id,t);s.touchLibrary();s.derived();
+        let requests=0;window.fetch=async()=>{requests++;throw Error('Must use cache');};
+        await (await import('/web/js/lyrics-auto.js')).ensureLyrics(t);
+        return {artist:t.artist,title:t.title,lines:t.lyrics?.lines.length,requests};
+      });
+      assert.deepEqual(restored,{artist:'TIEFBASSKOMMANDO',title:'Schachter',lines:2,requests:0});
+    });
+    await check('SoundCloud retries 429 once, respects long cooldowns and cancels waiting', async ctx => {
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      const result=await p.evaluate(async()=>{
+        const {downloadAudio}=await import('/web/js/link-download.js');let calls=0,waits=[];
+        window.fetch=async()=>++calls===1?Response.json({error:'Limited'},{status:429,headers:{'Retry-After':'1'}}):new Response(new Uint8Array([1,2]),{headers:{'content-type':'audio/mp4'}});
+        const file=await downloadAudio('https://soundcloud.com/x/y',{onWait:n=>waits.push(n)});const recovered={calls,waits,size:file.size};
+        calls=0;window.fetch=async()=>{calls++;return Response.json({error:'Limited'},{status:429,headers:{'Retry-After':'120'}});};
+        let status;try{await downloadAudio('https://soundcloud.com/x/y');}catch(e){status=e.status;}
+        const long={calls,status};
+        calls=0;window.fetch=async()=>{calls++;return Response.json({error:'Limited'},{status:429,headers:{'Retry-After':'1'}});};
+        let exhausted;try{await downloadAudio('https://soundcloud.com/x/y');}catch(e){exhausted=e.status;}
+        const bounded={calls,status:exhausted};
+        calls=0;const ctl=new AbortController();setTimeout(()=>ctl.abort(),100);let cancelled=false;
+        try{await downloadAudio('https://soundcloud.com/x/y',{signal:ctl.signal});}catch(e){cancelled=e.name==='AbortError';}
+        return {recovered,long,bounded,cancelled,cancelCalls:calls};
+      });
+      assert.deepEqual(result,{recovered:{calls:2,waits:[1],size:2},long:{calls:1,status:429},bounded:{calls:2,status:429},cancelled:true,cancelCalls:1});
+    });
+    await check('album download stops on a service cooldown instead of hitting remaining tracks', async ctx => {
+      const p=await ctx.newPage();await p.route('https://www.gstatic.com/firebasejs/**',r=>r.abort());let calls=0;
+      await p.route('https://purocielo-audio-service.pipeddahlia1.chatgpt.site/**',r=>{
+        const headers={'access-control-allow-origin':'*','access-control-expose-headers':'Retry-After'};
+        if(new URL(r.request().url()).pathname==='/resolve')return r.fulfill({json:{kind:'album',title:'Album',artist:'Artist',tracks:[1,2,3].map(n=>({url:'https://soundcloud.com/x/'+n}))},headers});
+        calls++;return r.fulfill({status:429,json:{error:'Limited',retryAfter:120},headers:{...headers,'Retry-After':'120'}});
+      });
+      await p.goto(base+'/app/');const form=p.locator('#side-link-import form');await form.locator('input').fill('https://soundcloud.com/x/sets/album');await form.locator('[type=submit]').click();
+      await p.waitForFunction(()=>document.querySelector('#side-link-import .link-import-status').textContent.includes('ограничил'));
+      assert.equal(calls,1);assert.equal(await form.getAttribute('aria-busy'),'false');
+    });
     await check('background lyrics queue is silent, serial and respects offline and disabled settings', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       await p.evaluate(async () => {
@@ -168,7 +228,7 @@ const server = http.createServer((req, res) => {
         const { ensureLyrics, candidates } = await import('/web/js/lyrics-auto.js');
         const { state } = await import('/web/js/state.js'), { lySet } = await import('/web/js/db.js');
         const t = { id: 'lyrics-test', title: 'Song', artist: 'Artist', duration: 10 };
-        await lySet('v8|artist|song|10', { miss: true, at: Date.now() });
+        await lySet('v9|artist|song|10', { miss: true, at: Date.now() });
         let calls = 0, release;
         const gate = new Promise(r => { release = r; });
         window.fetch = async () => { calls++; await gate; return Response.json({ id: 1, trackName: 'Song', artistName: 'Artist', duration: 10, syncedLyrics: '[00:00.00]Hello\n[00:05.00]World' }); };

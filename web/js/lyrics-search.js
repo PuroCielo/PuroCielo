@@ -34,7 +34,7 @@ export function pickBest(list, duration, variant = '') {
         return parsed.synced && parsed.lines.length > 1 && parsed.lines.every(l => Number.isFinite(l.t) && l.t >= 0 && l.t <= duration + 4);
     });
     if (timed) return timed;
-    const plain = sorted.find(x => x._sure && (x.plainLyrics || x.syncedLyrics));
+    const plain = sorted.find(x => (x._sure || x._inferred) && (x.plainLyrics || x.syncedLyrics));
     if (plain) return { ...plain, syncedLyrics: null, plainLyrics: (plain.plainLyrics || String(plain.syncedLyrics).replace(/^\s*(?:\[[^\]]*\])+\s?/gm, '')).trim() };
     return sorted.find(x => x._sure && x.instrumental && timingFits(x)) || null;
 }
@@ -68,12 +68,25 @@ export async function searchLyrics({ candidates, duration = 0, album = '', varia
         for (const x of matches) {
             const sure = !!c.artist && artistMatch(x.artistName || '', [c.artist]);
             // Untagged files: accept only an unambiguous exact title and matching duration.
-            const inferred = !c.artist && norm(c.title).length >= 8 && norm(cleanTitle(x.trackName)) === norm(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1;
+            const inferred = !c.artist && norm(c.title).length >= 8 && norm(cleanTitle(x.trackName)) === norm(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1 && recordingVariant(x.trackName) === variant;
             if ((!sure && !inferred) || seen.has(x.id) || bad.includes(x.id)) continue;
             seen.add(x.id); found.push({ ...x, _sure: sure, _rank: rank, _inferred: inferred });
         }
     };
     const best = () => pickBest(found, duration, variant);
+    // Repost uploaders and abbreviations (TBK) are not necessarily the catalog artist.
+    // Infer only from a distinctive exact title, known duration and one recording identity.
+    const infer = (data, c) => {
+        if (!Array.isArray(data) || !(duration > 0) || norm(c.title).length < 8) return;
+        const matches = data.filter(x => x && !bad.includes(x.id) && norm(cleanTitle(x.trackName)) === norm(c.title)
+            && x.artistName && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2
+            && recordingVariant(x.trackName) === variant && (x.plainLyrics || x.syncedLyrics));
+        const identities = new Set(matches.map(x => norm(x.artistName) + '|' + norm(x.trackName)));
+        if (identities.size !== 1) return;
+        for (const x of matches) if (!seen.has(x.id)) {
+            seen.add(x.id); found.push({ ...x, _sure: false, _inferred: true, _rank: 10 });
+        }
+    };
     try {
         await Promise.all(cands.map(async (c, i) => {
             if (!c.artist) return;
@@ -88,6 +101,11 @@ export async function searchLyrics({ candidates, duration = 0, album = '', varia
             if (c.artist) q.set('artist_name', c.artist);
             take(await request('search?' + q), c, i);
         }));
+        if (best()) return { record: best(), failed: failures > 0 };
+        const titles = [...new Map(cands.map(c => [norm(c.title), c])).values()].filter(c => norm(c.title).length >= 8);
+        await Promise.all(titles.map(async c => infer(await request('search?' + new URLSearchParams({ track_name: c.title })), c)));
+        if (new Set(found.filter(x => x._inferred).map(x => norm(x.artistName) + '|' + norm(x.trackName))).size > 1)
+            for (let i = found.length - 1; i >= 0; i--) if (found[i]._inferred) found.splice(i, 1);
         if (best()) return { record: best(), failed: failures > 0 };
         await Promise.all(cands.slice(0,2).map(async (c, i) => take(await request('search?' + new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })), c, i)));
         return { record: best(), failed: failures > 0 };

@@ -40,9 +40,10 @@ function bind(form) {
         let timedOut = false, timer, lastPaint = 0, album = false, completed = 0, added = 0, skipped = 0, failed = 0, missingCovers = 0;
         const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
         const savedMessage = () => isEn() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
+        const onWait = seconds => { armTimer(); message = isEn() ? `SoundCloud limit. Retrying in ${seconds}s…` : `Пауза SoundCloud. Повтор через ${seconds} с…`; paint(); };
         armTimer();
         try {
-            const source = await resolveAudioLink(lastURL, { signal: controller.signal });
+            const source = await resolveAudioLink(lastURL, { signal: controller.signal, onWait });
             album = source.kind === 'album';
             let albumCover = null;
             if (album && source.artwork) {
@@ -59,7 +60,7 @@ function bind(form) {
                 phase = 'download'; received = total = 0; message = prefix + (isEn() ? 'Connecting…' : 'Подключаюсь…'); paint();
                 let artworkURL = null;
                 try {
-                    const file = await downloadAudio(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                    const file = await downloadAudio(entry.url, { signal: controller.signal, onWait, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                         armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                         received = bytes; total = size;
                         if (Date.now() - lastPaint < 160) return;
@@ -83,7 +84,7 @@ function bind(form) {
                     message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
                     if (artworkURL && !coverBlob) message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
                 } catch (e) {
-                    if (!album || controller.signal.aborted || phase === 'saving' || albumBytes > 1024 * 1024 * 1024) throw e;
+                    if (!album || controller.signal.aborted || e.status === 429 || phase === 'saving' || albumBytes > 1024 * 1024 * 1024) throw e;
                     failed++;
                 }
             }

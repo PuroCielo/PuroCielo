@@ -1,7 +1,7 @@
 import { SESSION_SEED, hash, norm, seededShuffle, stripSource, uid } from './util.js';
 import { artistKey, splitArtists, trackArtists } from './artists.js';
 import { delFile, kvGet, kvSet } from './db.js';
-import { isUploadChannel, trackIdentity } from './track-identity.js';
+import { catalogIdentity, isUploadChannel, trackIdentity } from './track-identity.js';
 
 const LS = 'puro.state.v1';
 export const DEFAULT_SETTINGS = {
@@ -172,7 +172,7 @@ export function derived() {
         if (!t._orig)
             t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
         const own = state.tagEdits[t.id] || {};
-        Object.assign(t, t._orig, trackIdentity(t._orig), own);
+        Object.assign(t, t._orig, trackIdentity(t._orig), catalogIdentity(t.id, t._orig), own);
         // убираем приписки сайтов, откуда скачан трек (кроме полей, которые пользователь задал сам)
         if (state.settings.stripSource !== false)
             for (const k of ['title', 'artist', 'album', 'albumArtist'])

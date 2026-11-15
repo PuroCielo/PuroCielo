@@ -5,6 +5,34 @@ const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt
 export const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || ['snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
 export const MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
+async function serviceRequest(url, options, onWait = () => {}) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await fetch(url, options);
+        if (response.ok) return response;
+        let data;
+        try { data = await response.json(); } catch { /* A gateway may return HTML. */ }
+        const raw = response.headers.get('Retry-After');
+        const parsed = raw ? (/^\d+$/.test(raw) ? Number(raw) : (Date.parse(raw) - Date.now()) / 1000) : Number(data?.retryAfter);
+        const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 30;
+        if (response.status === 429 && !attempt && seconds <= 60) {
+            await new Promise((resolve, reject) => {
+                let remaining = seconds, timer;
+                const cleanup = () => { clearInterval(timer); options.signal?.removeEventListener('abort', abort); };
+                const abort = () => { cleanup(); reject(new DOMException('Cancelled', 'AbortError')); };
+                if (options.signal?.aborted) return abort();
+                options.signal?.addEventListener('abort', abort, { once: true });
+                onWait(remaining);
+                timer = setInterval(() => { if (--remaining <= 0) { cleanup(); resolve(); } else onWait(remaining); }, 1000);
+            });
+            continue;
+        }
+        const error = new Error(response.status === 429
+            ? `SoundCloud ограничил запросы. Повторите загрузку через ${Math.max(1, Math.ceil(seconds / 60))} мин.`
+            : typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
+        error.status = response.status;
+        throw error;
+    }
+}
 export function audioLink(raw) {
     let url;
     try { url = new URL(raw.trim()); } catch { throw new Error('Введите полную ссылку, начиная с https://'); }
@@ -24,17 +52,13 @@ function filename(response, url, mime) {
     }
     return name;
 }
-export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtworkURL = () => {} } = {}) {
+export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtworkURL = () => {}, onWait } = {}) {
     const url = audioLink(raw);
     const soundcloud = isSoundCloudLink(url);
-    const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
+    const options = { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
         ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
-    });
-    if (soundcloud && !response.ok) {
-        let data;
-        try { data = await response.json(); } catch { /* Gateway errors may be HTML. */ }
-        throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
-    }
+    };
+    const response = soundcloud ? await serviceRequest(SOUNDCLOUD_SERVICE, options, onWait) : await fetch(url.href, options);
     if (!response.ok) { await response.body?.cancel(); throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.'); }
     if (soundcloud) onArtworkURL(artworkEndpoint(response.headers.get('X-Puro-Artwork')));
     const mime = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -116,11 +140,11 @@ export async function downloadArtwork(raw, { signal } = {}) {
     }
 }
 
-export async function resolveAudioLink(raw, { signal } = {}) {
+export async function resolveAudioLink(raw, { signal, onWait } = {}) {
     const url = audioLink(raw);
     const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
     if (!isSoundCloudLink(url) || !collection) return { kind: 'track', url: url.href };
-    const response = await fetch(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) });
+    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) }, onWait);
     const data = await response.json();
     if (!response.ok) throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
     const publicTrack = raw => {

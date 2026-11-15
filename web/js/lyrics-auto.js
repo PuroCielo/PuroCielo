@@ -1,4 +1,5 @@
-import { emit, on, state } from './state.js';
+import { derived, emit, on, state, touchLibrary } from './state.js';
+import { saveCatalogIdentity } from './track-identity.js';
 import { parseLrc } from './lrc.js';
 import { lyGet, lyKeys, lySet } from './db.js';
 import { cloudLyricsDel, cloudLyricsGet, cloudLyricsPut, cloudReady } from './sync.js';
@@ -49,7 +50,7 @@ export function candidates(t) {
 }
 // Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
 const songKey = t => `${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}${recordingVariant(t.title) ? '|' + recordingVariant(t.title) : ''}`;
-const keyOf = t => `v8|${songKey(t)}`; // обычный кэш: сбрасывается, когда меняются правила поиска
+const keyOf = t => `v9|${songKey(t)}`; // ordinary misses must be retried after catalog matching improves
 const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
 // «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
 // Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
@@ -410,7 +411,16 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             if (ly) {
                 lySet(key, { ly, at: Date.now() });
                 if (ly.sure) keepSure(t, ly);
-                return use(ly);
+                const used = use(ly);
+                const edits = state.tagEdits[t.id] || {};
+                if (d?._inferred && state.tracks.get(t.id) === t && !('artist' in edits) && !('title' in edits)) {
+                    await saveCatalogIdentity(t, d);
+                    if (unchanged()) {
+                        touchLibrary(); derived(); emit('track-meta', t);
+                        lySet(keyOf(t), { ly, at: Date.now() });
+                    }
+                }
+                return used;
             }
             if (result.failed) { t._ly = 'error'; return false; }
             lySet(key, { miss: true, instrumental: !!(d && d.instrumental), at: Date.now() });

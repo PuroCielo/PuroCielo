@@ -123,6 +123,7 @@ const icons_js_1 = require("./icons.js");
 const bgfx_js_1 = require("./bgfx.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
 const lyrics_background_js_1 = require("./lyrics-background.js");
+const track_identity_js_1 = require("./track-identity.js");
 const util_js_1 = require("./util.js");
 const m3u_js_1 = require("./m3u.js");
 const db_js_1 = require("./db.js");
@@ -1371,6 +1372,7 @@ document.addEventListener('visibilitychange', () => {
 // ================= старт =================
 (async () => {
     await (0, state_js_1.load)();
+    await (0, track_identity_js_1.loadCatalogIdentities)();
     (0, i18n_js_1.initI18n)(state_js_1.state.settings.lang);
     (0, sync_js_1.initSync)();
     (0, covers_auto_js_2.initAutoCovers)();
@@ -3139,6 +3141,44 @@ const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || [
 exports.isSoundCloudLink = isSoundCloudLink;
 exports.MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
+async function serviceRequest(url, options, onWait = () => { }) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await fetch(url, options);
+        if (response.ok)
+            return response;
+        let data;
+        try {
+            data = await response.json();
+        }
+        catch { /* A gateway may return HTML. */ }
+        const raw = response.headers.get('Retry-After');
+        const parsed = raw ? (/^\d+$/.test(raw) ? Number(raw) : (Date.parse(raw) - Date.now()) / 1000) : Number(data?.retryAfter);
+        const seconds = Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 30;
+        if (response.status === 429 && !attempt && seconds <= 60) {
+            await new Promise((resolve, reject) => {
+                let remaining = seconds, timer;
+                const cleanup = () => { clearInterval(timer); options.signal?.removeEventListener('abort', abort); };
+                const abort = () => { cleanup(); reject(new DOMException('Cancelled', 'AbortError')); };
+                if (options.signal?.aborted)
+                    return abort();
+                options.signal?.addEventListener('abort', abort, { once: true });
+                onWait(remaining);
+                timer = setInterval(() => { if (--remaining <= 0) {
+                    cleanup();
+                    resolve();
+                }
+                else
+                    onWait(remaining); }, 1000);
+            });
+            continue;
+        }
+        const error = new Error(response.status === 429
+            ? `SoundCloud ограничил запросы. Повторите загрузку через ${Math.max(1, Math.ceil(seconds / 60))} мин.`
+            : typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
+        error.status = response.status;
+        throw error;
+    }
+}
 function audioLink(raw) {
     let url;
     try {
@@ -3168,20 +3208,13 @@ function filename(response, url, mime) {
     }
     return name;
 }
-async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL = () => { } } = {}) {
+async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL = () => { }, onWait } = {}) {
     const url = audioLink(raw);
     const soundcloud = (0, exports.isSoundCloudLink)(url);
-    const response = await fetch(soundcloud ? SOUNDCLOUD_SERVICE : url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
+    const options = { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
         ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
-    });
-    if (soundcloud && !response.ok) {
-        let data;
-        try {
-            data = await response.json();
-        }
-        catch { /* Gateway errors may be HTML. */ }
-        throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Сервис SoundCloud временно недоступен. Попробуйте позже.');
-    }
+    };
+    const response = soundcloud ? await serviceRequest(SOUNDCLOUD_SERVICE, options, onWait) : await fetch(url.href, options);
     if (!response.ok) {
         await response.body?.cancel();
         throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.');
@@ -3302,12 +3335,12 @@ async function downloadArtwork(raw, { signal } = {}) {
             throw new DOMException('Cancelled', 'AbortError');
     }
 }
-async function resolveAudioLink(raw, { signal } = {}) {
+async function resolveAudioLink(raw, { signal, onWait } = {}) {
     const url = audioLink(raw);
     const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
     if (!(0, exports.isSoundCloudLink)(url) || !collection)
         return { kind: 'track', url: url.href };
-    const response = await fetch(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) });
+    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) }, onWait);
     const data = await response.json();
     if (!response.ok)
         throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
@@ -3379,9 +3412,10 @@ function bind(form) {
         let timedOut = false, timer, lastPaint = 0, album = false, completed = 0, added = 0, skipped = 0, failed = 0, missingCovers = 0;
         const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
         const savedMessage = () => (0, i18n_js_1.isEn)() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
+        const onWait = seconds => { armTimer(); message = (0, i18n_js_1.isEn)() ? `SoundCloud limit. Retrying in ${seconds}s…` : `Пауза SoundCloud. Повтор через ${seconds} с…`; paint(); };
         armTimer();
         try {
-            const source = await (0, link_download_js_1.resolveAudioLink)(lastURL, { signal: controller.signal });
+            const source = await (0, link_download_js_1.resolveAudioLink)(lastURL, { signal: controller.signal, onWait });
             album = source.kind === 'album';
             let albumCover = null;
             if (album && source.artwork) {
@@ -3407,7 +3441,7 @@ function bind(form) {
                 paint();
                 let artworkURL = null;
                 try {
-                    const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                    const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onWait, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                             armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                             received = bytes;
                             total = size;
@@ -3444,7 +3478,7 @@ function bind(form) {
                         message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
                 }
                 catch (e) {
-                    if (!album || controller.signal.aborted || phase === 'saving' || albumBytes > 1024 * 1024 * 1024)
+                    if (!album || controller.signal.aborted || e.status === 429 || phase === 'saving' || albumBytes > 1024 * 1024 * 1024)
                         throw e;
                     failed++;
                 }
@@ -3677,6 +3711,7 @@ exports.setManualLyrics = setManualLyrics;
 exports.rejectLyrics = rejectLyrics;
 exports.ensureLyrics = ensureLyrics;
 const state_js_1 = require("./state.js");
+const track_identity_js_1 = require("./track-identity.js");
 const lrc_js_1 = require("./lrc.js");
 const db_js_1 = require("./db.js");
 const sync_js_1 = require("./sync.js");
@@ -3731,7 +3766,7 @@ function candidates(t) {
 }
 // Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
 const songKey = t => `${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)((0, lyrics_search_js_1.cleanTitle)(t.title))}|${Math.round(t.duration || 0)}${(0, lyrics_search_js_1.recordingVariant)(t.title) ? '|' + (0, lyrics_search_js_1.recordingVariant)(t.title) : ''}`;
-const keyOf = t => `v8|${songKey(t)}`; // обычный кэш: сбрасывается, когда меняются правила поиска
+const keyOf = t => `v9|${songKey(t)}`; // ordinary misses must be retried after catalog matching improves
 const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
 // «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
 // Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
@@ -4142,7 +4177,18 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
                 (0, db_js_1.lySet)(key, { ly, at: Date.now() });
                 if (ly.sure)
                     keepSure(t, ly);
-                return use(ly);
+                const used = use(ly);
+                const edits = state_js_1.state.tagEdits[t.id] || {};
+                if (d?._inferred && state_js_1.state.tracks.get(t.id) === t && !('artist' in edits) && !('title' in edits)) {
+                    await (0, track_identity_js_1.saveCatalogIdentity)(t, d);
+                    if (unchanged()) {
+                        (0, state_js_1.touchLibrary)();
+                        (0, state_js_1.derived)();
+                        (0, state_js_1.emit)('track-meta', t);
+                        (0, db_js_1.lySet)(keyOf(t), { ly, at: Date.now() });
+                    }
+                }
+                return used;
             }
             if (result.failed) {
                 t._ly = 'error';
@@ -4277,7 +4323,7 @@ function pickBest(list, duration, variant = '') {
     });
     if (timed)
         return timed;
-    const plain = sorted.find(x => x._sure && (x.plainLyrics || x.syncedLyrics));
+    const plain = sorted.find(x => (x._sure || x._inferred) && (x.plainLyrics || x.syncedLyrics));
     if (plain)
         return { ...plain, syncedLyrics: null, plainLyrics: (plain.plainLyrics || String(plain.syncedLyrics).replace(/^\s*(?:\[[^\]]*\])+\s?/gm, '')).trim() };
     return sorted.find(x => x._sure && x.instrumental && timingFits(x)) || null;
@@ -4324,7 +4370,7 @@ async function searchLyrics({ candidates, duration = 0, album = '', variant = ''
         for (const x of matches) {
             const sure = !!c.artist && (0, lyrics_web_js_1.artistMatch)(x.artistName || '', [c.artist]);
             // Untagged files: accept only an unambiguous exact title and matching duration.
-            const inferred = !c.artist && (0, lyrics_web_js_1.norm)(c.title).length >= 8 && (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1;
+            const inferred = !c.artist && (0, lyrics_web_js_1.norm)(c.title).length >= 8 && (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1 && recordingVariant(x.trackName) === variant;
             if ((!sure && !inferred) || seen.has(x.id) || bad.includes(x.id))
                 continue;
             seen.add(x.id);
@@ -4332,6 +4378,23 @@ async function searchLyrics({ candidates, duration = 0, album = '', variant = ''
         }
     };
     const best = () => pickBest(found, duration, variant);
+    // Repost uploaders and abbreviations (TBK) are not necessarily the catalog artist.
+    // Infer only from a distinctive exact title, known duration and one recording identity.
+    const infer = (data, c) => {
+        if (!Array.isArray(data) || !(duration > 0) || (0, lyrics_web_js_1.norm)(c.title).length < 8)
+            return;
+        const matches = data.filter(x => x && !bad.includes(x.id) && (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title)
+            && x.artistName && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2
+            && recordingVariant(x.trackName) === variant && (x.plainLyrics || x.syncedLyrics));
+        const identities = new Set(matches.map(x => (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName)));
+        if (identities.size !== 1)
+            return;
+        for (const x of matches)
+            if (!seen.has(x.id)) {
+                seen.add(x.id);
+                found.push({ ...x, _sure: false, _inferred: true, _rank: 10 });
+            }
+    };
     try {
         await Promise.all(cands.map(async (c, i) => {
             if (!c.artist)
@@ -4351,6 +4414,14 @@ async function searchLyrics({ candidates, duration = 0, album = '', variant = ''
                 q.set('artist_name', c.artist);
             take(await request('search?' + q), c, i);
         }));
+        if (best())
+            return { record: best(), failed: failures > 0 };
+        const titles = [...new Map(cands.map(c => [(0, lyrics_web_js_1.norm)(c.title), c])).values()].filter(c => (0, lyrics_web_js_1.norm)(c.title).length >= 8);
+        await Promise.all(titles.map(async (c) => infer(await request('search?' + new URLSearchParams({ track_name: c.title })), c)));
+        if (new Set(found.filter(x => x._inferred).map(x => (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName))).size > 1)
+            for (let i = found.length - 1; i >= 0; i--)
+                if (found[i]._inferred)
+                    found.splice(i, 1);
         if (best())
             return { record: best(), failed: failures > 0 };
         await Promise.all(cands.slice(0, 2).map(async (c, i) => take(await request('search?' + new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })), c, i)));
@@ -6473,7 +6544,7 @@ function derived() {
         if (!t._orig)
             t._orig = { title: t.title, artist: t.artist, album: t.album, year: t.year, albumArtist: t.albumArtist };
         const own = exports.state.tagEdits[t.id] || {};
-        Object.assign(t, t._orig, (0, track_identity_js_1.trackIdentity)(t._orig), own);
+        Object.assign(t, t._orig, (0, track_identity_js_1.trackIdentity)(t._orig), (0, track_identity_js_1.catalogIdentity)(t.id, t._orig), own);
         // убираем приписки сайтов, откуда скачан трек (кроме полей, которые пользователь задал сам)
         if (exports.state.settings.stripSource !== false)
             for (const k of ['title', 'artist', 'album', 'albumArtist'])
@@ -8125,7 +8196,24 @@ exports.sizeMB = sizeMB;
 defs["track-identity.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isUploadChannel = void 0;
+exports.loadCatalogIdentities = loadCatalogIdentities;
+exports.catalogIdentity = catalogIdentity;
+exports.saveCatalogIdentity = saveCatalogIdentity;
 exports.trackIdentity = trackIdentity;
+const db_js_1 = require("./db.js");
+let catalog = {};
+const basis = raw => JSON.stringify([raw.title || '', raw.artist || '']);
+async function loadCatalogIdentities() {
+    catalog = (await (0, db_js_1.kvGet)('catalog-identities')) || {};
+}
+function catalogIdentity(id, raw) {
+    const saved = catalog[id];
+    return saved?.basis === basis(raw) ? { artist: saved.artist, title: saved.title } : {};
+}
+async function saveCatalogIdentity(t, record) {
+    catalog[t.id] = { basis: basis(t._orig || t), artist: record.artistName, title: record.trackName };
+    await (0, db_js_1.kvSet)('catalog-identities', catalog);
+}
 // Only explicit repost-channel labels are corrected. Ordinary artist names stay intact.
 const isUploadChannel = value => /\baudios?\s+station\b/i.test(String(value || ''));
 exports.isUploadChannel = isUploadChannel;
