@@ -5,6 +5,31 @@ const SOUNDCLOUD_SERVICE = 'https://purocielo-audio-service.pipeddahlia1.chatgpt
 export const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || ['snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
 export const MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
+function waitForRetry(ms, signal) {
+    return new Promise((resolve, reject) => {
+        let timer;
+        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new DOMException('Cancelled', 'AbortError')); };
+        if (signal?.aborted) return abort();
+        signal?.addEventListener('abort', abort, { once: true });
+        timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    });
+}
+async function withConnectionRetry(task, { signal, onRetry = () => {} } = {}) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try { return await task(); }
+        catch (e) {
+            if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            if (!(e instanceof TypeError) && e.name !== 'NetworkError' && e.code !== 'INCOMPLETE_DOWNLOAD') throw e;
+            if (attempt) {
+                const error = new Error('Соединение с сервисом загрузки прервалось. Автоматический повтор не помог. Проверьте подключение или попробуйте другую сеть.');
+                error.code = 'DOWNLOAD_NETWORK';
+                throw error;
+            }
+            onRetry();
+            await waitForRetry(1000, signal);
+        }
+    }
+}
 async function serviceRequest(url, options, onWait = () => {}) {
     for (let attempt = 0; attempt < 2; attempt++) {
         const response = await fetch(url, options);
@@ -52,11 +77,17 @@ function filename(response, url, mime) {
     }
     return name;
 }
-export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtworkURL = () => {}, onWait } = {}) {
+export async function downloadAudio(raw, options = {}) {
+    if (!isSoundCloudLink(audioLink(raw))) return downloadOnce(raw, options);
+    return withConnectionRetry(() => downloadOnce(raw, options), { ...options, onRetry: () => { options.onProgress?.(0, 0); options.onArtworkURL?.(null); options.onRetry?.(); } });
+}
+async function downloadOnce(raw, { signal, onProgress = () => {}, onArtworkURL = () => {}, onWait } = {}) {
     const url = audioLink(raw);
     const soundcloud = isSoundCloudLink(url);
+    // A simple CORS POST avoids an unnecessary preflight; the server still
+    // validates Origin and parses the same bounded JSON body.
     const options = { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
-        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
+        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ url: url.href }) } : {}),
     };
     const response = soundcloud ? await serviceRequest(SOUNDCLOUD_SERVICE, options, onWait) : await fetch(url.href, options);
     if (!response.ok) { await response.body?.cancel(); throw new Error('Сайт не отдал файл. Проверьте ссылку и доступ к нему.'); }
@@ -87,7 +118,7 @@ export async function downloadAudio(raw, { signal, onProgress = () => {}, onArtw
     finally { reader.releaseLock(); }
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (!received) throw new Error('По ссылке пришёл пустой файл.');
-    if (total && !response.headers.get('content-encoding') && received !== total) throw new Error('Файл загрузился не полностью. Попробуйте ещё раз.');
+    if (total && !response.headers.get('content-encoding') && received !== total) { const error = new Error('Файл загрузился не полностью. Попробуйте ещё раз.'); error.code = 'INCOMPLETE_DOWNLOAD'; throw error; }
     return new File(parts, name, { type: mime || 'application/octet-stream' });
 }
 
@@ -140,11 +171,14 @@ export async function downloadArtwork(raw, { signal } = {}) {
     }
 }
 
-export async function resolveAudioLink(raw, { signal, onWait } = {}) {
+export async function resolveAudioLink(raw, options = {}) {
+    return withConnectionRetry(() => resolveOnce(raw, options), options);
+}
+async function resolveOnce(raw, { signal, onWait } = {}) {
     const url = audioLink(raw);
     const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
     if (!isSoundCloudLink(url) || !collection) return { kind: 'track', url: url.href };
-    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) }, onWait);
+    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ url: url.href }) }, onWait);
     const data = await response.json();
     if (!response.ok) throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
     const publicTrack = raw => {

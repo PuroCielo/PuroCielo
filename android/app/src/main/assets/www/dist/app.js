@@ -3153,6 +3153,36 @@ const isSoundCloudLink = url => /(^|\.)soundcloud\.com$/.test(url.hostname) || [
 exports.isSoundCloudLink = isSoundCloudLink;
 exports.MAX_DOWNLOAD = 100 * 1024 * 1024;
 const TYPES = { 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/flac': 'flac', 'audio/x-flac': 'flac', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/opus': 'opus', 'audio/mp4': 'm4a', 'video/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm' };
+function waitForRetry(ms, signal) {
+    return new Promise((resolve, reject) => {
+        let timer;
+        const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(new DOMException('Cancelled', 'AbortError')); };
+        if (signal?.aborted)
+            return abort();
+        signal?.addEventListener('abort', abort, { once: true });
+        timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    });
+}
+async function withConnectionRetry(task, { signal, onRetry = () => { } } = {}) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            return await task();
+        }
+        catch (e) {
+            if (signal?.aborted)
+                throw new DOMException('Cancelled', 'AbortError');
+            if (!(e instanceof TypeError) && e.name !== 'NetworkError' && e.code !== 'INCOMPLETE_DOWNLOAD')
+                throw e;
+            if (attempt) {
+                const error = new Error('Соединение с сервисом загрузки прервалось. Автоматический повтор не помог. Проверьте подключение или попробуйте другую сеть.');
+                error.code = 'DOWNLOAD_NETWORK';
+                throw error;
+            }
+            onRetry();
+            await waitForRetry(1000, signal);
+        }
+    }
+}
 async function serviceRequest(url, options, onWait = () => { }) {
     for (let attempt = 0; attempt < 2; attempt++) {
         const response = await fetch(url, options);
@@ -3220,11 +3250,18 @@ function filename(response, url, mime) {
     }
     return name;
 }
-async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL = () => { }, onWait } = {}) {
+async function downloadAudio(raw, options = {}) {
+    if (!(0, exports.isSoundCloudLink)(audioLink(raw)))
+        return downloadOnce(raw, options);
+    return withConnectionRetry(() => downloadOnce(raw, options), { ...options, onRetry: () => { options.onProgress?.(0, 0); options.onArtworkURL?.(null); options.onRetry?.(); } });
+}
+async function downloadOnce(raw, { signal, onProgress = () => { }, onArtworkURL = () => { }, onWait } = {}) {
     const url = audioLink(raw);
     const soundcloud = (0, exports.isSoundCloudLink)(url);
+    // A simple CORS POST avoids an unnecessary preflight; the server still
+    // validates Origin and parses the same bounded JSON body.
     const options = { signal, credentials: 'omit', referrerPolicy: 'no-referrer',
-        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) } : {}),
+        ...(soundcloud ? { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ url: url.href }) } : {}),
     };
     const response = soundcloud ? await serviceRequest(SOUNDCLOUD_SERVICE, options, onWait) : await fetch(url.href, options);
     if (!response.ok) {
@@ -3280,8 +3317,11 @@ async function downloadAudio(raw, { signal, onProgress = () => { }, onArtworkURL
         throw new DOMException('Cancelled', 'AbortError');
     if (!received)
         throw new Error('По ссылке пришёл пустой файл.');
-    if (total && !response.headers.get('content-encoding') && received !== total)
-        throw new Error('Файл загрузился не полностью. Попробуйте ещё раз.');
+    if (total && !response.headers.get('content-encoding') && received !== total) {
+        const error = new Error('Файл загрузился не полностью. Попробуйте ещё раз.');
+        error.code = 'INCOMPLETE_DOWNLOAD';
+        throw error;
+    }
     return new File(parts, name, { type: mime || 'application/octet-stream' });
 }
 // Accept artwork only from the same service, never from an arbitrary response URL.
@@ -3347,12 +3387,15 @@ async function downloadArtwork(raw, { signal } = {}) {
             throw new DOMException('Cancelled', 'AbortError');
     }
 }
-async function resolveAudioLink(raw, { signal, onWait } = {}) {
+async function resolveAudioLink(raw, options = {}) {
+    return withConnectionRetry(() => resolveOnce(raw, options), options);
+}
+async function resolveOnce(raw, { signal, onWait } = {}) {
     const url = audioLink(raw);
     const collection = url.pathname.includes('/sets/') || ['on.soundcloud.com', 'snd.sc', 'soundcloud.app.goo.gl'].includes(url.hostname);
     if (!(0, exports.isSoundCloudLink)(url) || !collection)
         return { kind: 'track', url: url.href };
-    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.href }) }, onWait);
+    const response = await serviceRequest(new URL('/resolve', SOUNDCLOUD_SERVICE), { method: 'POST', signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ url: url.href }) }, onWait);
     const data = await response.json();
     if (!response.ok)
         throw new Error(typeof data?.error === 'string' && data.error.length < 400 ? data.error : 'Не удалось получить альбом SoundCloud.');
@@ -3425,9 +3468,10 @@ function bind(form) {
         const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
         const savedMessage = () => (0, i18n_js_1.isEn)() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
         const onWait = seconds => { armTimer(); message = (0, i18n_js_1.isEn)() ? `SoundCloud limit. Retrying in ${seconds}s…` : `Пауза SoundCloud. Повтор через ${seconds} с…`; paint(); };
+        const onRetry = () => { armTimer(); message = (0, i18n_js_1.isEn)() ? 'Connection interrupted. Retrying download…' : 'Соединение прервалось. Повторяю загрузку…'; paint(); };
         armTimer();
         try {
-            const source = await (0, link_download_js_1.resolveAudioLink)(lastURL, { signal: controller.signal, onWait });
+            const source = await (0, link_download_js_1.resolveAudioLink)(lastURL, { signal: controller.signal, onWait, onRetry });
             album = source.kind === 'album';
             let albumCover = null;
             if (album && source.artwork) {
@@ -3453,7 +3497,7 @@ function bind(form) {
                 paint();
                 let artworkURL = null;
                 try {
-                    const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onWait, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                    const file = await (0, link_download_js_1.downloadAudio)(entry.url, { signal: controller.signal, onWait, onRetry, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                             armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                             received = bytes;
                             total = size;
@@ -3490,7 +3534,7 @@ function bind(form) {
                         message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
                 }
                 catch (e) {
-                    if (!album || controller.signal.aborted || e.status === 429 || phase === 'saving' || albumBytes > 1024 * 1024 * 1024)
+                    if (!album || controller.signal.aborted || e.status === 429 || e.code === 'DOWNLOAD_NETWORK' || phase === 'saving' || albumBytes > 1024 * 1024 * 1024)
                         throw e;
                     failed++;
                 }
@@ -3504,7 +3548,7 @@ function bind(form) {
         }
         catch (e) {
             error = e.name !== 'AbortError' || timedOut;
-            message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
+            message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? (phase === 'saving' ? 'Не удалось обработать аудиофайл. Попробуйте добавить его с устройства.' : 'Не удалось установить соединение с источником аудио. Проверьте подключение.') : e.message;
             if (album && completed)
                 message += ` ${savedMessage()}.`;
         }

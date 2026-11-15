@@ -30,6 +30,33 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('SoundCloud transport retries connection and stream failures without partial audio', async ctx=>{
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      const result=await p.evaluate(async()=>{
+        const {downloadAudio}=await import('/web/js/link-download.js');let calls=0,retries=0,contentType='',body='';
+        window.fetch=async (url,options)=>{calls++;contentType=options.headers['Content-Type'];body=JSON.parse(options.body).url;if(calls===1)throw new TypeError('Network reset');return new Response(new Uint8Array([2,3]),{headers:{'content-type':'audio/mp4'}});};
+        let f=await downloadAudio('https://soundcloud.com/x/y',{onRetry:()=>retries++});const initial={calls,retries,contentType,body,bytes:[...new Uint8Array(await f.arrayBuffer())]};
+        calls=0;retries=0;
+        window.fetch=async()=>++calls===1?new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array([9,9]));setTimeout(()=>c.error(new TypeError('Stream interrupted')),0);}}),{headers:{'content-type':'audio/mp4'}}):new Response(new Uint8Array([4,5]),{headers:{'content-type':'audio/mp4'}});
+        f=await downloadAudio('https://soundcloud.com/x/y',{onRetry:()=>retries++});const stream={calls,retries,bytes:[...new Uint8Array(await f.arrayBuffer())]};
+        calls=0;window.fetch=async()=>{calls++;throw new TypeError('Offline');};let code;
+        try{await downloadAudio('https://soundcloud.com/x/y');}catch(e){code=e.code;}
+        const failed={calls,code};calls=0;const ctl=new AbortController();let cancelled;
+        try{await downloadAudio('https://soundcloud.com/x/y',{signal:ctl.signal,onRetry:()=>ctl.abort()});}catch(e){cancelled=e.name;}
+        return {initial,stream,failed,cancel:{calls,cancelled}};
+      });
+      assert.deepEqual(result,{initial:{calls:2,retries:1,contentType:'text/plain;charset=UTF-8',body:'https://soundcloud.com/x/y',bytes:[2,3]},stream:{calls:2,retries:1,bytes:[4,5]},failed:{calls:2,code:'DOWNLOAD_NETWORK'},cancel:{calls:1,cancelled:'AbortError'}});
+    });
+    await check('album stops after connection retry fails without blaming the source site', async ctx=>{
+      const p=await ctx.newPage();await p.route('https://www.gstatic.com/firebasejs/**',r=>r.abort());let calls=0;
+      await p.route('https://purocielo-audio-service.pipeddahlia1.chatgpt.site/**',r=>{
+        if(new URL(r.request().url()).pathname==='/resolve')return r.fulfill({json:{kind:'album',title:'Album',artist:'Artist',tracks:[1,2,3].map(n=>({url:'https://soundcloud.com/x/'+n}))},headers:{'access-control-allow-origin':'*'}});
+        calls++;return r.abort('connectionreset');
+      });
+      await p.goto(base+'/app/');const form=p.locator('#side-link-import form');await form.locator('input').fill('https://soundcloud.com/x/sets/album');await form.locator('[type=submit]').click();
+      await p.waitForFunction(()=>document.querySelector('#side-link-import .link-import-status').textContent.includes('Автоматический повтор не помог'));
+      assert.equal(calls,2);assert.equal(await form.getAttribute('aria-busy'),'false');assert(!/запрещает/.test(await form.locator('.link-import-status').innerText()));
+    });
     await check('lyrics transport recovers from blocked browser access through the fixed relay', async ctx => {
       const p=await ctx.newPage();await p.goto(base+'/__fixture');
       const result=await p.evaluate(async()=>{

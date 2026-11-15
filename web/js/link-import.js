@@ -41,9 +41,10 @@ function bind(form) {
         const armTimer = () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000); };
         const savedMessage = () => isEn() ? `Saved: ${completed}` : `Сохранено: ${completed}`;
         const onWait = seconds => { armTimer(); message = isEn() ? `SoundCloud limit. Retrying in ${seconds}s…` : `Пауза SoundCloud. Повтор через ${seconds} с…`; paint(); };
+        const onRetry = () => { armTimer(); message = isEn() ? 'Connection interrupted. Retrying download…' : 'Соединение прервалось. Повторяю загрузку…'; paint(); };
         armTimer();
         try {
-            const source = await resolveAudioLink(lastURL, { signal: controller.signal, onWait });
+            const source = await resolveAudioLink(lastURL, { signal: controller.signal, onWait, onRetry });
             album = source.kind === 'album';
             let albumCover = null;
             if (album && source.artwork) {
@@ -60,7 +61,7 @@ function bind(form) {
                 phase = 'download'; received = total = 0; message = prefix + (isEn() ? 'Connecting…' : 'Подключаюсь…'); paint();
                 let artworkURL = null;
                 try {
-                    const file = await downloadAudio(entry.url, { signal: controller.signal, onWait, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
+                    const file = await downloadAudio(entry.url, { signal: controller.signal, onWait, onRetry, onArtworkURL: url => { artworkURL = url; }, onProgress: (bytes, size) => {
                         armTimer(); // Timeout means no progress, not a limit on a healthy slow download.
                         received = bytes; total = size;
                         if (Date.now() - lastPaint < 160) return;
@@ -84,7 +85,7 @@ function bind(form) {
                     message = result.coverUpdated ? 'Обложка сохранена' : result.added ? 'Трек добавлен в медиатеку' : 'Этот файл уже есть в медиатеке';
                     if (artworkURL && !coverBlob) message = result.added ? 'Трек добавлен. Обложка временно недоступна.' : 'Трек уже есть. Обложка временно недоступна.';
                 } catch (e) {
-                    if (!album || controller.signal.aborted || e.status === 429 || phase === 'saving' || albumBytes > 1024 * 1024 * 1024) throw e;
+                    if (!album || controller.signal.aborted || e.status === 429 || e.code === 'DOWNLOAD_NETWORK' || phase === 'saving' || albumBytes > 1024 * 1024 * 1024) throw e;
                     failed++;
                 }
             }
@@ -95,7 +96,7 @@ function bind(form) {
             }
         } catch (e) {
             error = e.name !== 'AbortError' || timedOut;
-            message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? 'Не удалось скачать файл. Сайт может запрещать загрузку по ссылке — попробуйте скачать файл вручную.' : e.message;
+            message = timedOut ? 'Загрузка заняла слишком много времени. Попробуйте ещё раз.' : e.name === 'AbortError' ? 'Загрузка отменена' : e instanceof TypeError ? (phase === 'saving' ? 'Не удалось обработать аудиофайл. Попробуйте добавить его с устройства.' : 'Не удалось установить соединение с источником аудио. Проверьте подключение.') : e.message;
             if (album && completed) message += ` ${savedMessage()}.`;
         } finally { clearTimeout(timer); job = null; phase = ''; paint(); }
     });
