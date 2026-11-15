@@ -2021,22 +2021,30 @@ async function fetchAny(u, fetchText, test, signal) {
     const order = routes.map((_, i) => i);
     if (goodRoute >= 0)
         order.sort((a, b) => (b === goodRoute) - (a === goodRoute));
-    for (const i of order) {
-        if (signal?.aborted)
-            return '';
-        if (!routes[i])
-            continue;
-        let txt = '';
-        try {
-            txt = await routes[i]();
+    let next = 0, winner = '';
+    const run = async () => {
+        while (next < order.length && !winner && !signal?.aborted) {
+            const i = order[next++];
+            if (!routes[i])
+                continue;
+            try {
+                const txt = await routes[i]();
+                if (!winner && txt && test(txt)) {
+                    winner = txt;
+                    goodRoute = i;
+                    return;
+                }
+            }
+            catch { /* another independent route may still work */ }
         }
-        catch { /* следующий */ }
-        if (txt && test(txt)) {
-            goodRoute = i;
-            return txt;
-        }
-    }
-    return '';
+    };
+    // Return as soon as one route succeeds, without waiting for dead proxies.
+    return new Promise(resolve => {
+        let left = 3;
+        for (let i = 0; i < 3; i++)
+            run().finally(() => { if (winner || --left === 0)
+                resolve(winner); });
+    });
 }
 const NOT_SONG = /\b(translations?|перевод|переклад|romanized|türkçe|traducción|tradução|übersetzung)\b/i;
 // выбор песни из ответа поиска Genius: то же название и тот же артист; без переводов и пересказов
@@ -2136,7 +2144,7 @@ function cleanup(t) {
 const enough = t => !!t && t.split('\n').filter(l => l.trim()).length >= 4;
 const looksJson = s => /^\s*\{/.test(s) && s.includes('"response"');
 // cands: [{ artist, title }] — варианты из тегов/имени файла; artists — все артисты трека
-async function geniusLyrics(cands, artists, fetchText, skip = [], { signal } = {}) {
+async function geniusLyrics(cands, artists, fetchText, skip = [], { signal, onUnavailable = () => { } } = {}) {
     const seen = new Set();
     const queries = [];
     for (const c of cands) {
@@ -2153,8 +2161,10 @@ async function geniusLyrics(cands, artists, fetchText, skip = [], { signal } = {
         let hit = null;
         for (const ep of ['search/song', 'search/multi']) {
             const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson, signal);
-            if (!raw)
-                break; // поиск недоступен ни одним путём
+            if (!raw) {
+                onUnavailable();
+                break;
+            } // поиск недоступен ни одним путём
             try {
                 hit = pickGenius(JSON.parse(raw), arts, c.title, skip);
             }
@@ -2176,6 +2186,8 @@ async function geniusLyrics(cands, artists, fetchText, skip = [], { signal } = {
         }
         if (enough(text))
             return { text, ref: 'genius:' + hit.id };
+        if (!signal?.aborted)
+            onUnavailable();
     }
     return null;
 }
@@ -3721,6 +3733,7 @@ const lyrics_web_js_1 = require("./lyrics-web.js");
 const jsonp_js_1 = require("./jsonp.js");
 const native_js_1 = require("./native.js");
 const genius_js_1 = require("./genius.js");
+const lyrics_http_js_1 = require("./lyrics-http.js");
 const lyrics_search_js_1 = require("./lyrics-search.js");
 var lyrics_search_js_2 = require("./lyrics-search.js");
 Object.defineProperty(exports, "cleanTitle", { enumerable: true, get: function () { return lyrics_search_js_2.cleanTitle; } });
@@ -3728,7 +3741,7 @@ Object.defineProperty(exports, "pickBest", { enumerable: true, get: function () 
 // Автоматический поиск текста песни.
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
 // Если текст не найден — в плеере показывается «Текст не найден». Само аудио приложение не «распознаёт».
-const MISS_TTL = 30 * 60 * 1000; // короткий кэш промахов: новые тексты появляются постоянно
+const MISS_TTL = 10 * 60 * 1000; // короткий кэш промахов: новые тексты появляются постоянно
 // Исполнители трека без «Неизвестного артиста»
 const realArtists = t => (t._artists || (0, artists_js_1.splitArtists)(t.artist)).filter(a => a && a !== artists_js_1.UNKNOWN);
 const primaryArtist = t => realArtists(t)[0] || '';
@@ -3747,7 +3760,7 @@ function candidates(t) {
     };
     const arts = realArtists(t);
     const title = (0, lyrics_search_js_1.cleanTitle)(t.title);
-    const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
+    const dash = /^(.+?)(?:\s+[-–—]\s*|\s*[-–—]\s+|[–—])(.+)$/.exec(title);
     if (dash) { // «hitmar - plan»: пробуем артиста из названия, затем исходные теги
         // SoundCloud uploader names often differ from the artist inside the title.
         add(dash[1], dash[2]);
@@ -3756,17 +3769,25 @@ function candidates(t) {
         add(a, title);
     if (!arts.length && t._guess) // артист, узнанный по названию и длине (см. identify)
         add(t._guess, title);
-    if (!arts.length) {
-        const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
-        if (f)
-            add(f[1], f[2]);
+    const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
+    if (f)
+        add(f[1], f[2]); // Filename evidence is useful even when uploader tags exist.
+    if (!arts.length)
         add('', title);
-    }
     return out;
 }
 // Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
 const songKey = t => `${(0, util_js_1.norm)(primaryArtist(t))}|${(0, util_js_1.norm)((0, lyrics_search_js_1.cleanTitle)(t.title))}|${Math.round(t.duration || 0)}${(0, lyrics_search_js_1.recordingVariant)(t.title) ? '|' + (0, lyrics_search_js_1.recordingVariant)(t.title) : ''}`;
-const keyOf = t => `v9|${songKey(t)}`; // ordinary misses must be retried after catalog matching improves
+const keyOf = t => `v10|${songKey(t)}`;
+const hitKey = t => `hit|${songKey(t)}`;
+async function cachedLyrics(t) {
+    for (const key of [hitKey(t), `v9|${songKey(t)}`, keyOf(t)]) {
+        const value = await (0, db_js_1.lyGet)(key);
+        if (value?.ly || key === keyOf(t) && value?.miss)
+            return value;
+    }
+    return null;
+}
 const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
 // «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
 // Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
@@ -3815,26 +3836,7 @@ function toLyrics(d) {
         return { type: 'plain', text: d.plainLyrics.trim(), source: 'lrclib', ref: d.id, sure: !!d._sure };
     return null;
 }
-async function getJSON(url, ms = 6000, signal) {
-    const ctl = new AbortController();
-    const abort = () => ctl.abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted)
-        abort();
-    const timer = setTimeout(abort, ms);
-    try {
-        const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
-        if (r.status === 404)
-            return { notFound: true };
-        if (!r.ok)
-            throw new Error('HTTP ' + r.status);
-        return { data: await r.json() };
-    }
-    finally {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', abort);
-    }
-}
+async function getJSON(url, ms = 4000, signal) { return (0, lyrics_http_js_1.lyricsJSON)(url, { signal, timeout: Math.min(ms, 4000) }); }
 // У файла нет артиста в тегах — узнаём его по названию и длине в каталогах Deezer и iTunes.
 // Берём, только если название совпало, а длина отличается не больше чем на 2 секунды.
 async function identifyArtist(t) {
@@ -3848,7 +3850,7 @@ async function peekLyrics(t) {
         return !!t?.lyrics;
     if (!t._manualChecked && await applyManual(t))
         return true;
-    for (const k of [okKey(t), keyOf(t)]) {
+    for (const k of [okKey(t), hitKey(t), `v9|${songKey(t)}`, keyOf(t)]) {
         const r = await (0, db_js_1.lyGet)(k).catch(() => null);
         if (r && r.ly) {
             t.lyrics = r.ly;
@@ -3878,13 +3880,13 @@ async function identify(t) {
     }
     catch { /* Catalog failures do not stop lyrics providers. */ }
 }
-async function lookup(t, bad = []) {
+async function lookup(t, bad = [], signal) {
     // Search the lyrics catalog first. Metadata catalogs are a fallback for truly untagged files.
-    let result = await (0, lyrics_search_js_1.searchLyrics)({ candidates: candidates(t), duration: t.duration, album: t.album, variant: (0, lyrics_search_js_1.recordingVariant)(t.title), bad });
+    let result = await (0, lyrics_search_js_1.searchLyrics)({ candidates: candidates(t), duration: t.duration, album: t.album, variant: (0, lyrics_search_js_1.recordingVariant)(t.title), bad }, { signal });
     if (!result.record && !realArtists(t).length && !candidates(t).some(c => c.artist)) {
         await identify(t);
         if (t._guess)
-            result = await (0, lyrics_search_js_1.searchLyrics)({ candidates: candidates(t), duration: t.duration, album: t.album, variant: (0, lyrics_search_js_1.recordingVariant)(t.title), bad });
+            result = await (0, lyrics_search_js_1.searchLyrics)({ candidates: candidates(t), duration: t.duration, album: t.album, variant: (0, lyrics_search_js_1.recordingVariant)(t.title), bad }, { signal });
     }
     return result;
 }
@@ -3898,14 +3900,18 @@ function abortable(task, signal) {
         Promise.resolve().then(task).then(resolve, () => resolve(null)).finally(() => signal?.removeEventListener('abort', abort));
     });
 }
-async function bounded(task, ms) {
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
+async function bounded(task, ms, parent) {
+    const ctl = new AbortController(), abort = () => ctl.abort(), timer = setTimeout(abort, ms);
+    parent?.addEventListener('abort', abort, { once: true });
+    if (parent?.aborted)
+        abort();
     try {
         return await abortable(() => task(ctl.signal), ctl.signal);
     }
     finally {
         clearTimeout(timer);
         ctl.abort();
+        parent?.removeEventListener('abort', abort);
     }
 }
 async function firstFound(tasks, signal) {
@@ -3943,16 +3949,16 @@ function siteFetcher(signal) {
     return null;
 }
 // Genius — основной источник обычного текста
-async function fromGenius(t, skip, signal) {
+async function fromGenius(t, skip, signal, health) {
     if (typeof window === 'undefined')
         return null;
     const cands = candidates(t).filter(c => c.title);
     if (!cands.length)
         return null;
     try {
-        const g = await (0, genius_js_1.geniusLyrics)(cands, realArtists(t), siteFetcher(signal), skip, { signal });
+        const g = await (0, genius_js_1.geniusLyrics)(cands, realArtists(t), siteFetcher(signal), skip, { signal, onUnavailable: () => { health.failed = true; } });
         if (g)
-            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: realArtists(t).length > 0 }; // артист из тегов совпал — уверены
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: false }; // артист из тегов совпал — уверены
     }
     catch { /* дальше */ }
     if (!signal?.aborted && window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
@@ -3966,21 +3972,25 @@ async function fromGenius(t, skip, signal) {
     return null;
 }
 // Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
-async function fromOVH(t, skip, signal) {
+async function fromOVH(t, skip, signal, health) {
     const c = candidates(t)[0];
     if (!c?.artist || skip.includes('ovh'))
         return null;
     try {
         const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(c.artist)}/${encodeURIComponent(c.title)}`, 6500, signal);
         const text = String(r.data?.lyrics || '').replace(/^Paroles de la chanson[^\n]*\n/i, '').trim();
-        const title = (0, lyrics_web_js_1.norm)(c.title);
-        if (text && title.length >= 4 && (0, lyrics_web_js_1.norm)(text).includes(title))
+        // Many songs never say their title in the lyrics. The endpoint already
+        // specifies artist/title; keep this result unverified for account sync.
+        if (text.length >= 40 && text.split('\n').filter(l => l.trim()).length >= 4 && !/<html|<script/i.test(text))
             return { type: 'plain', text, source: 'lyrics.ovh', ref: 'ovh' };
     }
-    catch { /* independent source */ }
+    catch {
+        if (!signal?.aborted)
+            health.failed = true;
+    }
     return null;
 }
-async function extraSources(t, skip, signal) {
+async function extraSources(t, skip, signal, health) {
     const c = candidates(t)[0] || { artist: primaryArtist(t), title: (0, lyrics_search_js_1.cleanTitle)(t.title) };
     const { artist, title } = c, proxy = (state_js_1.state.settings.lyricsProxy || '').replace(/\/+$/, '');
     const fetchText = siteFetcher(signal), tasks = [];
@@ -4009,12 +4019,26 @@ async function extraSources(t, skip, signal) {
             return d?.lyrics?.trim() && (0, lyrics_web_js_1.titleMatch)(d.title || '', title) && (0, lyrics_web_js_1.artistMatch)(d.artist || '', [artist])
                 ? { type: 'plain', text: d.lyrics.trim(), source: 'lyrist', ref: 'lyrist', sure: true } : null;
         });
-    return firstFound(tasks, signal);
+    return firstFound(tasks.map(task => async () => { try {
+        return await task();
+    }
+    catch {
+        if (!signal?.aborted)
+            health.failed = true;
+        return null;
+    } }), signal);
 }
-async function fallbackLyrics(t, skip) {
-    return bounded(signal => firstFound([
-        () => fromGenius(t, skip, signal), () => fromOVH(t, skip, signal), () => extraSources(t, skip, signal),
-    ], signal), 15000);
+async function fallbackLyrics(t, skip, parent) {
+    const health = { failed: false };
+    let settled = false;
+    const ly = await bounded(async (signal) => {
+        const result = await firstFound([
+            () => fromGenius(t, skip, signal, health), () => fromOVH(t, skip, signal, health), () => extraSources(t, skip, signal, health),
+        ], signal);
+        settled = !signal.aborted;
+        return result;
+    }, 12000, parent);
+    return { ly, failed: health.failed || !settled || !!parent?.aborted };
 }
 // ---- сдвиг синхронизации для конкретного трека (секунды) ----
 async function getOffset(t) {
@@ -4027,7 +4051,7 @@ async function getOffset(t) {
     }
 }
 async function setOffset(t, off) { off = Math.round(off * 10) / 10; t._off = off; await (0, db_js_1.lySet)('off:' + t.id, { off, at: Date.now() }); }
-const running = new Map();
+const running = new Map(), controllers = new Map();
 // Возвращает true, если у трека появился текст. t._ly: 'loading' | 'none' | undefined
 // ---- свои тексты: вставленные или загруженные из файла вручную ----
 const lyFromText = text => { const p = (0, lrc_js_1.parseLrc)(text); return p.synced ? { type: 'synced', lines: p.lines, source: 'manual' } : { type: 'plain', text: String(text).trim(), source: 'manual' }; };
@@ -4041,6 +4065,7 @@ function rawLyrics(t) {
     return ly.lines.map(l => f(l.t) + l.text).join('\n');
 }
 async function setManualLyrics(t, text) {
+    controllers.get(t.id)?.abort();
     t._lyRevision = (t._lyRevision || 0) + 1;
     text = String(text || '').trim();
     await (0, db_js_1.lySet)('manual:' + t.id, { text, at: Date.now() });
@@ -4052,9 +4077,12 @@ async function setManualLyrics(t, text) {
     text ? keepSure(t, { ...t.lyrics, sure: true }) : dropSure(t); // свой текст — точный по определению
 }
 async function applyManual(t) {
+    const revision = t._lyRevision || 0;
     t._manualChecked = true;
     try {
         const m = await (0, db_js_1.lyGet)('manual:' + t.id);
+        if ((t._lyRevision || 0) !== revision)
+            return !!t.lyrics;
         if (m && m.text) {
             t.lyrics = lyFromText(m.text);
             t._ly = undefined;
@@ -4074,13 +4102,14 @@ async function rejectLyrics(t) {
     if (!(0, exports.isFoundOnline)(ly))
         return false;
     t._lyRevision = (t._lyRevision || 0) + 1;
+    controllers.get(t.id)?.abort();
     const bad = (await (0, db_js_1.lyGet)('bad|' + t.id).catch(() => null)) || { ids: [] };
     if (ly.ref != null)
         bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
     else
         bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
     await (0, db_js_1.lySet)('bad|' + t.id, bad);
-    await (0, db_js_1.lySet)(keyOf(t), { at: 0 });
+    await Promise.all([keyOf(t), hitKey(t), `v9|${songKey(t)}`].map(k => (0, db_js_1.lySet)(k, { at: 0 })));
     await dropSure(t);
     t.lyrics = null;
     t._ly = undefined;
@@ -4101,8 +4130,10 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
         return running.get(t.id);
     if (!t.lyrics)
         t._ly = 'loading';
+    const ctl = new AbortController();
+    controllers.set(t.id, ctl);
     const revision = t._lyRevision || 0, identity = songKey(t);
-    const unchanged = () => (t._lyRevision || 0) === revision && songKey(t) === identity;
+    const unchanged = () => !ctl.signal.aborted && (t._lyRevision || 0) === revision && songKey(t) === identity;
     const p = (async () => {
         const key = keyOf(t);
         try {
@@ -4116,7 +4147,7 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             const sure = await (0, db_js_1.lyGet)(okKey(t)).catch(() => null);
             if (sure && sure.ly)
                 return use(sure.ly);
-            const cached = await (0, db_js_1.lyGet)(key);
+            const cached = await cachedLyrics(t);
             if (cached?.ly)
                 return use(cached.ly);
             // 2) сохранённый текст из аккаунта, если на устройстве ещё ничего нет
@@ -4160,7 +4191,8 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             }
             if (t._lyForeground)
                 t._lyAttempt = Date.now();
-            const result = await lookup(t, bad.ids || []), d = result.record;
+            const result = await lookup(t, bad.ids || [], ctl.signal), d = result.record;
+            t._lyDiagnostics = result.diagnostics;
             if (!unchanged() || t.lyrics)
                 return !!t.lyrics;
             let ly = d && !d.instrumental ? toLyrics(d) : null;
@@ -4169,12 +4201,16 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
                 t._ly = undefined;
                 return false;
             }
-            if (!ly && !d?.instrumental)
-                ly = await fallbackLyrics(t, bad.ids || []);
+            let fallbackFailed = false;
+            if (!ly && !d?.instrumental) {
+                const fallback = await fallbackLyrics(t, bad.ids || [], ctl.signal);
+                ly = fallback.ly;
+                fallbackFailed = fallback.failed;
+            }
             if (!unchanged() || t.lyrics)
                 return !!t.lyrics;
             if (ly) {
-                (0, db_js_1.lySet)(key, { ly, at: Date.now() });
+                (0, db_js_1.lySet)(hitKey(t), { ly, at: Date.now() });
                 if (ly.sure)
                     keepSure(t, ly);
                 const used = use(ly);
@@ -4185,12 +4221,12 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
                         (0, state_js_1.touchLibrary)();
                         (0, state_js_1.derived)();
                         (0, state_js_1.emit)('track-meta', t);
-                        (0, db_js_1.lySet)(keyOf(t), { ly, at: Date.now() });
+                        (0, db_js_1.lySet)(hitKey(t), { ly, at: Date.now() });
                     }
                 }
                 return used;
             }
-            if (result.failed) {
+            if (result.failed || fallbackFailed) {
                 t._ly = 'error';
                 return false;
             }
@@ -4205,6 +4241,7 @@ function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
         } // нет сети / сервис недоступен — не запоминаем как «нет текста»
         finally {
             running.delete(t.id);
+            controllers.delete(t.id);
             t._lyRetryRequested = false;
             t._lyForeground = false;
             (0, state_js_1.emit)('lyrics-state', t);
@@ -4221,45 +4258,59 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.initBackgroundLyrics = initBackgroundLyrics;
 const state_js_1 = require("./state.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
-// One song at a time: importing an album must not flood lyrics providers.
-// Results use the normal persistent cache; this module never opens player UI.
+// Persistent lyrics live in IndexedDB; this session queue only schedules work.
+// One active song, two bounded retries on network failure, no UI interruptions.
 let started = false, active = false, timer = null;
-const pending = new Map();
-const attempted = new WeakSet();
+const jobs = new Map();
 const enabled = () => state_js_1.state.settings.autoLyrics && navigator.onLine !== false;
+const identity = t => JSON.stringify([t.artist, t.title, t.duration]);
 function schedule() {
-    if (!active && !timer && pending.size && enabled())
-        timer = setTimeout(drain, 250);
-}
-function collect() {
-    (0, state_js_1.derived)(); // Apply artist corrections and user metadata before searching.
-    for (const t of state_js_1.state.tracks.values()) {
-        if (!t.lyrics && !attempted.has(t))
-            pending.set(t.id, t);
-    }
-    schedule();
-}
-async function drain() {
+    clearTimeout(timer);
     timer = null;
     if (active || !enabled())
         return;
-    const entry = pending.entries().next().value;
-    if (!entry)
+    const next = [...jobs.values()].filter(j => !j.done && !j.track.lyrics).sort((a, b) => a.due - b.due || (b.track.addedAt || 0) - (a.track.addedAt || 0))[0];
+    if (next)
+        timer = setTimeout(() => drain(next), Math.max(250, next.due - Date.now()));
+}
+function collect() {
+    (0, state_js_1.derived)();
+    for (const [id, j] of jobs)
+        if (state_js_1.state.tracks.get(id) !== j.track)
+            jobs.delete(id);
+    for (const t of state_js_1.state.tracks.values()) {
+        if (t.lyrics)
+            continue;
+        const old = jobs.get(t.id), key = identity(t);
+        if (!old || old.key !== key)
+            jobs.set(t.id, { track: t, key, due: 0, attempts: 0, done: false });
+    }
+    schedule();
+}
+async function drain(job) {
+    timer = null;
+    if (active || !enabled())
         return;
-    const [id, t] = entry;
-    pending.delete(id);
-    if (state_js_1.state.tracks.get(id) !== t || t.lyrics || attempted.has(t)) {
+    const t = job.track;
+    if (jobs.get(t.id) !== job || state_js_1.state.tracks.get(t.id) !== t || t.lyrics) {
+        job.done = true;
         schedule();
         return;
     }
     active = true;
-    attempted.add(t);
+    job.attempts++;
     try {
         await (0, lyrics_auto_js_1.ensureLyrics)(t);
     }
-    catch { /* Search failure must never interrupt importing or playback. */ }
+    catch {
+        t._ly = 'error';
+    }
     finally {
         active = false;
+        if (!t.lyrics && ['error', 'offline'].includes(t._ly) && job.attempts < 3)
+            job.due = Date.now() + (job.attempts === 1 ? 15000 : 60000);
+        else
+            job.done = true;
         schedule();
     }
 }
@@ -4270,12 +4321,107 @@ function initBackgroundLyrics() {
     (0, state_js_1.on)('library', collect);
     (0, state_js_1.on)('settings', collect);
     window.addEventListener('online', () => {
-        for (const t of state_js_1.state.tracks.values())
-            if (!t.lyrics && ['error', 'offline'].includes(t._ly))
-                attempted.delete(t);
+        for (const j of jobs.values())
+            if (!j.track.lyrics && ['error', 'offline'].includes(j.track._ly)) {
+                j.done = false;
+                j.attempts = 0;
+                j.due = 0;
+            }
         collect();
     });
     collect();
+}
+
+};
+defs["lyrics-http.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.lyricsJSON = lyricsJSON;
+// Same requests work in the browser, desktop and Android. The relay accepts only
+// predefined public lyrics APIs; it is not a general-purpose URL proxy.
+const RELAY = 'https://purocielo-audio-service.pipeddahlia1.chatgpt.site/lyrics/';
+const cooldown = new Map();
+function relayURL(raw) {
+    const u = new URL(raw);
+    if (u.origin === 'https://lrclib.net' && /^\/api\/(get|search)$/.test(u.pathname))
+        return RELAY + u.pathname.split('/').pop() + u.search;
+    if (u.origin === 'https://api.lyrics.ovh' && u.pathname.startsWith('/v1/')) {
+        const parts = u.pathname.slice(4).split('/');
+        if (parts.length === 2)
+            return RELAY + 'plain?' + new URLSearchParams({ artist: decodeURIComponent(parts[0]), title: decodeURIComponent(parts[1]) });
+    }
+    return null;
+}
+async function request(url, signal, ms) {
+    const ctl = new AbortController();
+    const abort = () => ctl.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted)
+        abort();
+    const timer = setTimeout(abort, ms);
+    let cancel;
+    try {
+        const cancelled = new Promise((_, reject) => { cancel = () => reject(new DOMException('Cancelled', 'AbortError')); ctl.signal.addEventListener('abort', cancel, { once: true }); if (ctl.signal.aborted)
+            cancel(); });
+        return await Promise.race([cancelled, (async () => {
+                const r = await fetch(url, { signal: ctl.signal, credentials: 'omit', referrerPolicy: 'no-referrer', headers: { Accept: 'application/json' } });
+                if (r.status === 404) {
+                    await r.body?.cancel();
+                    return { notFound: true };
+                }
+                if (!r.ok) {
+                    const retry = r.headers.get('Retry-After');
+                    const seconds = /^\d+$/.test(retry || '') ? Number(retry) : (Date.parse(retry) - Date.now()) / 1000;
+                    if (r.status === 429)
+                        cooldown.set(new URL(url).origin, Date.now() + Math.max(30, seconds || 0) * 1000);
+                    await r.body?.cancel();
+                    const error = new Error('Lyrics HTTP ' + r.status);
+                    error.status = r.status;
+                    throw error;
+                }
+                const text = await r.text();
+                if (text.length > 1000000)
+                    throw new Error('Lyrics response too large');
+                const data = JSON.parse(text);
+                if (!data || typeof data !== 'object')
+                    throw new Error('Invalid lyrics response');
+                return { data };
+            })()]);
+    }
+    finally {
+        clearTimeout(timer);
+        ctl.abort();
+        ctl.signal.removeEventListener('abort', cancel);
+        signal?.removeEventListener('abort', abort);
+    }
+}
+async function lyricsJSON(url, { signal, timeout = 4000 } = {}) {
+    let failed = false;
+    const relay = relayURL(url), routes = relay ? [url, relay] : [url];
+    for (const route of routes) {
+        if (signal?.aborted)
+            throw new DOMException('Cancelled', 'AbortError');
+        const parsed = new URL(route), origin = parsed.origin, endpoint = origin + parsed.pathname;
+        if (Math.max(cooldown.get(origin) || 0, cooldown.get(endpoint) || 0) > Date.now()) {
+            failed = true;
+            continue;
+        }
+        try {
+            return await request(route, signal, timeout);
+        }
+        catch (e) {
+            if (signal?.aborted)
+                throw e;
+            failed = true;
+            // Avoid repeating a broken CORS/network path for every query in a batch.
+            if (e.status >= 500)
+                cooldown.set(endpoint, Date.now() + 10000);
+            if (e instanceof TypeError || e.name === 'AbortError')
+                cooldown.set(origin, Math.max(cooldown.get(origin) || 0, Date.now() + 15000));
+        }
+    }
+    if (failed)
+        throw new Error('Lyrics providers unavailable');
+    return { notFound: true };
 }
 
 };
@@ -4288,6 +4434,7 @@ exports.pickBest = pickBest;
 exports.searchLyrics = searchLyrics;
 const lyrics_web_js_1 = require("./lyrics-web.js");
 const lrc_js_1 = require("./lrc.js");
+const lyrics_http_js_1 = require("./lyrics-http.js");
 const NOISE = /\b(official|audio|lyrics?|visuali[sz]er|music video|hd|hq|prod\.?|feat\.?|ft\.?|remaster(?:ed)?|sped\s*up|speed\s*up|slowed|reverb|nightcore|remix|edit|version|live|8d)\b/i;
 function cleanTitle(value) {
     const raw = String(value || '').trim();
@@ -4328,109 +4475,103 @@ function pickBest(list, duration, variant = '') {
         return { ...plain, syncedLyrics: null, plainLyrics: (plain.plainLyrics || String(plain.syncedLyrics).replace(/^\s*(?:\[[^\]]*\])+\s?/gm, '')).trim() };
     return sorted.find(x => x._sure && x.instrumental && timingFits(x)) || null;
 }
-// A failed request must not prevent the next query or another provider from running.
-// Three bounded batches: exact recording, artist/title search, then free-text search.
+// Search planner: one precise lookup, then a balanced set of metadata and title
+// queries. Two workers share one deadline; failed queries do not suppress others.
 async function searchLyrics({ candidates, duration = 0, album = '', variant = '', bad = [] }, { signal } = {}) {
-    const controller = new AbortController(), stop = () => controller.abort();
-    signal?.addEventListener('abort', stop, { once: true });
+    const ctl = new AbortController(), cancel = () => ctl.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted)
-        stop();
-    const deadline = setTimeout(stop, 12000), found = [], seen = new Set();
-    let failures = 0;
-    const request = async (params) => {
-        if (controller.signal.aborted) {
-            failures++;
-            return null;
+        cancel();
+    const deadline = setTimeout(cancel, 18000), records = new Map(), diagnostics = [];
+    const unique = [...new Map(candidates.filter(c => c.title).map(c => [(0, lyrics_web_js_1.norm)(c.artist) + '|' + (0, lyrics_web_js_1.norm)(c.title), c])).values()];
+    // Keep different artists before spending the budget on their title variants.
+    const artists = new Set(), primary = [], variants = [];
+    for (const c of unique) {
+        const k = (0, lyrics_web_js_1.norm)(c.artist);
+        (artists.has(k) ? variants : primary).push(c);
+        artists.add(k);
+    }
+    const cands = [...primary, ...variants].slice(0, 6);
+    const titles = [...new Set(cands.map(c => c.title))].slice(0, 4);
+    const accept = (data, infer = false) => {
+        const rows = (Array.isArray(data) ? data : data ? [data] : []).filter(x => x && !bad.includes(x.id) && x.artistName && x.trackName && (x.plainLyrics?.trim() || x.syncedLyrics?.trim() || x.instrumental));
+        for (const x of rows) {
+            const rank = cands.findIndex(c => c.artist && (0, lyrics_web_js_1.titleMatch)(cleanTitle(x.trackName), c.title) && (0, lyrics_web_js_1.artistMatch)(x.artistName, [c.artist]));
+            if (rank < 0 && !infer)
+                continue;
+            const exact = titles.some(title => (0, lyrics_web_js_1.norm)(title).length >= 8 && ((0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(title) || (0, lyrics_web_js_1.norm)(x.artistName + x.trackName) === (0, lyrics_web_js_1.norm)(title)));
+            const inferred = rank < 0 && exact && duration > 0 && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2 && recordingVariant(x.trackName) === variant;
+            if (rank < 0 && !inferred)
+                continue;
+            const key = x.id ?? (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName) + '|' + x.duration;
+            const record = { ...x, _sure: rank >= 0, _inferred: rank < 0, _rank: rank < 0 ? 20 : rank };
+            if (!records.has(key) || (record._sure && !records.get(key)._sure))
+                records.set(key, record);
         }
-        const requestController = new AbortController(), abort = () => requestController.abort();
-        controller.signal.addEventListener('abort', abort, { once: true });
-        const timer = setTimeout(abort, 3500);
+    };
+    const best = () => {
+        const rows = [...records.values()];
+        const identities = new Set(rows.filter(x => x._inferred).map(x => (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName)));
+        return pickBest(rows.filter(x => !x._inferred || identities.size === 1), duration, variant);
+    };
+    const request = async (path, params, infer = false) => {
+        if (ctl.signal.aborted)
+            return;
         try {
-            const r = await fetch('https://lrclib.net/api/' + params, { signal: requestController.signal, headers: { Accept: 'application/json' } });
-            if (r.status === 404)
-                return null;
-            if (!r.ok)
-                throw new Error('Lyrics HTTP ' + r.status);
-            return await r.json();
+            const result = await (0, lyrics_http_js_1.lyricsJSON)('https://lrclib.net/api/' + path + '?' + new URLSearchParams(params), { signal: ctl.signal, timeout: 3000 });
+            diagnostics.push({ query: path, status: result.notFound ? 'empty' : 'ok' });
+            if (result.data)
+                accept(result.data, infer);
         }
         catch {
-            failures++;
-            return null;
-        }
-        finally {
-            clearTimeout(timer);
-            controller.signal.removeEventListener('abort', abort);
+            diagnostics.push({ query: path, status: 'unavailable' });
         }
     };
-    const cands = candidates.slice(0, 3);
-    const take = (data, c, rank) => {
-        const rows = Array.isArray(data) ? data : data ? [data] : [];
-        const matches = rows.filter(x => x && (0, lyrics_web_js_1.titleMatch)(cleanTitle(x.trackName || ''), c.title) && (x.syncedLyrics || x.plainLyrics || x.instrumental));
-        const identities = new Set(matches.filter(x => Math.abs(Number(x.duration) - duration) <= 2).map(x => (0, lyrics_web_js_1.norm)(x.artistName)));
-        for (const x of matches) {
-            const sure = !!c.artist && (0, lyrics_web_js_1.artistMatch)(x.artistName || '', [c.artist]);
-            // Untagged files: accept only an unambiguous exact title and matching duration.
-            const inferred = !c.artist && (0, lyrics_web_js_1.norm)(c.title).length >= 8 && (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1 && recordingVariant(x.trackName) === variant;
-            if ((!sure && !inferred) || seen.has(x.id) || bad.includes(x.id))
-                continue;
-            seen.add(x.id);
-            found.push({ ...x, _sure: sure, _rank: rank, _inferred: inferred });
-        }
-    };
-    const best = () => pickBest(found, duration, variant);
-    // Repost uploaders and abbreviations (TBK) are not necessarily the catalog artist.
-    // Infer only from a distinctive exact title, known duration and one recording identity.
-    const infer = (data, c) => {
-        if (!Array.isArray(data) || !(duration > 0) || (0, lyrics_web_js_1.norm)(c.title).length < 8)
-            return;
-        const matches = data.filter(x => x && !bad.includes(x.id) && (0, lyrics_web_js_1.norm)(cleanTitle(x.trackName)) === (0, lyrics_web_js_1.norm)(c.title)
-            && x.artistName && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2
-            && recordingVariant(x.trackName) === variant && (x.plainLyrics || x.syncedLyrics));
-        const identities = new Set(matches.map(x => (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName)));
-        if (identities.size !== 1)
-            return;
-        for (const x of matches)
-            if (!seen.has(x.id)) {
-                seen.add(x.id);
-                found.push({ ...x, _sure: false, _inferred: true, _rank: 10 });
-            }
+    const response = () => {
+        const record = best(), failed = ctl.signal.aborted || diagnostics.some(d => d.status === 'unavailable');
+        return { record, failed, status: record ? 'found' : failed ? 'unavailable' : [...records.values()].some(x => x._inferred) ? 'ambiguous' : 'not-found', diagnostics };
     };
     try {
-        await Promise.all(cands.map(async (c, i) => {
-            if (!c.artist)
-                return;
-            const q = new URLSearchParams({ track_name: c.title, artist_name: c.artist });
-            if (album)
-                q.set('album_name', album);
-            if (duration > 0)
-                q.set('duration', String(Math.round(duration)));
-            take(await request('get?' + q), c, i);
-        }));
+        const first = cands.find(c => c.artist);
+        if (first)
+            await request('get', { artist_name: first.artist, track_name: first.title, ...(duration > 0 ? { duration: String(Math.round(duration)) } : {}), ...(album ? { album_name: album } : {}) });
         if (best())
-            return { record: best(), failed: failures > 0 };
-        await Promise.all(cands.map(async (c, i) => {
-            const q = new URLSearchParams({ track_name: c.title });
-            if (c.artist)
-                q.set('artist_name', c.artist);
-            take(await request('search?' + q), c, i);
-        }));
-        if (best())
-            return { record: best(), failed: failures > 0 };
-        const titles = [...new Map(cands.map(c => [(0, lyrics_web_js_1.norm)(c.title), c])).values()].filter(c => (0, lyrics_web_js_1.norm)(c.title).length >= 8);
-        await Promise.all(titles.map(async (c) => infer(await request('search?' + new URLSearchParams({ track_name: c.title })), c)));
-        if (new Set(found.filter(x => x._inferred).map(x => (0, lyrics_web_js_1.norm)(x.artistName) + '|' + (0, lyrics_web_js_1.norm)(x.trackName))).size > 1)
-            for (let i = found.length - 1; i >= 0; i--)
-                if (found[i]._inferred)
-                    found.splice(i, 1);
-        if (best())
-            return { record: best(), failed: failures > 0 };
-        await Promise.all(cands.slice(0, 2).map(async (c, i) => take(await request('search?' + new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })), c, i)));
-        return { record: best(), failed: failures > 0 };
+            return response();
+        const jobs = [], seen = new Set();
+        const add = (params, infer = false) => { const key = new URLSearchParams(params).toString(); if (!seen.has(key)) {
+            seen.add(key);
+            jobs.push(() => request('search', params, infer));
+        } };
+        // Alternate known-artist and title-only searches so bad uploader tags do not
+        // consume the entire deadline before the useful query is attempted.
+        for (let i = 0; i < Math.max(cands.length, titles.length); i++) {
+            const c = cands[i];
+            if (c?.artist)
+                add({ artist_name: c.artist, track_name: c.title });
+            if (titles[i])
+                add({ track_name: titles[i] }, true);
+        }
+        for (const c of cands.slice(0, 2)) {
+            add({ q: c.title }, true);
+            add({ q: `${c.artist} ${c.title}`.trim() }, !c.artist);
+        }
+        let next = 0;
+        const run = async () => {
+            while (next < Math.min(jobs.length, 10) && !ctl.signal.aborted) {
+                // Only a verified artist match can finish early. Inferred matches
+                // need the remaining title queries to rule out ambiguity.
+                if (best()?._sure)
+                    return;
+                await jobs[next++]();
+            }
+        };
+        await Promise.all([run(), run()]);
+        return response();
     }
     finally {
         clearTimeout(deadline);
-        stop();
-        signal?.removeEventListener('abort', stop);
+        ctl.abort();
+        signal?.removeEventListener('abort', cancel);
     }
 }
 

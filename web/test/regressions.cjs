@@ -30,6 +30,55 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('lyrics transport recovers from blocked browser access through the fixed relay', async ctx => {
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      const result=await p.evaluate(async()=>{
+        let direct=0,relay=0;
+        window.fetch=async url=>{if(String(url).startsWith('https://lrclib.net')){direct++;throw new TypeError('CORS blocked');}relay++;const u=new URL(url);if(!u.pathname.startsWith('/lyrics/'))throw Error('Unexpected URL');return Response.json({id:50,trackName:'Relay Song',artistName:'Artist',duration:10,plainLyrics:'Recovered through relay'});};
+        const t={id:'relay',title:'Relay Song',artist:'Artist',duration:10};await (await import('/web/js/lyrics-auto.js')).ensureLyrics(t);
+        return {direct,relay,text:t.lyrics?.text};
+      });
+      assert.deepEqual(result,{direct:1,relay:1,text:'Recovered through relay'});
+    });
+    await check('planner balances artists and recognizes combined artist-title metadata', async ctx=>{
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      const result=await p.evaluate(async()=>{
+        const {searchLyrics}=await import('/web/js/lyrics-search.js');let active=0,peak=0;
+        const record={id:1,trackName:'Long Song Title',artistName:'Real Artist',duration:200,plainLyrics:'Fixture text'};
+        window.fetch=async url=>{const u=new URL(url);peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,10));active--;return u.searchParams.get('artist_name')==='Real Artist'?Response.json([record]):Response.json([]);};
+        const extracted=(await import('/web/js/lyrics-auto.js')).candidates({artist:'Uploader',title:'Long Song Title',name:'Real Artist - Long Song Title.mp3'});
+        const balanced=await searchLyrics({candidates:[{artist:'Uploader',title:'Song (Part II)'},{artist:'Uploader',title:'Song'},{artist:'Uploader',title:'More Noise'},{artist:'Real Artist',title:'Long Song Title'}],duration:200});
+        window.fetch=async url=>new URL(url).searchParams.has('q')?Response.json([record]):Response.json([]);
+        const combined=await searchLyrics({candidates:[{artist:'Uploader',title:'Real Artist Long Song Title'}],duration:200});
+        return {filename:extracted.some(c=>c.artist==='Real Artist'&&c.title==='Long Song Title'),balanced:balanced.record?.id,combined:combined.record?.artistName,inferred:combined.record?._inferred,peak};
+      });
+      assert(result.filename);assert.equal(result.balanced,1);assert.equal(result.combined,'Real Artist');assert.equal(result.inferred,true);assert(result.peak<=2);
+    });
+    await check('plain provider lyrics need not contain the song title and failures are not cached as misses', async ctx=>{
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      const result=await p.evaluate(async()=>{
+        const auto=await import('/web/js/lyrics-auto.js'),db=await import('/web/js/db.js');
+        window.fetch=async url=>String(url).includes('api.lyrics.ovh')?Response.json({lyrics:'First fixture line with words\nSecond fixture line with words\nThird fixture line with words\nFourth fixture line with words'}):new Response('',{status:404});
+        const t={id:'no-title',title:'Different Song Title',artist:'Artist',duration:10};await auto.ensureLyrics(t);
+        window.fetch=async url=>String(url).includes('lrclib.net')?Response.json([]):new Response('Service down',{status:503});
+        const failed={id:'failed',title:'Failed Song',artist:'Artist',duration:10};await auto.ensureLyrics(failed);
+        return {source:t.lyrics?.source,state:failed._ly,miss:!!(await db.lyGet('v10|artist|failed song|10'))?.miss};
+      });
+      assert.deepEqual(result,{source:'lyrics.ovh',state:'error',miss:false});
+    });
+    await check('background search retries a temporary failure without a new import',async ctx=>{
+      const p=await ctx.newPage();await p.goto(base+'/__fixture');
+      await p.evaluate(async()=>{
+        const s=await import('/web/js/state.js');s.state.settings.autoLyrics=true;
+        window.fetch=async url=>String(url).includes('lrclib.net')?Response.json([]):new Response('Down',{status:503});
+        const t={id:'retry-job',title:'Retry Song',artist:'Artist',duration:10};s.state.tracks.set(t.id,t);window.retryTrack=t;
+        (await import('/web/js/lyrics-background.js')).initBackgroundLyrics();
+      });
+      await p.waitForFunction(()=>retryTrack._ly==='error',{},{timeout:20000});
+      await p.evaluate(()=>{window.fetch=async()=>Response.json({id:99,trackName:'Retry Song',artistName:'Artist',duration:10,plainLyrics:'Recovered automatically'});});
+      await p.waitForFunction(()=>retryTrack.lyrics?.text==='Recovered automatically',{},{timeout:20000});
+      assert.equal(await p.locator('#toasts').innerText(),'');
+    });
     await check('catalog resolves TBK and uploader colin, persists identity and preserves manual edits', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
       const result = await p.evaluate(async () => {
@@ -228,7 +277,7 @@ const server = http.createServer((req, res) => {
         const { ensureLyrics, candidates } = await import('/web/js/lyrics-auto.js');
         const { state } = await import('/web/js/state.js'), { lySet } = await import('/web/js/db.js');
         const t = { id: 'lyrics-test', title: 'Song', artist: 'Artist', duration: 10 };
-        await lySet('v9|artist|song|10', { miss: true, at: Date.now() });
+        await lySet('v10|artist|song|10', { miss: true, at: Date.now() });
         let calls = 0, release;
         const gate = new Promise(r => { release = r; });
         window.fetch = async () => { calls++; await gate; return Response.json({ id: 1, trackName: 'Song', artistName: 'Artist', duration: 10, syncedLyrics: '[00:00.00]Hello\n[00:05.00]World' }); };
@@ -258,6 +307,7 @@ const server = http.createServer((req, res) => {
       await p.route('https://purocielo-audio-service.pipeddahlia1.chatgpt.site/**', async r => {
         if (mode === 'offline') return r.abort();
         const path = new URL(r.request().url()).pathname;
+        if (path.startsWith('/lyrics/')) return r.fulfill({ json: [], headers });
         if (path === '/resolve') return r.fulfill({ json: { kind: 'album', title: 'Test Album', artist: 'Artist', artwork: '/artwork?url=fixture', tracks: [1,2,3].map(i => ({ url: `https://soundcloud.com/artist/${mode === 'cancel' ? 'new' : 'song'}${i}` })).concat([{ url: null }]) }, headers });
         if (path === '/artwork') return r.fulfill({ body: png, contentType: 'image/png', headers });
         const name = r.request().postDataJSON().url.split('/').pop();
@@ -304,7 +354,7 @@ const server = http.createServer((req, res) => {
       assert.equal(result.title, 'Song (Part II)'); assert.equal(result.variant, 'fast+remix');
       assert.deepEqual(result.candidates, [{ artist: 'Artist', title: 'Song (Part II)' }, { artist: 'Artist', title: 'Song' }]);
       assert(result.normal); assert.equal(result.remix, null); assert.equal(result.unknown, null); assert.equal(result.far, null);
-      assert.equal(result.recovered, 1); assert.equal(result.calls, 2); assert.equal(result.wrong, null); assert.equal(result.rejected, null);
+      assert.equal(result.recovered, 1); assert(result.calls >= 2 && result.calls <= 5); assert.equal(result.wrong, null); assert.equal(result.rejected, null);
     });
     await check('lyrics fallback survives provider failure and late responses preserve manual edits', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
@@ -332,7 +382,7 @@ const server = http.createServer((req, res) => {
       });
       assert(result.found); assert.equal(result.fallback, 'lyrist'); assert(result.aborted > 0);
       assert.equal(result.manual, 'My own words'); assert.equal(result.source, 'manual'); assert.equal(result.external, 0);
-      assert(result.primary > 0); assert.equal(result.prefetchState, null);
+      assert.equal(result.prefetchState, null); // A provider cooldown may skip network requests altogether.
     });
     await check('verified plain lyrics display without slow providers and persist offline', async ctx => {
       const p = await ctx.newPage(); await p.goto(base + '/__fixture');
@@ -368,7 +418,7 @@ const server = http.createServer((req, res) => {
         calls++;
         const title = new URL(r.request().url()).searchParams.get('track_name');
         await r.fulfill({ json: { id: title === 'First Song' ? 101 : 102, trackName: title, artistName: 'Artist', duration: 10, syncedLyrics: `[00:00.00]${title}\n[00:05.00]Second line` }, headers: { 'access-control-allow-origin': '*' } });
-        if (title === 'Second Song') secondReady();
+        if (calls === 2) secondReady();
       });
       await p.goto(base + '/app/'); const form = p.locator('#side-link-import form');
       for (const name of ['First Song', 'Second Song']) {

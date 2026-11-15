@@ -1,5 +1,6 @@
 import { artistMatch, norm, titleMatch } from './lyrics-web.js';
 import { parseLrc } from './lrc.js';
+import { lyricsJSON } from './lyrics-http.js';
 
 const NOISE = /\b(official|audio|lyrics?|visuali[sz]er|music video|hd|hq|prod\.?|feat\.?|ft\.?|remaster(?:ed)?|sped\s*up|speed\s*up|slowed|reverb|nightcore|remix|edit|version|live|8d)\b/i;
 export function cleanTitle(value) {
@@ -39,77 +40,73 @@ export function pickBest(list, duration, variant = '') {
     return sorted.find(x => x._sure && x.instrumental && timingFits(x)) || null;
 }
 
-// A failed request must not prevent the next query or another provider from running.
-// Three bounded batches: exact recording, artist/title search, then free-text search.
+// Search planner: one precise lookup, then a balanced set of metadata and title
+// queries. Two workers share one deadline; failed queries do not suppress others.
 export async function searchLyrics({ candidates, duration = 0, album = '', variant = '', bad = [] }, { signal } = {}) {
-    const controller = new AbortController(), stop = () => controller.abort();
-    signal?.addEventListener('abort', stop, { once: true });
-    if (signal?.aborted) stop();
-    const deadline = setTimeout(stop, 12000), found = [], seen = new Set();
-    let failures = 0;
-    const request = async params => {
-        if (controller.signal.aborted) { failures++; return null; }
-        const requestController = new AbortController(), abort = () => requestController.abort();
-        controller.signal.addEventListener('abort', abort, { once: true });
-        const timer = setTimeout(abort, 3500);
+    const ctl = new AbortController(), cancel = () => ctl.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    const deadline = setTimeout(cancel, 18000), records = new Map(), diagnostics = [];
+    const unique = [...new Map(candidates.filter(c => c.title).map(c => [norm(c.artist) + '|' + norm(c.title), c])).values()];
+    // Keep different artists before spending the budget on their title variants.
+    const artists = new Set(), primary = [], variants = [];
+    for (const c of unique) { const k = norm(c.artist); (artists.has(k) ? variants : primary).push(c); artists.add(k); }
+    const cands = [...primary, ...variants].slice(0, 6);
+    const titles = [...new Set(cands.map(c => c.title))].slice(0, 4);
+    const accept = (data, infer = false) => {
+        const rows = (Array.isArray(data) ? data : data ? [data] : []).filter(x => x && !bad.includes(x.id) && x.artistName && x.trackName && (x.plainLyrics?.trim() || x.syncedLyrics?.trim() || x.instrumental));
+        for (const x of rows) {
+            const rank = cands.findIndex(c => c.artist && titleMatch(cleanTitle(x.trackName), c.title) && artistMatch(x.artistName, [c.artist]));
+            if (rank < 0 && !infer) continue;
+            const exact = titles.some(title => norm(title).length >= 8 && (norm(cleanTitle(x.trackName)) === norm(title) || norm(x.artistName + x.trackName) === norm(title)));
+            const inferred = rank < 0 && exact && duration > 0 && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2 && recordingVariant(x.trackName) === variant;
+            if (rank < 0 && !inferred) continue;
+            const key = x.id ?? norm(x.artistName) + '|' + norm(x.trackName) + '|' + x.duration;
+            const record = { ...x, _sure: rank >= 0, _inferred: rank < 0, _rank: rank < 0 ? 20 : rank };
+            if (!records.has(key) || (record._sure && !records.get(key)._sure)) records.set(key, record);
+        }
+    };
+    const best = () => {
+        const rows = [...records.values()];
+        const identities = new Set(rows.filter(x => x._inferred).map(x => norm(x.artistName) + '|' + norm(x.trackName)));
+        return pickBest(rows.filter(x => !x._inferred || identities.size === 1), duration, variant);
+    };
+    const request = async (path, params, infer = false) => {
+        if (ctl.signal.aborted) return;
         try {
-            const r = await fetch('https://lrclib.net/api/' + params, { signal: requestController.signal, headers: { Accept: 'application/json' } });
-            if (r.status === 404) return null;
-            if (!r.ok) throw new Error('Lyrics HTTP ' + r.status);
-            return await r.json();
-        } catch { failures++; return null; }
-        finally { clearTimeout(timer); controller.signal.removeEventListener('abort', abort); }
+            const result = await lyricsJSON('https://lrclib.net/api/' + path + '?' + new URLSearchParams(params), { signal: ctl.signal, timeout: 3000 });
+            diagnostics.push({ query: path, status: result.notFound ? 'empty' : 'ok' });
+            if (result.data) accept(result.data, infer);
+        } catch { diagnostics.push({ query: path, status: 'unavailable' }); }
     };
-    const cands = candidates.slice(0, 3);
-    const take = (data, c, rank) => {
-        const rows = Array.isArray(data) ? data : data ? [data] : [];
-        const matches = rows.filter(x => x && titleMatch(cleanTitle(x.trackName || ''), c.title) && (x.syncedLyrics || x.plainLyrics || x.instrumental));
-        const identities = new Set(matches.filter(x => Math.abs(Number(x.duration) - duration) <= 2).map(x => norm(x.artistName)));
-        for (const x of matches) {
-            const sure = !!c.artist && artistMatch(x.artistName || '', [c.artist]);
-            // Untagged files: accept only an unambiguous exact title and matching duration.
-            const inferred = !c.artist && norm(c.title).length >= 8 && norm(cleanTitle(x.trackName)) === norm(c.title) && duration > 0 && Math.abs(Number(x.duration) - duration) <= 2 && identities.size === 1 && recordingVariant(x.trackName) === variant;
-            if ((!sure && !inferred) || seen.has(x.id) || bad.includes(x.id)) continue;
-            seen.add(x.id); found.push({ ...x, _sure: sure, _rank: rank, _inferred: inferred });
-        }
-    };
-    const best = () => pickBest(found, duration, variant);
-    // Repost uploaders and abbreviations (TBK) are not necessarily the catalog artist.
-    // Infer only from a distinctive exact title, known duration and one recording identity.
-    const infer = (data, c) => {
-        if (!Array.isArray(data) || !(duration > 0) || norm(c.title).length < 8) return;
-        const matches = data.filter(x => x && !bad.includes(x.id) && norm(cleanTitle(x.trackName)) === norm(c.title)
-            && x.artistName && Number(x.duration) > 0 && Math.abs(Number(x.duration) - duration) <= 2
-            && recordingVariant(x.trackName) === variant && (x.plainLyrics || x.syncedLyrics));
-        const identities = new Set(matches.map(x => norm(x.artistName) + '|' + norm(x.trackName)));
-        if (identities.size !== 1) return;
-        for (const x of matches) if (!seen.has(x.id)) {
-            seen.add(x.id); found.push({ ...x, _sure: false, _inferred: true, _rank: 10 });
-        }
+    const response = () => {
+        const record = best(), failed = ctl.signal.aborted || diagnostics.some(d => d.status === 'unavailable');
+        return { record, failed, status: record ? 'found' : failed ? 'unavailable' : [...records.values()].some(x => x._inferred) ? 'ambiguous' : 'not-found', diagnostics };
     };
     try {
-        await Promise.all(cands.map(async (c, i) => {
-            if (!c.artist) return;
-            const q = new URLSearchParams({ track_name: c.title, artist_name: c.artist });
-            if (album) q.set('album_name', album);
-            if (duration > 0) q.set('duration', String(Math.round(duration)));
-            take(await request('get?' + q), c, i);
-        }));
-        if (best()) return { record: best(), failed: failures > 0 };
-        await Promise.all(cands.map(async (c, i) => {
-            const q = new URLSearchParams({ track_name: c.title });
-            if (c.artist) q.set('artist_name', c.artist);
-            take(await request('search?' + q), c, i);
-        }));
-        if (best()) return { record: best(), failed: failures > 0 };
-        const titles = [...new Map(cands.map(c => [norm(c.title), c])).values()].filter(c => norm(c.title).length >= 8);
-        await Promise.all(titles.map(async c => infer(await request('search?' + new URLSearchParams({ track_name: c.title })), c)));
-        if (new Set(found.filter(x => x._inferred).map(x => norm(x.artistName) + '|' + norm(x.trackName))).size > 1)
-            for (let i = found.length - 1; i >= 0; i--) if (found[i]._inferred) found.splice(i, 1);
-        if (best()) return { record: best(), failed: failures > 0 };
-        await Promise.all(cands.slice(0,2).map(async (c, i) => take(await request('search?' + new URLSearchParams({ q: `${c.artist} ${c.title}`.trim() })), c, i)));
-        return { record: best(), failed: failures > 0 };
-    } finally {
-        clearTimeout(deadline); stop(); signal?.removeEventListener('abort', stop);
-    }
+        const first = cands.find(c => c.artist);
+        if (first) await request('get', { artist_name: first.artist, track_name: first.title, ...(duration > 0 ? { duration: String(Math.round(duration)) } : {}), ...(album ? { album_name: album } : {}) });
+        if (best()) return response();
+        const jobs = [], seen = new Set();
+        const add = (params, infer = false) => { const key = new URLSearchParams(params).toString(); if (!seen.has(key)) { seen.add(key); jobs.push(() => request('search', params, infer)); } };
+        // Alternate known-artist and title-only searches so bad uploader tags do not
+        // consume the entire deadline before the useful query is attempted.
+        for (let i = 0; i < Math.max(cands.length, titles.length); i++) {
+            const c = cands[i];
+            if (c?.artist) add({ artist_name: c.artist, track_name: c.title });
+            if (titles[i]) add({ track_name: titles[i] }, true);
+        }
+        for (const c of cands.slice(0, 2)) { add({ q: c.title }, true); add({ q: `${c.artist} ${c.title}`.trim() }, !c.artist); }
+        let next = 0;
+        const run = async () => {
+            while (next < Math.min(jobs.length, 10) && !ctl.signal.aborted) {
+                // Only a verified artist match can finish early. Inferred matches
+                // need the remaining title queries to rule out ambiguity.
+                if (best()?._sure) return;
+                await jobs[next++]();
+            }
+        };
+        await Promise.all([run(), run()]);
+        return response();
+    } finally { clearTimeout(deadline); ctl.abort(); signal?.removeEventListener('abort', cancel); }
 }

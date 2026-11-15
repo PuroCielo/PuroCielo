@@ -9,13 +9,14 @@ import { artistMatch, norm as norm_LyricsWeb, titleMatch, webLyrics } from './ly
 import { jsonp } from './jsonp.js';
 import { isNative, nativeFetchText } from './native.js';
 import { geniusLyrics } from './genius.js';
+import { lyricsJSON } from './lyrics-http.js';
 import { cleanTitle, titleVariants, recordingVariant, searchLyrics } from './lyrics-search.js';
 export { cleanTitle, pickBest } from './lyrics-search.js';
 
 // Автоматический поиск текста песни.
 // Порядок: встроенные теги (USLT/SYLT) и .lrc → кэш → онлайн-база LRCLIB (по артисту, названию и длительности).
 // Если текст не найден — в плеере показывается «Текст не найден». Само аудио приложение не «распознаёт».
-const MISS_TTL = 30 * 60 * 1000; // короткий кэш промахов: новые тексты появляются постоянно
+const MISS_TTL = 10 * 60 * 1000; // короткий кэш промахов: новые тексты появляются постоянно
 // Исполнители трека без «Неизвестного артиста»
 const realArtists = t => (t._artists || splitArtists(t.artist)).filter(a => a && a !== UNKNOWN);
 const primaryArtist = t => realArtists(t)[0] || '';
@@ -31,7 +32,7 @@ export function candidates(t) {
     };
     const arts = realArtists(t);
     const title = cleanTitle(t.title);
-    const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
+    const dash = /^(.+?)(?:\s+[-–—]\s*|\s*[-–—]\s+|[–—])(.+)$/.exec(title);
     if (dash) { // «hitmar - plan»: пробуем артиста из названия, затем исходные теги
         // SoundCloud uploader names often differ from the artist inside the title.
         add(dash[1], dash[2]);
@@ -40,17 +41,22 @@ export function candidates(t) {
         add(a, title);
     if (!arts.length && t._guess) // артист, узнанный по названию и длине (см. identify)
         add(t._guess, title);
-    if (!arts.length) {
-        const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
-        if (f)
-            add(f[1], f[2]);
-        add('', title);
-    }
+    const f = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(t.name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' '));
+    if (f) add(f[1], f[2]); // Filename evidence is useful even when uploader tags exist.
+    if (!arts.length) add('', title);
     return out;
 }
 // Песня для хранения текста: «артист + название + длина». Не зависит от файла и от версии поиска.
 const songKey = t => `${norm(primaryArtist(t))}|${norm(cleanTitle(t.title))}|${Math.round(t.duration || 0)}${recordingVariant(t.title) ? '|' + recordingVariant(t.title) : ''}`;
-const keyOf = t => `v9|${songKey(t)}`; // ordinary misses must be retried after catalog matching improves
+const keyOf = t => `v10|${songKey(t)}`;
+const hitKey = t => `hit|${songKey(t)}`;
+async function cachedLyrics(t) {
+    for (const key of [hitKey(t), `v9|${songKey(t)}`, keyOf(t)]) {
+        const value = await lyGet(key);
+        if (value?.ly || key === keyOf(t) && value?.miss) return value;
+    }
+    return null;
+}
 const okKey = t => 'ok|' + songKey(t); // точные тексты: хранятся всегда и уходят в аккаунт
 // «Точный» текст — тот, в котором мы уверены: совпали и название, и артист, либо текст вписал сам пользователь.
 // Его больше не ищем: он лежит на устройстве постоянно и синхронизируется через аккаунт.
@@ -97,24 +103,7 @@ function toLyrics(d) {
         return { type: 'plain', text: d.plainLyrics.trim(), source: 'lrclib', ref: d.id, sure: !!d._sure };
     return null;
 }
-async function getJSON(url, ms = 6000, signal) {
-    const ctl = new AbortController();
-    const abort = () => ctl.abort();
-    signal?.addEventListener('abort', abort, { once: true });
-    if (signal?.aborted) abort();
-    const timer = setTimeout(abort, ms);
-    try {
-        const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
-        if (r.status === 404)
-            return { notFound: true };
-        if (!r.ok)
-            throw new Error('HTTP ' + r.status);
-        return { data: await r.json() };
-    }
-    finally {
-        clearTimeout(timer); signal?.removeEventListener('abort', abort);
-    }
-}
+async function getJSON(url, ms = 4000, signal) { return lyricsJSON(url, { signal, timeout: Math.min(ms, 4000) }); }
 // У файла нет артиста в тегах — узнаём его по названию и длине в каталогах Deezer и iTunes.
 // Берём, только если название совпало, а длина отличается не больше чем на 2 секунды.
 export async function identifyArtist(t) {
@@ -128,7 +117,7 @@ export async function peekLyrics(t) {
         return !!t?.lyrics;
     if (!t._manualChecked && await applyManual(t))
         return true;
-    for (const k of [okKey(t), keyOf(t)]) {
+    for (const k of [okKey(t), hitKey(t), `v9|${songKey(t)}`, keyOf(t)]) {
         const r = await lyGet(k).catch(() => null);
         if (r && r.ly) {
             t.lyrics = r.ly;
@@ -156,12 +145,12 @@ async function identify(t) {
         if (new Set(matches.map(x => norm_LyricsWeb(x.artist))).size === 1) t._guess = matches[0].artist;
     } catch { /* Catalog failures do not stop lyrics providers. */ }
 }
-async function lookup(t, bad = []) {
+async function lookup(t, bad = [], signal) {
     // Search the lyrics catalog first. Metadata catalogs are a fallback for truly untagged files.
-    let result = await searchLyrics({ candidates: candidates(t), duration: t.duration, album: t.album, variant: recordingVariant(t.title), bad });
+    let result = await searchLyrics({ candidates: candidates(t), duration: t.duration, album: t.album, variant: recordingVariant(t.title), bad }, { signal });
     if (!result.record && !realArtists(t).length && !candidates(t).some(c => c.artist)) {
         await identify(t);
-        if (t._guess) result = await searchLyrics({ candidates: candidates(t), duration: t.duration, album: t.album, variant: recordingVariant(t.title), bad });
+        if (t._guess) result = await searchLyrics({ candidates: candidates(t), duration: t.duration, album: t.album, variant: recordingVariant(t.title), bad }, { signal });
     }
     return result;
 }
@@ -174,10 +163,11 @@ function abortable(task, signal) {
         Promise.resolve().then(task).then(resolve, () => resolve(null)).finally(() => signal?.removeEventListener('abort', abort));
     });
 }
-async function bounded(task, ms) {
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
+async function bounded(task, ms, parent) {
+    const ctl = new AbortController(), abort = () => ctl.abort(), timer = setTimeout(abort, ms);
+    parent?.addEventListener('abort', abort, { once: true }); if (parent?.aborted) abort();
     try { return await abortable(() => task(ctl.signal), ctl.signal); }
-    finally { clearTimeout(timer); ctl.abort(); }
+    finally { clearTimeout(timer); ctl.abort(); parent?.removeEventListener('abort', abort); }
 }
 async function firstFound(tasks, signal) {
     return abortable(() => new Promise(resolve => {
@@ -208,16 +198,16 @@ function siteFetcher(signal) {
     return null;
 }
 // Genius — основной источник обычного текста
-async function fromGenius(t, skip, signal) {
+async function fromGenius(t, skip, signal, health) {
     if (typeof window === 'undefined')
         return null;
     const cands = candidates(t).filter(c => c.title);
     if (!cands.length)
         return null;
     try {
-        const g = await geniusLyrics(cands, realArtists(t), siteFetcher(signal), skip, { signal });
+        const g = await geniusLyrics(cands, realArtists(t), siteFetcher(signal), skip, { signal, onUnavailable: () => { health.failed = true; } });
         if (g)
-            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: realArtists(t).length > 0 }; // артист из тегов совпал — уверены
+            return { type: 'plain', text: g.text, source: 'genius', ref: g.ref, sure: false }; // артист из тегов совпал — уверены
     }
     catch { /* дальше */ }
     if (!signal?.aborted && window.PuroDesktop && window.PuroDesktop.genius && !skip.length) { // старое приложение для Windows
@@ -231,18 +221,19 @@ async function fromGenius(t, skip, signal) {
     return null;
 }
 // Доп. источники. Свой сервер (Cloudflare Worker) отдаёт NetEase с метками времени и Genius.
-async function fromOVH(t, skip, signal) {
+async function fromOVH(t, skip, signal, health) {
     const c = candidates(t)[0];
     if (!c?.artist || skip.includes('ovh')) return null;
     try {
         const r = await getJSON(`https://api.lyrics.ovh/v1/${encodeURIComponent(c.artist)}/${encodeURIComponent(c.title)}`, 6500, signal);
         const text = String(r.data?.lyrics || '').replace(/^Paroles de la chanson[^\n]*\n/i, '').trim();
-        const title = norm_LyricsWeb(c.title);
-        if (text && title.length >= 4 && norm_LyricsWeb(text).includes(title)) return { type: 'plain', text, source: 'lyrics.ovh', ref: 'ovh' };
-    } catch { /* independent source */ }
+        // Many songs never say their title in the lyrics. The endpoint already
+        // specifies artist/title; keep this result unverified for account sync.
+        if (text.length >= 40 && text.split('\n').filter(l => l.trim()).length >= 4 && !/<html|<script/i.test(text)) return { type: 'plain', text, source: 'lyrics.ovh', ref: 'ovh' };
+    } catch { if (!signal?.aborted) health.failed = true; }
     return null;
 }
-async function extraSources(t, skip, signal) {
+async function extraSources(t, skip, signal, health) {
     const c = candidates(t)[0] || { artist: primaryArtist(t), title: cleanTitle(t.title) };
     const { artist, title } = c, proxy = (state.settings.lyricsProxy || '').replace(/\/+$/, '');
     const fetchText = siteFetcher(signal), tasks = [];
@@ -266,12 +257,15 @@ async function extraSources(t, skip, signal) {
         return d?.lyrics?.trim() && titleMatch(d.title || '', title) && artistMatch(d.artist || '', [artist])
             ? { type: 'plain', text: d.lyrics.trim(), source: 'lyrist', ref: 'lyrist', sure: true } : null;
     });
-    return firstFound(tasks, signal);
+    return firstFound(tasks.map(task => async () => { try { return await task(); } catch { if (!signal?.aborted) health.failed = true; return null; } }), signal);
 }
-async function fallbackLyrics(t, skip) {
-    return bounded(signal => firstFound([
-        () => fromGenius(t, skip, signal), () => fromOVH(t, skip, signal), () => extraSources(t, skip, signal),
-    ], signal), 15000);
+async function fallbackLyrics(t, skip, parent) {
+    const health = { failed: false };
+    let settled = false;
+    const ly = await bounded(async signal => { const result = await firstFound([
+        () => fromGenius(t, skip, signal, health), () => fromOVH(t, skip, signal, health), () => extraSources(t, skip, signal, health),
+    ], signal); settled = !signal.aborted; return result; }, 12000, parent);
+    return { ly, failed: health.failed || !settled || !!parent?.aborted };
 }
 // ---- сдвиг синхронизации для конкретного трека (секунды) ----
 export async function getOffset(t) { try {
@@ -282,7 +276,7 @@ catch {
     return 0;
 } }
 export async function setOffset(t, off) { off = Math.round(off * 10) / 10; t._off = off; await lySet('off:' + t.id, { off, at: Date.now() }); }
-const running = new Map();
+const running = new Map(), controllers = new Map();
 // Возвращает true, если у трека появился текст. t._ly: 'loading' | 'none' | undefined
 // ---- свои тексты: вставленные или загруженные из файла вручную ----
 const lyFromText = text => { const p = parseLrc(text); return p.synced ? { type: 'synced', lines: p.lines, source: 'manual' } : { type: 'plain', text: String(text).trim(), source: 'manual' }; };
@@ -296,6 +290,7 @@ export function rawLyrics(t) {
     return ly.lines.map(l => f(l.t) + l.text).join('\n');
 }
 export async function setManualLyrics(t, text) {
+    controllers.get(t.id)?.abort();
     t._lyRevision = (t._lyRevision || 0) + 1;
     text = String(text || '').trim();
     await lySet('manual:' + t.id, { text, at: Date.now() });
@@ -307,9 +302,11 @@ export async function setManualLyrics(t, text) {
     text ? keepSure(t, { ...t.lyrics, sure: true }) : dropSure(t); // свой текст — точный по определению
 }
 async function applyManual(t) {
+    const revision = t._lyRevision || 0;
     t._manualChecked = true;
     try {
         const m = await lyGet('manual:' + t.id);
+        if ((t._lyRevision || 0) !== revision) return !!t.lyrics;
         if (m && m.text) {
             t.lyrics = lyFromText(m.text);
             t._ly = undefined;
@@ -328,13 +325,14 @@ export async function rejectLyrics(t) {
     if (!isFoundOnline(ly))
         return false;
     t._lyRevision = (t._lyRevision || 0) + 1;
+    controllers.get(t.id)?.abort();
     const bad = (await lyGet('bad|' + t.id).catch(() => null)) || { ids: [] };
     if (ly.ref != null)
         bad.ids = [...new Set([...(bad.ids || []), ly.ref])];
     else
         bad.all = true; // текст с сайта или другого сервиса — больше не ищем автоматически
     await lySet('bad|' + t.id, bad);
-    await lySet(keyOf(t), { at: 0 });
+    await Promise.all([keyOf(t), hitKey(t), `v9|${songKey(t)}`].map(k => lySet(k, { at: 0 })));
     await dropSure(t);
     t.lyrics = null;
     t._ly = undefined;
@@ -351,8 +349,9 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
     if (running.has(t.id))
         return running.get(t.id);
     if (!t.lyrics) t._ly = 'loading';
+    const ctl = new AbortController(); controllers.set(t.id, ctl);
     const revision = t._lyRevision || 0, identity = songKey(t);
-    const unchanged = () => (t._lyRevision || 0) === revision && songKey(t) === identity;
+    const unchanged = () => !ctl.signal.aborted && (t._lyRevision || 0) === revision && songKey(t) === identity;
     const p = (async () => {
         const key = keyOf(t);
         try {
@@ -363,7 +362,7 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             const sure = await lyGet(okKey(t)).catch(() => null);
             if (sure && sure.ly)
                 return use(sure.ly);
-            const cached = await lyGet(key);
+            const cached = await cachedLyrics(t);
             if (cached?.ly) return use(cached.ly);
             // 2) сохранённый текст из аккаунта, если на устройстве ещё ничего нет
             const sk = songKey(t);
@@ -401,15 +400,17 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
                 return false;
             }
             if (t._lyForeground) t._lyAttempt = Date.now();
-            const result = await lookup(t, bad.ids || []), d = result.record;
+            const result = await lookup(t, bad.ids || [], ctl.signal), d = result.record;
+            t._lyDiagnostics = result.diagnostics;
             if (!unchanged() || t.lyrics) return !!t.lyrics;
             let ly = d && !d.instrumental ? toLyrics(d) : null;
             // Display a verified plain result immediately; optional providers are only for misses.
             if (!ly && !t._lyForeground) { t._ly = undefined; return false; }
-            if (!ly && !d?.instrumental) ly = await fallbackLyrics(t, bad.ids || []);
+            let fallbackFailed = false;
+            if (!ly && !d?.instrumental) { const fallback = await fallbackLyrics(t, bad.ids || [], ctl.signal); ly = fallback.ly; fallbackFailed = fallback.failed; }
             if (!unchanged() || t.lyrics) return !!t.lyrics;
             if (ly) {
-                lySet(key, { ly, at: Date.now() });
+                lySet(hitKey(t), { ly, at: Date.now() });
                 if (ly.sure) keepSure(t, ly);
                 const used = use(ly);
                 const edits = state.tagEdits[t.id] || {};
@@ -417,12 +418,12 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
                     await saveCatalogIdentity(t, d);
                     if (unchanged()) {
                         touchLibrary(); derived(); emit('track-meta', t);
-                        lySet(keyOf(t), { ly, at: Date.now() });
+                        lySet(hitKey(t), { ly, at: Date.now() });
                     }
                 }
                 return used;
             }
-            if (result.failed) { t._ly = 'error'; return false; }
+            if (result.failed || fallbackFailed) { t._ly = 'error'; return false; }
             lySet(key, { miss: true, instrumental: !!(d && d.instrumental), at: Date.now() });
             t._ly = 'none';
             return false;
@@ -432,7 +433,7 @@ export function ensureLyrics(t, { retryMiss = false, prefetch = false } = {}) {
             return false;
         } // нет сети / сервис недоступен — не запоминаем как «нет текста»
         finally {
-            running.delete(t.id);
+            running.delete(t.id); controllers.delete(t.id);
             t._lyRetryRequested = false;
             t._lyForeground = false;
             emit('lyrics-state', t);

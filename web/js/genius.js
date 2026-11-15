@@ -39,21 +39,22 @@ async function fetchAny(u, fetchText, test, signal) {
     const order = routes.map((_, i) => i);
     if (goodRoute >= 0)
         order.sort((a, b) => (b === goodRoute) - (a === goodRoute));
-    for (const i of order) {
-        if (signal?.aborted) return '';
-        if (!routes[i])
-            continue;
-        let txt = '';
-        try {
-            txt = await routes[i]();
+    let next = 0, winner = '';
+    const run = async () => {
+        while (next < order.length && !winner && !signal?.aborted) {
+            const i = order[next++];
+            if (!routes[i]) continue;
+            try {
+                const txt = await routes[i]();
+                if (!winner && txt && test(txt)) { winner = txt; goodRoute = i; return; }
+            } catch { /* another independent route may still work */ }
         }
-        catch { /* следующий */ }
-        if (txt && test(txt)) {
-            goodRoute = i;
-            return txt;
-        }
-    }
-    return '';
+    };
+    // Return as soon as one route succeeds, without waiting for dead proxies.
+    return new Promise(resolve => {
+        let left = 3;
+        for (let i = 0; i < 3; i++) run().finally(() => { if (winner || --left === 0) resolve(winner); });
+    });
 }
 const NOT_SONG = /\b(translations?|перевод|переклад|romanized|türkçe|traducción|tradução|übersetzung)\b/i;
 // выбор песни из ответа поиска Genius: то же название и тот же артист; без переводов и пересказов
@@ -148,7 +149,7 @@ export function cleanup(t) {
 const enough = t => !!t && t.split('\n').filter(l => l.trim()).length >= 4;
 const looksJson = s => /^\s*\{/.test(s) && s.includes('"response"');
 // cands: [{ artist, title }] — варианты из тегов/имени файла; artists — все артисты трека
-export async function geniusLyrics(cands, artists, fetchText, skip = [], { signal } = {}) {
+export async function geniusLyrics(cands, artists, fetchText, skip = [], { signal, onUnavailable = () => {} } = {}) {
     const seen = new Set();
     const queries = [];
     for (const c of cands) {
@@ -164,8 +165,7 @@ export async function geniusLyrics(cands, artists, fetchText, skip = [], { signa
         let hit = null;
         for (const ep of ['search/song', 'search/multi']) {
             const raw = await fetchAny(`https://genius.com/api/${ep}?per_page=10&q=${encodeURIComponent(q)}`, fetchText, looksJson, signal);
-            if (!raw)
-                break; // поиск недоступен ни одним путём
+            if (!raw) { onUnavailable(); break; } // поиск недоступен ни одним путём
             try {
                 hit = pickGenius(JSON.parse(raw), arts, c.title, skip);
             }
@@ -187,6 +187,7 @@ export async function geniusLyrics(cands, artists, fetchText, skip = [], { signa
         }
         if (enough(text))
             return { text, ref: 'genius:' + hit.id };
+        if (!signal?.aborted) onUnavailable();
     }
     return null;
 }
