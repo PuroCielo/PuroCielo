@@ -828,11 +828,10 @@ select.input { appearance: auto; }
 :root.has-glow:not([data-theme="light"]):not(.no-bg-cover) .bg-glow { opacity: .3; }
 :root:not([data-theme="light"]) .bg-cover { display: none; }
 @media (max-width: 899px) { .bg-glow { left: -24vmax; top: -26vmax; width: 90vmax; height: 90vmax; } }
-/* «Сейчас играет», тёмная тема: свечение прямо за обложкой */
-:root:not([data-theme="light"]) .np-bg img { display: none; }
-:root:not([data-theme="light"]) .np-bg::before { content: ""; position: absolute; left: -16vmax; top: -10vmax; width: 74vmax; height: 74vmax; border-radius: 50%; background: radial-gradient(circle, var(--c1) 0%, transparent 60%); filter: blur(80px); opacity: .4; }
-:root:not([data-theme="light"]) .np-bg::after { background: none; }
-:root.no-bg-cover:not([data-theme="light"]) .np-bg::before { opacity: 0; }
+/* «Сейчас играет»: размытая обложка по всему экрану с тёмной подложкой. */
+:root:not([data-theme="light"]) .np-bg img { display: block; opacity: .85; filter: blur(80px) saturate(1.5); max-width: none; max-height: none; }
+:root:not([data-theme="light"]) .np-bg::after { background: linear-gradient(to bottom, rgba(9, 9, 11, .5), rgba(9, 9, 11, .72)); opacity: 1; }
+:root.no-bg-cover:not([data-theme="light"]) .np-bg img { display: none; }
 /* светлая тема: свет от обложки */
 :root[data-theme="light"] .bg-glow { display: none; }
 :root[data-theme="light"] .bg-cover { inset: -18%; filter: blur(90px) saturate(1.5); animation: bgDrift 30s ease-in-out infinite alternate; }
