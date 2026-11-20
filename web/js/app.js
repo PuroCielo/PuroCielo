@@ -352,7 +352,7 @@ function doAction(el, e) {
                 toast('Проверяю папку…', 'info', 1500);
                 rescan();
             }
-            rescanMetadata().catch(() => toast('Не удалось пересканировать медиатеку', 'err'));
+            rescanLibrary().catch(() => toast('Не удалось пересканировать медиатеку', 'err'));
             break;
         case 'import-m3u':
             $('#m3u-input').click();
@@ -650,6 +650,27 @@ async function peekAll() {
 }
 const fixStep = label => { fixBusy = label; if (route().name === 'fix')
     render({ keepScroll: true }); };
+let libraryScanBusy = false;
+async function rescanLibrary() {
+    if (libraryScanBusy) return;
+    libraryScanBusy = true;
+    try {
+        await rescanMetadata();
+        if (navigator.onLine === false) return;
+        const tracks = derived().all.filter(track => !track.artist);
+        if (!tracks.length) return;
+        toast(`Ищу исполнителей: ${tracks.length}`, 'info');
+        let found = 0;
+        for (const track of tracks) {
+            const artist = await identifyArtist(track);
+            if (artist && state.tracks.has(track.id) && !getTrack(track.id).artist) {
+                setTagEdit(track.id, { ...state.tagEdits[track.id], artist });
+                found++;
+            }
+        }
+        toast(`Найдено исполнителей: ${found} из ${tracks.length}`, 'info');
+    } finally { libraryScanBusy = false; }
+}
 async function fixAll() {
     if (fixBusy)
         return;

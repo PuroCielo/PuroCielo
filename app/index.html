@@ -1619,7 +1619,7 @@ function doAction(el, e) {
                 (0, ui_js_1.toast)('Проверяю папку…', 'info', 1500);
                 (0, native_js_1.rescan)();
             }
-            (0, importer_js_1.rescanMetadata)().catch(() => (0, ui_js_1.toast)('Не удалось пересканировать медиатеку', 'err'));
+            rescanLibrary().catch(() => (0, ui_js_1.toast)('Не удалось пересканировать медиатеку', 'err'));
             break;
         case 'import-m3u':
             (0, util_js_1.$)('#m3u-input').click();
@@ -1927,6 +1927,33 @@ const fixStep = label => {
     if (route().name === 'fix')
         render({ keepScroll: true });
 };
+let libraryScanBusy = false;
+async function rescanLibrary() {
+    if (libraryScanBusy)
+        return;
+    libraryScanBusy = true;
+    try {
+        await (0, importer_js_1.rescanMetadata)();
+        if (navigator.onLine === false)
+            return;
+        const tracks = (0, state_js_1.derived)().all.filter(track => !track.artist);
+        if (!tracks.length)
+            return;
+        (0, ui_js_1.toast)(`Ищу исполнителей: ${tracks.length}`, 'info');
+        let found = 0;
+        for (const track of tracks) {
+            const artist = await (0, lyrics_auto_js_1.identifyArtist)(track);
+            if (artist && state_js_1.state.tracks.has(track.id) && !(0, state_js_1.getTrack)(track.id).artist) {
+                (0, state_js_1.setTagEdit)(track.id, { ...state_js_1.state.tagEdits[track.id], artist });
+                found++;
+            }
+        }
+        (0, ui_js_1.toast)(`Найдено исполнителей: ${found} из ${tracks.length}`, 'info');
+    }
+    finally {
+        libraryScanBusy = false;
+    }
+}
 async function fixAll() {
     if (fixBusy)
         return;
