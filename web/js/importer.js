@@ -69,6 +69,33 @@ export async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl,
         _albumInfo: albumInfo, lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
 }
+let rescanning = false;
+export async function rescanMetadata() {
+    if (rescanning) return;
+    rescanning = true;
+    let updated = 0, failed = 0;
+    toast('Перечитываю теги файлов…', 'info');
+    try {
+        const records = await allFiles();
+        await pool(records || [], 3, async record => {
+            const track = state.tracks.get(record.id);
+            if (!track) return;
+            try {
+                const file = record.native ? new RemoteFile(track.url, record.size, record.name) : record.blob;
+                if (!file) return;
+                const meta = await readMeta(file, record.name);
+                const original = track._orig || track;
+                const tags = {};
+                for (const key of ['title', 'artist', 'album', 'albumArtist', 'year'])
+                    tags[key] = meta[key] || original[key] || '';
+                track._orig = tags;
+                updated++;
+            } catch { failed++; }
+        });
+        touchLibrary();
+        toast(`Пересканировано: ${updated}${failed ? `. Ошибок: ${failed}` : ''}`, failed ? 'warn' : 'info');
+    } finally { rescanning = false; }
+}
 export async function restoreLibrary() {
     const recs = await allFiles();
     if (!recs || !recs.length)

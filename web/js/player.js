@@ -141,30 +141,41 @@ function stopFade() {
     if (fadeGain && actx)
         fadeGain.gain.cancelScheduledValues(actx.currentTime), fadeGain.gain.value = 1;
 }
-function crossfade(sec) {
+async function crossfade(sec) {
     const ni = nextIndex();
-    if (ni < 0)
-        return false;
-    stopFade();
-    const ghost = new Audio(audio.currentSrc || audio.src);
+    if (ni < 0 || fading) return false;
+    const source = audio.src;
+    const ghost = new Audio(audio.currentSrc || source);
     ghost.playbackRate = audio.playbackRate;
-    ghost.currentTime = audio.currentTime;
-    const vol = (P.muted ? 0 : state.volume) * Math.min(1, lin(normDb(current()))); // уходящая песня — с её поправкой громкости
-    ghost.volume = vol;
-    ghost.play().catch(() => { });
-    const t0 = performance.now(), ms = sec * 1000;
-    fading = { ghost, timer: setInterval(() => {
-            const k = Math.min(1, (performance.now() - t0) / ms);
-            ghost.volume = Math.max(0, vol * (1 - k));
-            if (k >= 1 || ghost.ended)
-                stopFade();
-        }, 50) };
-    const ghostRef = fading;
-    P.idx = ni;
-    load(true, { fadeIn: sec });
-    if (fading !== ghostRef) // load() не должен гасить только что запущенный переход
-        fading = ghostRef;
-    return true;
+    ghost.volume = 0;
+    const transition = { ghost, timer: null };
+    fading = transition;
+    try {
+        ghost.currentTime = audio.currentTime;
+        await ghost.play();
+        if (fading !== transition || audio.paused || audio.src !== source) {
+            ghost.pause();
+            return false;
+        }
+        ghost.currentTime = audio.currentTime;
+        const duration = Math.min(sec, (audio.duration - audio.currentTime) / audio.playbackRate);
+        if (duration <= 0) { stopFade(); return false; }
+        const started = performance.now();
+        const normalization = Math.min(1, lin(normDb(current())));
+        ghost.volume = (P.muted ? 0 : state.volume) * normalization;
+        transition.timer = setInterval(() => {
+            const progress = Math.min(1, (performance.now() - started) / (duration * 1000));
+            ghost.volume = (P.muted ? 0 : state.volume) * normalization * (1 - progress);
+            if (progress >= 1 || ghost.ended) stopFade();
+        }, 50);
+        P.idx = ni;
+        load(true, { fadeIn: duration });
+        return true;
+    } catch (error) {
+        if (fading === transition) stopFade();
+        console.warn('Не удалось запустить плавный переход', error);
+        return false;
+    }
 }
 function warmNext() {
     const ni = nextIndex(), t = ni >= 0 ? getTrack(P.queue[ni]) : null;
@@ -223,10 +234,15 @@ function load(autoplay = true, { fadeIn = 0 } = {}) {
         if (fadeGain && actx) {
             fadeGain.gain.cancelScheduledValues(actx.currentTime);
             fadeGain.gain.setValueAtTime(fadeIn ? 0.0001 : 1, actx.currentTime);
-            if (fadeIn)
-                fadeGain.gain.linearRampToValueAtTime(1, actx.currentTime + fadeIn);
+
         }
-        audio.play().catch(err => { if (err.name !== 'AbortError')
+        audio.play().then(() => {
+            if (fadeIn && fadeGain && actx && current()?.id === t.id) {
+                fadeGain.gain.cancelScheduledValues(actx.currentTime);
+                fadeGain.gain.setValueAtTime(0.0001, actx.currentTime);
+                fadeGain.gain.linearRampToValueAtTime(1, actx.currentTime + fadeIn);
+            }
+        }).catch(err => { if (err.name !== 'AbortError')
             console.warn(err); });
     }
     pushRecent(t.id);

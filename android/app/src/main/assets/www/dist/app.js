@@ -481,6 +481,7 @@ function doAction(el, e) {
                 (0, ui_js_1.toast)('Проверяю папку…', 'info', 1500);
                 (0, native_js_1.rescan)();
             }
+            (0, importer_js_1.rescanMetadata)().catch(() => (0, ui_js_1.toast)('Не удалось пересканировать медиатеку', 'err'));
             break;
         case 'import-m3u':
             (0, util_js_1.$)('#m3u-input').click();
@@ -2644,6 +2645,7 @@ function icon(name, cls = '') {
 defs["importer.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildTrack = buildTrack;
+exports.rescanMetadata = rescanMetadata;
 exports.restoreLibrary = restoreLibrary;
 exports.importDownloadedAudio = importDownloadedAudio;
 exports.importFiles = importFiles;
@@ -2724,6 +2726,42 @@ async function buildTrack({ id, blob, name, lrc, addedAt, url: remoteUrl, coverB
         bits: meta.bits || 0, codec: meta.codec || (0, util_js_1.extOf)(name).toUpperCase(), channels: meta.channels || 0,
         _albumInfo: albumInfo, lyrics: lyricsFrom(meta, lrc), hasLrc: !!lrc, addedAt: addedAt || Date.now(),
     };
+}
+let rescanning = false;
+async function rescanMetadata() {
+    if (rescanning)
+        return;
+    rescanning = true;
+    let updated = 0, failed = 0;
+    (0, ui_js_1.toast)('Перечитываю теги файлов…', 'info');
+    try {
+        const records = await (0, db_js_1.allFiles)();
+        await pool(records || [], 3, async (record) => {
+            const track = state_js_1.state.tracks.get(record.id);
+            if (!track)
+                return;
+            try {
+                const file = record.native ? new native_js_1.RemoteFile(track.url, record.size, record.name) : record.blob;
+                if (!file)
+                    return;
+                const meta = await (0, tags_js_1.readMeta)(file, record.name);
+                const original = track._orig || track;
+                const tags = {};
+                for (const key of ['title', 'artist', 'album', 'albumArtist', 'year'])
+                    tags[key] = meta[key] || original[key] || '';
+                track._orig = tags;
+                updated++;
+            }
+            catch {
+                failed++;
+            }
+        });
+        (0, state_js_1.touchLibrary)();
+        (0, ui_js_1.toast)(`Пересканировано: ${updated}${failed ? `. Ошибок: ${failed}` : ''}`, failed ? 'warn' : 'info');
+    }
+    finally {
+        rescanning = false;
+    }
 }
 async function restoreLibrary() {
     const recs = await (0, db_js_1.allFiles)();
@@ -5683,9 +5721,25 @@ function frame() {
 function startLoop() {
     if (raf)
         return;
-    const loop = () => { const more = frame(); raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0; };
+    let lastFrame = 0;
+    const loop = now => {
+        if (document.hidden) {
+            raf = 0;
+            return;
+        }
+        const interval = npOpen ? 1000 / 30 : 100;
+        if (now - lastFrame < interval) {
+            raf = requestAnimationFrame(loop);
+            return;
+        }
+        lastFrame = now;
+        const more = frame();
+        raf = (0, player_js_1.isPlaying)() || more ? requestAnimationFrame(loop) : 0;
+    };
     raf = requestAnimationFrame(loop);
 }
+document.addEventListener('visibilitychange', () => { if (!document.hidden)
+    startLoop(); });
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state_js_1.state.settings.showLyrics !== false;
 function toggleLyrics() {
@@ -5708,7 +5762,7 @@ function setPane(p) {
     if (changed && p === 'lyrics' && (0, player_js_1.current)())
         (0, lyrics_auto_js_1.ensureLyrics)((0, player_js_1.current)(), { retryMiss: true });
     np.dataset.pane = p;
-    if (changed && npOpen)
+    if (changed && npOpen && p !== 'player')
         (0, motion_js_1.revealElement)(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
     (0, util_js_1.$)('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
 }
@@ -6125,30 +6179,48 @@ function stopFade() {
     if (fadeGain && actx)
         fadeGain.gain.cancelScheduledValues(actx.currentTime), fadeGain.gain.value = 1;
 }
-function crossfade(sec) {
+async function crossfade(sec) {
     const ni = nextIndex();
-    if (ni < 0)
+    if (ni < 0 || fading)
         return false;
-    stopFade();
-    const ghost = new Audio(exports.audio.currentSrc || exports.audio.src);
+    const source = exports.audio.src;
+    const ghost = new Audio(exports.audio.currentSrc || source);
     ghost.playbackRate = exports.audio.playbackRate;
-    ghost.currentTime = exports.audio.currentTime;
-    const vol = (exports.P.muted ? 0 : state_js_1.state.volume) * Math.min(1, lin(normDb((0, exports.current)()))); // уходящая песня — с её поправкой громкости
-    ghost.volume = vol;
-    ghost.play().catch(() => { });
-    const t0 = performance.now(), ms = sec * 1000;
-    fading = { ghost, timer: setInterval(() => {
-            const k = Math.min(1, (performance.now() - t0) / ms);
-            ghost.volume = Math.max(0, vol * (1 - k));
-            if (k >= 1 || ghost.ended)
+    ghost.volume = 0;
+    const transition = { ghost, timer: null };
+    fading = transition;
+    try {
+        ghost.currentTime = exports.audio.currentTime;
+        await ghost.play();
+        if (fading !== transition || exports.audio.paused || exports.audio.src !== source) {
+            ghost.pause();
+            return false;
+        }
+        ghost.currentTime = exports.audio.currentTime;
+        const duration = Math.min(sec, (exports.audio.duration - exports.audio.currentTime) / exports.audio.playbackRate);
+        if (duration <= 0) {
+            stopFade();
+            return false;
+        }
+        const started = performance.now();
+        const normalization = Math.min(1, lin(normDb((0, exports.current)())));
+        ghost.volume = (exports.P.muted ? 0 : state_js_1.state.volume) * normalization;
+        transition.timer = setInterval(() => {
+            const progress = Math.min(1, (performance.now() - started) / (duration * 1000));
+            ghost.volume = (exports.P.muted ? 0 : state_js_1.state.volume) * normalization * (1 - progress);
+            if (progress >= 1 || ghost.ended)
                 stopFade();
-        }, 50) };
-    const ghostRef = fading;
-    exports.P.idx = ni;
-    load(true, { fadeIn: sec });
-    if (fading !== ghostRef) // load() не должен гасить только что запущенный переход
-        fading = ghostRef;
-    return true;
+        }, 50);
+        exports.P.idx = ni;
+        load(true, { fadeIn: duration });
+        return true;
+    }
+    catch (error) {
+        if (fading === transition)
+            stopFade();
+        console.warn('Не удалось запустить плавный переход', error);
+        return false;
+    }
 }
 function warmNext() {
     const ni = nextIndex(), t = ni >= 0 ? (0, state_js_1.getTrack)(exports.P.queue[ni]) : null;
@@ -6207,10 +6279,14 @@ function load(autoplay = true, { fadeIn = 0 } = {}) {
         if (fadeGain && actx) {
             fadeGain.gain.cancelScheduledValues(actx.currentTime);
             fadeGain.gain.setValueAtTime(fadeIn ? 0.0001 : 1, actx.currentTime);
-            if (fadeIn)
-                fadeGain.gain.linearRampToValueAtTime(1, actx.currentTime + fadeIn);
         }
-        exports.audio.play().catch(err => {
+        exports.audio.play().then(() => {
+            if (fadeIn && fadeGain && actx && (0, exports.current)()?.id === t.id) {
+                fadeGain.gain.cancelScheduledValues(actx.currentTime);
+                fadeGain.gain.setValueAtTime(0.0001, actx.currentTime);
+                fadeGain.gain.linearRampToValueAtTime(1, actx.currentTime + fadeIn);
+            }
+        }).catch(err => {
             if (err.name !== 'AbortError')
                 console.warn(err);
         });
@@ -8403,7 +8479,7 @@ async function saveCatalogIdentity(t, record) {
 const isUploadChannel = value => /\baudios?\s+station\b/i.test(String(value || ''));
 exports.isUploadChannel = isUploadChannel;
 function trackIdentity(raw) {
-    if (!(0, exports.isUploadChannel)(raw.artist))
+    if (raw.artist && !/^(unknown(?: artist)?|неизвестный(?: исполнитель)?|неизвестно)$/i.test(raw.artist.trim()) && !(0, exports.isUploadChannel)(raw.artist))
         return {};
     const match = /^(.+?)\s+[-–—]\s+(.+)$/.exec(String(raw.title || '').trim());
     if (!match || (0, exports.isUploadChannel)(match[1]))
@@ -9020,7 +9096,7 @@ function emptyState(compact) {
 }
 const themeBtn = () => `<button class="icon-btn lg theme-btn" data-action="toggle-theme" aria-label="Сменить тему" title="Сменить тему (D)">${(0, icons_js_1.icon)(state_js_1.state.theme === 'dark' ? 'sun' : 'moon')}</button>`;
 function pageHead(title, sub = '', extra = '') {
-    return `<header class="page-head"><div><h1>${(0, util_js_1.esc)(title)}</h1>${sub ? `<p class="page-sub">${(0, util_js_1.esc)(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg import-link-mobile" data-action="import-link" aria-label="Загрузить по ссылке" title="Загрузить по ссылке">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${(0, icons_js_1.icon)('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${(0, exports.avatarHTML)()}</button></div></header>`;
+    return `<header class="page-head"><div><h1>${(0, util_js_1.esc)(title)}</h1>${sub ? `<p class="page-sub">${(0, util_js_1.esc)(sub)}</p>` : ''}</div><div class="page-head-r">${extra}<button class="icon-btn lg" data-action="rescan" aria-label="Пересканировать медиатеку" title="Пересканировать медиатеку">${(0, icons_js_1.icon)('refresh')}</button><button class="icon-btn lg import-link-mobile" data-action="import-link" aria-label="Загрузить по ссылке" title="Загрузить по ссылке">${(0, icons_js_1.icon)('download')}</button><button class="icon-btn lg" data-nav="#/settings" aria-label="Настройки" title="Настройки">${(0, icons_js_1.icon)('settings')}</button>${themeBtn()}<button class="avatar-btn" data-nav="#/profile" aria-label="Профиль">${(0, exports.avatarHTML)()}</button></div></header>`;
 }
 function hero({ art, eyebrow, title, subHTML = '', meta = '', actions = '', bg = '', round = false }) {
     return `<section class="hero">

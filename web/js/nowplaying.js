@@ -400,7 +400,20 @@ function frame() {
     return false;
 }
 function startLoop() { if (raf)
-    return; const loop = () => { const more = frame(); raf = isPlaying() || more ? requestAnimationFrame(loop) : 0; }; raf = requestAnimationFrame(loop); }
+    return;
+    let lastFrame = 0;
+    const loop = now => {
+        if (document.hidden) { raf = 0; return; }
+        const interval = npOpen ? 1000 / 30 : 100;
+        if (now - lastFrame < interval) { raf = requestAnimationFrame(loop); return; }
+        lastFrame = now;
+        const more = frame();
+        raf = isPlaying() || more ? requestAnimationFrame(loop) : 0;
+    };
+    raf = requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) startLoop(); });
+
 // ---------- открытие / закрытие ----------
 const lyricsOn = () => state.settings.showLyrics !== false;
 export function toggleLyrics() {
@@ -419,7 +432,7 @@ export function setPane(p) {
     const changed = np.dataset.pane !== p;
     if (changed && p === 'lyrics' && current()) ensureLyrics(current(), { retryMiss: true });
     np.dataset.pane = p;
-    if (changed && npOpen) revealElement(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
+    if (changed && npOpen && p !== 'player') revealElement(np.querySelector(p === 'queue' ? '.pane-queue' : p === 'lyrics' ? '.pane-lyrics' : '.np-player'), { distance: 0, duration: 280 });
     $('#np-pane-toggle')?.classList.toggle('on', p !== 'player');
 }
 // Режим «без текста»: правая часть гаснет, плеер плавно переезжает в центр

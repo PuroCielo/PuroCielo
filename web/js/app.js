@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, deleteSmart, derived, emit, flushSave, getTrack, hasAlbumCover, likedTracks, load, on, playlistTracks, renamePlaylist, save, saveSmart, setAlbumCover, setCovers, setSetting, setTagEdit, smartTracks, state, toggleLike, touchLibrary } from './state.js';
 import { P, addNext, addToQueue, audio, current, cycleRepeat, next, normInfo, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
-import { filesFromDrop, importFiles, restoreLibrary, syncNativeLibrary } from './importer.js';
+import { filesFromDrop, importFiles, rescanMetadata, restoreLibrary, syncNativeLibrary } from './importer.js';
 import { forgetFile, isNative, onNativeFetch, pickFiles, pickFolder, rescan, setPlayback } from './native.js';
 import { closeNP, initPlayerUI, isNPOpen, openNP, setPane, toggleLyrics } from './nowplaying.js';
 import { albumView, artistView, avatarHTML, continueCard, duplicatesView, fixView, homeHidden, homeOrder, homeView, libraryView, likedView, lists, mixById, mixView, playlistView, profileView, searchResults, searchView, setSongSort, settingsView, sidebarPlaylists, smartView, statsView } from './views.js';
@@ -352,6 +352,7 @@ function doAction(el, e) {
                 toast('Проверяю папку…', 'info', 1500);
                 rescan();
             }
+            rescanMetadata().catch(() => toast('Не удалось пересканировать медиатеку', 'err'));
             break;
         case 'import-m3u':
             $('#m3u-input').click();

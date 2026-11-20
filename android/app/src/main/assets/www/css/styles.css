@@ -997,3 +997,12 @@ html.player-theme-collapse::view-transition-new(root) { z-index: 1; clip-path: n
 .link-import-status.error { color: var(--danger); }
 .link-import [hidden], .import-link-mobile { display: none !important; }
 @media (max-width: 899px) { .import-link-mobile { display: inline-flex !important; } }
+
+/* Static cover lighting avoids continuously compositing large blurred textures. */
+.bg-clouds i, .bg-fx .blob, .bg-glow, .bg-note, .np-bg img {
+  animation: none !important;
+  will-change: auto;
+}
+.bg-clouds i:nth-child(n+3) { display: none; }
+.np:not(.open) { visibility: hidden; }
+.np-player { isolation: isolate; }
