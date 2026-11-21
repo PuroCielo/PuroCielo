@@ -5487,7 +5487,7 @@ function rawLyrics(t) {
     const f = s => `[${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(2).padStart(5, '0')}]`;
     return ly.lines.map(line => {
         let text = line.text;
-        if (line.words?.length && line.words.map(word => word.text).join(' ') === text) {
+        if (line.words?.length && line.words.map(word => word.text).join(' ') === text.trim().replace(/\s+/g, ' ')) {
             text = line.words.map(word => f(word.t).replace('[', '<').replace(']', '>') + word.text).join(' ');
         }
         return f(line.t) + text;
@@ -6862,7 +6862,7 @@ function renderLyrics(t) {
     }
     lines = ly.lines;
     lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? ((0, lyrics_align_js_1.localAlignmentBusy)() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
-        ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
+        ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).trim().split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
 }
@@ -6914,7 +6914,7 @@ function updateLyrics(t, force) {
         lyEls.forEach((el, i) => {
             el.classList.toggle('active', i === idx);
             el.classList.toggle('past', i < idx);
-            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.split(' ').length));
+            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.trim().split(/\s+/).length));
             el.dataset.d = Math.min(Math.abs(i - idx), 5);
             if (i !== idx)
                 el.querySelectorAll('.w').forEach(w => w.style.removeProperty('--wp'));

@@ -289,7 +289,7 @@ export function rawLyrics(t) {
     const f = s => `[${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(2).padStart(5, '0')}]`;
     return ly.lines.map(line => {
         let text = line.text;
-        if (line.words?.length && line.words.map(word => word.text).join(' ') === text) {
+        if (line.words?.length && line.words.map(word => word.text).join(' ') === text.trim().replace(/\s+/g, ' ')) {
             text = line.words.map(word => f(word.t).replace('[', '<').replace(']', '>') + word.text).join(' ');
         }
         return f(line.t) + text;

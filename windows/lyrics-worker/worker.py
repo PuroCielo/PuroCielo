@@ -108,6 +108,9 @@ if __name__ == '__main__':
     if request['task'] == 'check':
         import demucs.separate
         import uroman
+        emission = torch.tensor([[[0., 5., 0.], [5., 0., 0.], [0., 0., 5.]]]).log_softmax(-1)
+        aligned, _ = torchaudio.functional.forced_align(emission, torch.tensor([[1, 2]], dtype=torch.int32))
+        assert aligned.tolist() == [[1, 0, 2]]
         result = {'ready': True}
     else:
         result = separate(request) if request['task'] == 'separate' else refine(request)

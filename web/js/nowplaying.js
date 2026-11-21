@@ -201,7 +201,7 @@ function renderLyrics(t) {
     }
     lines = ly.lines;
     lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? (localAlignmentBusy() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
-        ? `<p class="ly" data-i="${i}">${esc(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
+        ? `<p class="ly" data-i="${i}">${esc(l.text).trim().split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
 }
@@ -250,7 +250,7 @@ function updateLyrics(t, force) {
         lyEls.forEach((el, i) => {
             el.classList.toggle('active', i === idx);
             el.classList.toggle('past', i < idx);
-            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.split(' ').length));
+            el.classList.toggle('wordsync', !!(lines[i].words && lines[i].words.length === lines[i].text.trim().split(/\s+/).length));
             el.dataset.d = Math.min(Math.abs(i - idx), 5);
             if (i !== idx)
                 el.querySelectorAll('.w').forEach(w => w.style.removeProperty('--wp'));
