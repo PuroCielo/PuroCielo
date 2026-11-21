@@ -60,7 +60,8 @@ function acceptRefinements(lines, candidates) {
       line.t < next && line.t >= original.t - 0.8;
     const accepted = line.text === original.text && validTime && improved && validWords ? line : original;
     previous = accepted.t;
-    previousEnd = accepted.words?.at(-1)?.b ?? accepted.t;
+    const lastWord = accepted.words?.at(-1);
+    previousEnd = lastWord?.b ?? lastWord?.t ?? accepted.t;
     return accepted;
   });
 }
