@@ -1,3 +1,4 @@
+import { canAlignLocally, localAlignmentEnabled, toggleLocalAlignment } from './lyrics-align.js';
 import { cachedTranslation, canTranslate, loadTranslation } from './translate.js';
 import { P, audio, clearUpcoming, current, cycleRepeat, getAnalyser, isPlaying, next, playTrackInQueue, prev, removeFromQueue, seek, setVolume, toggle, toggleMute, toggleShuffle } from './player.js';
 import { derived, emit, getTrack, hasOwnCover, on, save, setTrackCover, state, toggleLike } from './state.js';
@@ -195,7 +196,7 @@ function renderLyrics(t) {
     const trLine = i => (tr && tr[i] ? `<span class="ly-tr">${esc(tr[i])}</span>` : '');
     if (ly.type === 'plain') {
         lyBox.classList.add('plain');
-        lyBox.innerHTML = `<div class="ly-plain">${esc(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `${canAlignLocally() && ly.source === 'genius' ? `<button class="btn btn-soft sm" data-ly="local-align">${localAlignmentEnabled() ? 'Отключить автосинхронизацию' : 'Автосинхронизация на CPU · модель 148 МБ'}</button>` : ''}<div class="ly-plain">${esc(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
@@ -638,3 +639,5 @@ lyBox.addEventListener('click', e => {
     current()._lyAttempt = 0;
     ensureLyrics(current(), { retryMiss: true });
 });
+
+lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="local-align"]')) toggleLocalAlignment(); });

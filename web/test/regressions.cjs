@@ -30,6 +30,51 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('local Genius alignment preserves text and reuses cached timestamps', async ctx => {
+      const p = await ctx.newPage();
+      await p.goto(base + '/__fixture');
+      const result = await p.evaluate(async () => {
+        let calls = 0;
+        window.PuroDesktop = { alignLyrics: async ({ wav, text }) => {
+          calls++;
+          if (!(wav instanceof Uint8Array) || text !== 'Hello world\nGood morning') throw new Error('Invalid payload');
+          return { lines: [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }] };
+        }, cancelAlignment: () => {} };
+        const { state, emit } = await import('/web/js/state.js');
+        const { P } = await import('/web/js/player.js');
+        const { toggleLocalAlignment } = await import('/web/js/lyrics-align.js');
+        const bytes = new Uint8Array(44 + 64000), v = new DataView(bytes.buffer);
+        const text = (at, value) => { for (let i = 0; i < value.length; i++) v.setUint8(at + i, value.charCodeAt(i)); };
+        text(0, 'RIFF'); v.setUint32(4, bytes.length - 8, true); text(8, 'WAVEfmt '); v.setUint32(16, 16, true);
+        v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true);
+        v.setUint16(32, 2, true); v.setUint16(34, 16, true); text(36, 'data'); v.setUint32(40, 64000, true);
+        const plain = { type: 'plain', text: 'Hello world\nGood morning', source: 'genius' };
+        const track = { id: 'alignment-test', url: URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })), duration: 2, size: bytes.length, lyrics: plain };
+        state.tracks.set(track.id, track); P.queue = [track.id]; P.idx = 0;
+        toggleLocalAlignment();
+        const wait = async predicate => { for (let i = 0; i < 100 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 20)); if (!predicate()) throw new Error('Alignment timeout'); };
+        await wait(() => track.lyrics.type === 'synced');
+        const original = track.lyrics.originalText;
+        const restored = { ...track, lyrics: { ...plain } };
+        state.tracks.set(track.id, restored); emit('track', restored);
+        await wait(() => restored.lyrics.type === 'synced');
+        let finish, cancelled = false;
+        window.PuroDesktop.alignLyrics = () => new Promise(resolve => { finish = resolve; });
+        window.PuroDesktop.cancelAlignment = () => { cancelled = true; };
+        const pending = { ...track, id: 'cancel-test', lyrics: { ...plain } };
+        state.tracks.set(pending.id, pending); P.queue = [pending.id]; P.idx = 0; emit('track', pending);
+        await wait(() => !!finish);
+        toggleLocalAlignment();
+        finish({ lines: [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }] });
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return { calls, original, lines: restored.lyrics.lines, cancelled, pendingType: pending.lyrics.type };
+      });
+      assert.equal(result.cancelled, true);
+      assert.equal(result.pendingType, 'plain');
+      assert.equal(result.calls, 1);
+      assert.equal(result.original, 'Hello world\nGood morning');
+      assert.deepEqual(result.lines, [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }]);
+    });
     await check('SoundCloud transport retries connection and stream failures without partial audio', async ctx=>{
       const p=await ctx.newPage();await p.goto(base+'/__fixture');
       const result=await p.evaluate(async()=>{

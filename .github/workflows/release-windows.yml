@@ -17,6 +17,18 @@ jobs:
         run: |
           npm install --prefix web --no-save --no-audit --no-fund typescript@5
           npm ci --prefix windows --no-audit --no-fund
+      - name: Prepare local CPU lyrics engine
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.3/whisper-bin-x64.zip -OutFile whisper.zip
+          if ((Get-FileHash whisper.zip -Algorithm SHA256).Hash.ToLower() -ne "d824b1e37599f882b396e73f1ee0bfd5d0529f700314c48311dcbd00b803321d") { throw "Whisper checksum mismatch" }
+          Expand-Archive whisper.zip whisper-unpacked
+          New-Item -ItemType Directory -Force windows/whisper
+          $engine = Get-ChildItem whisper-unpacked -Recurse -Filter whisper-cli.exe | Select-Object -First 1
+          if (!$engine) { throw "whisper-cli.exe missing" }
+          Copy-Item $engine.FullName windows/whisper
+          Copy-Item "$($engine.Directory.FullName)/*.dll" windows/whisper
+          Invoke-WebRequest https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/LICENSE -OutFile windows/whisper/LICENSE.txt
       - name: Build current player and Windows installer
         run: |
           npm run prepare-player --prefix windows

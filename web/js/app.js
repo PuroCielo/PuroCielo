@@ -1,3 +1,4 @@
+import { toggleLocalAlignment } from './lyrics-align.js';
 import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, deleteSmart, derived, emit, flushSave, getTrack, hasAlbumCover, likedTracks, load, on, playlistTracks, renamePlaylist, save, saveSmart, setAlbumCover, setCovers, setSetting, setTagEdit, smartTracks, state, toggleLike, touchLibrary } from './state.js';
 import { P, addNext, addToQueue, audio, current, cycleRepeat, next, normInfo, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
 import { filesFromDrop, importFiles, rescanMetadata, restoreLibrary, syncNativeLibrary } from './importer.js';
@@ -420,6 +421,10 @@ function doAction(el, e) {
             setSetting('homeHidden', [...hid]);
             break;
         }
+        case 'toggle-local-alignment':
+            toggleLocalAlignment();
+            render({ keepScroll: true });
+            break;
         case 'set-setting':
             setSetting(d.k, d.k === 'speed' || d.k === 'transition' ? parseFloat(d.v) : d.v);
             break;

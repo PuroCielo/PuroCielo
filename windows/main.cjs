@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { fetchText } = require('./lyrics-fetch.cjs');
+const { alignLocal, cancelAlignment } = require('./lyrics-engine.cjs');
 // Сохраняем профиль старой версии 1.7.0 (name: puro-cielo).
 app.setName('puro-cielo');
 app.setPath('userData', path.join(app.getPath('appData'), 'puro-cielo'));
@@ -12,6 +13,14 @@ function external(raw) {
   try { const u = new URL(raw); if (['https:', 'http:'].includes(u.protocol)) shell.openExternal(u.href).catch(() => {}); } catch {}
 }
 ipcMain.handle('fetch-text', (event, url) => win && event.sender === win.webContents ? fetchText(url) : '');
+const trustedAlignment = event => win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
+ipcMain.handle('align-lyrics', async (event, payload) => {
+  if (!trustedAlignment(event)) throw new Error('Недоступно');
+  try { return { lines: await alignLocal(payload, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
+  catch (error) { return { error: error.message }; }
+});
+ipcMain.handle('cancel-alignment', event => { if (trustedAlignment(event)) cancelAlignment(); });
+app.on('before-quit', cancelAlignment);
 function create() {
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({ width: 1320, height: 860, minWidth: 420, minHeight: 600,
@@ -33,7 +42,7 @@ function create() {
     event.preventDefault();
     external(url);
   });
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { cancelAlignment(); win = null; });
   win.loadFile(playerFile);
 }
 if (!app.requestSingleInstanceLock()) app.quit();
