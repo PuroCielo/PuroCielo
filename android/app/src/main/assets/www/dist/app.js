@@ -3935,8 +3935,7 @@ async function processCurrent() {
     }
     finally {
         busy = false;
-        if ((0, player_js_1.current)() !== track)
-            processCurrent();
+        processCurrent();
     }
 }
 if ((0, exports.canAlignLocally)()) {

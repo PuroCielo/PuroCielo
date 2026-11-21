@@ -66,7 +66,7 @@ async function processCurrent() {
         emit('lyrics', track);
         toast('Текст синхронизирован', 'info');
     } catch (error) { if (valid()) toast(error.message || 'Не удалось синхронизировать текст', 'warn', 6000); }
-    finally { busy = false; if (current() !== track) processCurrent(); }
+    finally { busy = false; processCurrent(); }
 }
 if (canAlignLocally()) {
     on('lyrics', processCurrent);
