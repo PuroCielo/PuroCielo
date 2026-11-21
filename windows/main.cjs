@@ -16,7 +16,13 @@ ipcMain.handle('fetch-text', (event, url) => win && event.sender === win.webCont
 const trustedAlignment = event => win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
 ipcMain.handle('align-lyrics', async (event, payload) => {
   if (!trustedAlignment(event)) throw new Error('Недоступно');
-  try { return { lines: await alignLocal(payload, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
+  try { return { lines: await alignLocal({ wav: payload?.wav, text: payload?.text, duration: payload?.duration }, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
+  catch (error) { return { error: error.message }; }
+});
+ipcMain.handle('force-align', async (event, payload) => {
+  if (!trustedAlignment(event)) throw new Error('Недоступно');
+  if (!Array.isArray(payload?.lines) || payload.lines.length > 2000 || payload.lines.some((line, i) => !Number.isFinite(line.t) || line.t < 0 || line.t >= payload.duration || typeof line.text !== 'string' || line.text.length > 2000 || (i && line.t <= payload.lines[i - 1].t))) return { error: 'Некорректные строки текста' };
+  try { return { lines: await alignLocal({ ...payload, text: payload.lines.map(line => line.text).join('\n') }, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
   catch (error) { return { error: error.message }; }
 });
 ipcMain.handle('cancel-alignment', event => { if (trustedAlignment(event)) cancelAlignment(); });

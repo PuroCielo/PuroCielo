@@ -4964,8 +4964,11 @@ function activeLine(lines, t) {
 };
 defs["lyrics-align.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.localAlignmentEnabled = exports.canAlignLocally = void 0;
+exports.localAlignmentEnabled = exports.localAlignmentBusy = exports.canAlignLocally = void 0;
+exports.cancelLocalAlignment = cancelLocalAlignment;
 exports.toggleLocalAlignment = toggleLocalAlignment;
+exports.refineCurrentLyrics = refineCurrentLyrics;
+const lyrics_auto_js_1 = require("./lyrics-auto.js");
 const player_js_1 = require("./player.js");
 const state_js_1 = require("./state.js");
 const db_js_1 = require("./db.js");
@@ -4975,6 +4978,12 @@ let busy = false, generation = 0;
 const attempted = new WeakMap();
 const canAlignLocally = () => !!window.PuroDesktop?.alignLyrics;
 exports.canAlignLocally = canAlignLocally;
+const localAlignmentBusy = () => busy;
+exports.localAlignmentBusy = localAlignmentBusy;
+function cancelLocalAlignment() {
+    generation++;
+    window.PuroDesktop?.cancelAlignment();
+}
 const localAlignmentEnabled = () => enabled;
 exports.localAlignmentEnabled = localAlignmentEnabled;
 function toggleLocalAlignment() {
@@ -4992,8 +5001,8 @@ function toggleLocalAlignment() {
         (0, state_js_1.emit)('lyrics', (0, player_js_1.current)());
 }
 async function wavFor(track, valid) {
-    if (track.duration > 1800)
-        throw new Error('Поддерживаются песни до 30 минут');
+    if (track.duration > 900)
+        throw new Error('Поддерживаются песни до 15 минут');
     const response = await fetch(track.url);
     if (!response.ok)
         throw new Error('Не удалось прочитать аудио');
@@ -5004,8 +5013,8 @@ async function wavFor(track, valid) {
         return null;
     const context = new OfflineAudioContext(1, 1, 16000);
     const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-    if (decoded.duration > 1800)
-        throw new Error('Поддерживаются песни до 30 минут');
+    if (decoded.duration > 900)
+        throw new Error('Поддерживаются песни до 15 минут');
     if (!valid())
         return null;
     const samples = new Float32Array(decoded.length);
@@ -5039,6 +5048,7 @@ async function processCurrent() {
     if (!(0, exports.canAlignLocally)() || !enabled || busy || lyrics?.type !== 'plain' || lyrics.source !== 'genius' || attempted.get(track) === lyrics.text)
         return;
     busy = true;
+    (0, state_js_1.emit)('alignment-state');
     attempted.set(track, lyrics.text);
     const revision = track._lyRevision || 0, token = generation;
     const valid = () => enabled && generation === token && state_js_1.state.tracks.get(track.id) === track && track.lyrics === lyrics && (track._lyRevision || 0) === revision;
@@ -5047,7 +5057,7 @@ async function processCurrent() {
         const cached = await (0, db_js_1.lyGet)(key);
         let lines = cached?.text === lyrics.text && cached?.size === track.size && cached?.duration === track.duration ? cached.lines : null;
         if (!lines) {
-            (0, ui_js_1.toast)('Синхронизация текста на CPU. При первом запуске скачивается модель 148 МБ', 'info', 7000);
+            (0, ui_js_1.toast)('Отделяю вокал и синхронизирую текст на CPU. Первичная загрузка моделей может занять несколько минут', 'info', 7000);
             const audio = await wavFor(track, valid);
             if (!audio || !valid())
                 return;
@@ -5073,12 +5083,53 @@ async function processCurrent() {
     }
     finally {
         busy = false;
+        (0, state_js_1.emit)('alignment-state');
         processCurrent();
     }
 }
 if ((0, exports.canAlignLocally)()) {
     (0, state_js_1.on)('lyrics', processCurrent);
     (0, state_js_1.on)('track', processCurrent);
+}
+async function refineCurrentLyrics() {
+    const track = (0, player_js_1.current)(), lyrics = track?.lyrics;
+    if (!window.PuroDesktop?.forceAlign || busy || lyrics?.type !== 'synced')
+        return;
+    busy = true;
+    (0, state_js_1.emit)('alignment-state');
+    const token = generation, revision = track._lyRevision || 0;
+    const valid = () => generation === token && state_js_1.state.tracks.get(track.id) === track && track.lyrics === lyrics && (track._lyRevision || 0) === revision;
+    try {
+        (0, ui_js_1.toast)('Проверяю таймкоды по вокалу на CPU…', 'info', 7000);
+        const audio = await wavFor(track, valid);
+        if (!audio || !valid())
+            return;
+        const result = await window.PuroDesktop.forceAlign({ ...audio, lines: lyrics.lines });
+        if (!valid())
+            return;
+        if (result.error)
+            throw new Error(result.error);
+        if (!Array.isArray(result.lines) || result.lines.length !== lyrics.lines.length)
+            throw new Error('Некорректный результат уточнения');
+        const changed = JSON.stringify(result.lines) !== JSON.stringify(lyrics.lines);
+        if (changed) {
+            const originalText = lyrics.originalText || lyrics.lines.map(line => line.text).join('\n');
+            await (0, db_js_1.lySet)('local-alignment-v1:' + track.id, { text: originalText, size: track.size, duration: track.duration, lines: result.lines });
+            if (!valid())
+                return;
+            await (0, lyrics_auto_js_1.setManualLyrics)(track, (0, lyrics_auto_js_1.rawLyrics)({ lyrics: { ...lyrics, lines: result.lines } }));
+        }
+        (0, ui_js_1.toast)(changed ? 'Таймкоды уточнены' : 'Более уверенные таймкоды не найдены', 'info');
+    }
+    catch (error) {
+        if (valid())
+            (0, ui_js_1.toast)(error.message || 'Уточнение недоступно', 'warn', 6000);
+    }
+    finally {
+        busy = false;
+        (0, state_js_1.emit)('alignment-state');
+        processCurrent();
+    }
 }
 
 };
@@ -5434,7 +5485,13 @@ function rawLyrics(t) {
     if (ly.type === 'plain')
         return ly.text;
     const f = s => `[${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(2).padStart(5, '0')}]`;
-    return ly.lines.map(l => f(l.t) + l.text).join('\n');
+    return ly.lines.map(line => {
+        let text = line.text;
+        if (line.words?.length && line.words.map(word => word.text).join(' ') === text) {
+            text = line.words.map(word => f(word.t).replace('[', '<').replace(']', '>') + word.text).join(' ');
+        }
+        return f(line.t) + text;
+    }).join('\n');
 }
 async function setManualLyrics(t, text) {
     controllers.get(t.id)?.abort();
@@ -6800,11 +6857,11 @@ function renderLyrics(t) {
     const trLine = i => (tr && tr[i] ? `<span class="ly-tr">${(0, util_js_1.esc)(tr[i])}</span>` : '');
     if (ly.type === 'plain') {
         lyBox.classList.add('plain');
-        lyBox.innerHTML = `${(0, lyrics_align_js_1.canAlignLocally)() && ly.source === 'genius' ? `<button class="btn btn-soft sm" data-ly="local-align">${(0, lyrics_align_js_1.localAlignmentEnabled)() ? 'Отключить автосинхронизацию' : 'Автосинхронизация на CPU · модель 148 МБ'}</button>` : ''}<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `${(0, lyrics_align_js_1.canAlignLocally)() && ly.source === 'genius' ? `<button class="btn btn-soft sm" data-ly="local-align">${(0, lyrics_align_js_1.localAlignmentEnabled)() ? 'Отключить автосинхронизацию' : 'Автосинхронизация по вокалу на CPU'}</button>` : ''}<div class="ly-plain">${(0, util_js_1.esc)(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `<div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? ((0, lyrics_align_js_1.localAlignmentBusy)() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -7289,6 +7346,12 @@ lyBox.addEventListener('click', e => {
 });
 lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="local-align"]'))
     (0, lyrics_align_js_1.toggleLocalAlignment)(); });
+lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="refine"]'))
+    (0, lyrics_align_js_1.refineCurrentLyrics)(); });
+(0, state_js_1.on)('alignment-state', () => { if ((0, player_js_1.current)())
+    renderLyrics((0, player_js_1.current)()); });
+lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="cancel-align"]'))
+    (0, lyrics_align_js_1.cancelLocalAlignment)(); });
 
 };
 defs["player.js"]=function(module,exports,require){"use strict";
@@ -10846,7 +10909,7 @@ function settingsView() {
         ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.', sw('autoCovers', s.autoCovers !== false))}
         ${srow('Убирать приписки сайтов', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.', sw('stripSource', s.stripSource !== false))}
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текст не найден».', sw('autoLyrics', s.autoLyrics))}
-        ${(0, lyrics_align_js_1.canAlignLocally)() ? srow('Автосинхронизация Genius', 'Локальный анализ на CPU для открываемых песен. При первом включении скачивается модель 148 МБ. Обработка может занять несколько минут.', `<button class="btn btn-soft sm" data-action="toggle-local-alignment">${(0, lyrics_align_js_1.localAlignmentEnabled)() ? 'Отключить и остановить' : 'Включить'}</button>`) : ''}
+        ${(0, lyrics_align_js_1.canAlignLocally)() ? srow('Автосинхронизация Genius', 'Отделение вокала и уточнение слов на CPU для песен до 15 минут. Модели загружаются один раз и занимают несколько ГБ. Обработка может занять несколько минут.', `<button class="btn btn-soft sm" data-action="toggle-local-alignment">${(0, lyrics_align_js_1.localAlignmentEnabled)() ? 'Отключить и остановить' : 'Включить'}</button>`) : ''}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текст не найден».', `<button class="btn btn-soft sm" data-action="find-lyrics">${(0, icons_js_1.icon)('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}
         ${srow('Свой сервер текстов', s.lyricsProxy ? (0, util_js_1.esc)(s.lyricsProxy) : 'Адрес вашего Cloudflare Worker: добавляет NetEase и Genius (см. папку worker).', `<button class="btn btn-soft sm" data-action="lyrics-proxy">${(0, icons_js_1.icon)('edit')}Указать</button>`)}

@@ -287,7 +287,13 @@ export function rawLyrics(t) {
     if (ly.type === 'plain')
         return ly.text;
     const f = s => `[${String(Math.floor(s / 60)).padStart(2, '0')}:${(s % 60).toFixed(2).padStart(5, '0')}]`;
-    return ly.lines.map(l => f(l.t) + l.text).join('\n');
+    return ly.lines.map(line => {
+        let text = line.text;
+        if (line.words?.length && line.words.map(word => word.text).join(' ') === text) {
+            text = line.words.map(word => f(word.t).replace('[', '<').replace(']', '>') + word.text).join(' ');
+        }
+        return f(line.t) + text;
+    }).join('\n');
 }
 export async function setManualLyrics(t, text) {
     controllers.get(t.id)?.abort();

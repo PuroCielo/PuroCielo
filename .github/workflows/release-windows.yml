@@ -29,6 +29,20 @@ jobs:
           Copy-Item $engine.FullName windows/whisper
           Copy-Item "$($engine.Directory.FullName)/*.dll" windows/whisper
           Invoke-WebRequest https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/LICENSE -OutFile windows/whisper/LICENSE.txt
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Prepare embedded Python for CPU audio processing
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip -OutFile python.zip
+          if ((Get-FileHash python.zip -Algorithm SHA256).Hash.ToLower() -ne "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b") { throw "Python checksum mismatch" }
+          Expand-Archive python.zip windows/python
+          python -m pip wheel -r windows/lyrics-worker/requirements.txt --wheel-dir windows/lyrics-worker/wheels
+          python -m pip download --no-deps pip==25.0.1 --dest pip-download
+          Copy-Item (Get-ChildItem pip-download/*.whl).FullName pip.zip
+          Expand-Archive pip.zip windows/python/Lib/site-packages
+          Add-Content windows/python/python311._pth "`nLib/site-packages`nimport site"
+          & windows/python/python.exe -m pip --version
       - name: Build current player and Windows installer
         run: |
           npm run prepare-player --prefix windows

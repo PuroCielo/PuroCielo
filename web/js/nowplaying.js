@@ -1,4 +1,4 @@
-import { canAlignLocally, localAlignmentEnabled, toggleLocalAlignment } from './lyrics-align.js';
+import { canAlignLocally, localAlignmentEnabled, toggleLocalAlignment, refineCurrentLyrics, localAlignmentBusy, cancelLocalAlignment } from './lyrics-align.js';
 import { cachedTranslation, canTranslate, loadTranslation } from './translate.js';
 import { P, audio, clearUpcoming, current, cycleRepeat, getAnalyser, isPlaying, next, playTrackInQueue, prev, removeFromQueue, seek, setVolume, toggle, toggleMute, toggleShuffle } from './player.js';
 import { derived, emit, getTrack, hasOwnCover, on, save, setTrackCover, state, toggleLike } from './state.js';
@@ -196,11 +196,11 @@ function renderLyrics(t) {
     const trLine = i => (tr && tr[i] ? `<span class="ly-tr">${esc(tr[i])}</span>` : '');
     if (ly.type === 'plain') {
         lyBox.classList.add('plain');
-        lyBox.innerHTML = `${canAlignLocally() && ly.source === 'genius' ? `<button class="btn btn-soft sm" data-ly="local-align">${localAlignmentEnabled() ? 'Отключить автосинхронизацию' : 'Автосинхронизация на CPU · модель 148 МБ'}</button>` : ''}<div class="ly-plain">${esc(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
+        lyBox.innerHTML = `${canAlignLocally() && ly.source === 'genius' ? `<button class="btn btn-soft sm" data-ly="local-align">${localAlignmentEnabled() ? 'Отключить автосинхронизацию' : 'Автосинхронизация по вокалу на CPU'}</button>` : ''}<div class="ly-plain">${esc(ly.text).split(/\n/).map((l, i) => l.trim() ? `<p>${l}${trLine(i)}</p>` : '<br>').join('')}</div>`;
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `<div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? (localAlignmentBusy() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${esc(l.text).split(' ').map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -641,3 +641,8 @@ lyBox.addEventListener('click', e => {
 });
 
 lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="local-align"]')) toggleLocalAlignment(); });
+
+lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="refine"]')) refineCurrentLyrics(); });
+
+on('alignment-state', () => { if (current()) renderLyrics(current()); });
+lyBox.addEventListener('click', event => { if (event.target.closest('[data-ly="cancel-align"]')) cancelLocalAlignment(); });

@@ -1,3 +1,4 @@
+import { rawLyrics, setManualLyrics } from './lyrics-auto.js';
 import { current } from './player.js';
 import { emit, on, state } from './state.js';
 import { lyGet, lySet } from './db.js';
@@ -6,6 +7,11 @@ let enabled = localStorage.getItem('puro-local-alignment') === '1';
 let busy = false, generation = 0;
 const attempted = new WeakMap();
 export const canAlignLocally = () => !!window.PuroDesktop?.alignLyrics;
+export const localAlignmentBusy = () => busy;
+export function cancelLocalAlignment() {
+    generation++;
+    window.PuroDesktop?.cancelAlignment();
+}
 export const localAlignmentEnabled = () => enabled;
 export function toggleLocalAlignment() {
     enabled = !enabled;
@@ -15,7 +21,7 @@ export function toggleLocalAlignment() {
     if (current()) emit('lyrics', current());
 }
 async function wavFor(track, valid) {
-    if (track.duration > 1800) throw new Error('Поддерживаются песни до 30 минут');
+    if (track.duration > 900) throw new Error('Поддерживаются песни до 15 минут');
     const response = await fetch(track.url);
     if (!response.ok) throw new Error('Не удалось прочитать аудио');
     const blob = await response.blob();
@@ -23,7 +29,7 @@ async function wavFor(track, valid) {
     if (!valid()) return null;
     const context = new OfflineAudioContext(1, 1, 16000);
     const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-    if (decoded.duration > 1800) throw new Error('Поддерживаются песни до 30 минут');
+    if (decoded.duration > 900) throw new Error('Поддерживаются песни до 15 минут');
     if (!valid()) return null;
     const samples = new Float32Array(decoded.length);
     for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
@@ -43,6 +49,7 @@ async function processCurrent() {
     const track = current(), lyrics = track?.lyrics;
     if (!canAlignLocally() || !enabled || busy || lyrics?.type !== 'plain' || lyrics.source !== 'genius' || attempted.get(track) === lyrics.text) return;
     busy = true;
+    emit('alignment-state');
     attempted.set(track, lyrics.text);
     const revision = track._lyRevision || 0, token = generation;
     const valid = () => enabled && generation === token && state.tracks.get(track.id) === track && track.lyrics === lyrics && (track._lyRevision || 0) === revision;
@@ -51,7 +58,7 @@ async function processCurrent() {
         const cached = await lyGet(key);
         let lines = cached?.text === lyrics.text && cached?.size === track.size && cached?.duration === track.duration ? cached.lines : null;
         if (!lines) {
-            toast('Синхронизация текста на CPU. При первом запуске скачивается модель 148 МБ', 'info', 7000);
+            toast('Отделяю вокал и синхронизирую текст на CPU. Первичная загрузка моделей может занять несколько минут', 'info', 7000);
             const audio = await wavFor(track, valid);
             if (!audio || !valid()) return;
             const result = await window.PuroDesktop.alignLyrics({ ...audio, text: lyrics.text });
@@ -66,9 +73,36 @@ async function processCurrent() {
         emit('lyrics', track);
         toast('Текст синхронизирован', 'info');
     } catch (error) { if (valid()) toast(error.message || 'Не удалось синхронизировать текст', 'warn', 6000); }
-    finally { busy = false; processCurrent(); }
+    finally { busy = false; emit('alignment-state'); processCurrent(); }
 }
 if (canAlignLocally()) {
     on('lyrics', processCurrent);
     on('track', processCurrent);
+}
+
+export async function refineCurrentLyrics() {
+    const track = current(), lyrics = track?.lyrics;
+    if (!window.PuroDesktop?.forceAlign || busy || lyrics?.type !== 'synced') return;
+    busy = true;
+    emit('alignment-state');
+    const token = generation, revision = track._lyRevision || 0;
+    const valid = () => generation === token && state.tracks.get(track.id) === track && track.lyrics === lyrics && (track._lyRevision || 0) === revision;
+    try {
+        toast('Проверяю таймкоды по вокалу на CPU…', 'info', 7000);
+        const audio = await wavFor(track, valid);
+        if (!audio || !valid()) return;
+        const result = await window.PuroDesktop.forceAlign({ ...audio, lines: lyrics.lines });
+        if (!valid()) return;
+        if (result.error) throw new Error(result.error);
+        if (!Array.isArray(result.lines) || result.lines.length !== lyrics.lines.length) throw new Error('Некорректный результат уточнения');
+        const changed = JSON.stringify(result.lines) !== JSON.stringify(lyrics.lines);
+        if (changed) {
+            const originalText = lyrics.originalText || lyrics.lines.map(line => line.text).join('\n');
+            await lySet('local-alignment-v1:' + track.id, { text: originalText, size: track.size, duration: track.duration, lines: result.lines });
+            if (!valid()) return;
+            await setManualLyrics(track, rawLyrics({ lyrics: { ...lyrics, lines: result.lines } }));
+        }
+        toast(changed ? 'Таймкоды уточнены' : 'Более уверенные таймкоды не найдены', 'info');
+    } catch (error) { if (valid()) toast(error.message || 'Уточнение недоступно', 'warn', 6000); }
+    finally { busy = false; emit('alignment-state'); processCurrent(); }
 }

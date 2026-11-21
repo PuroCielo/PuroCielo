@@ -67,13 +67,30 @@ const server = http.createServer((req, res) => {
         toggleLocalAlignment();
         finish({ lines: [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }] });
         await new Promise(resolve => setTimeout(resolve, 50));
-        return { calls, original, lines: restored.lyrics.lines, cancelled, pendingType: pending.lyrics.type };
+        const pendingType = pending.lyrics.type;
+        pending.lyrics = { type: 'synced', source: 'manual', lines: [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }] };
+        window.PuroDesktop.forceAlign = async () => ({ lines: [{ t: 0.1, text: 'Hello world', words: [{ t: 0.1, text: 'Hello' }, { t: 0.5, text: 'world' }] }, { t: 1, text: 'Good morning' }] });
+        await (await import('/web/js/lyrics-align.js')).refineCurrentLyrics();
+        const refinedLrc = (await (await import('/web/js/db.js')).lyGet('manual:' + pending.id)).text;
+        return { calls, original, lines: restored.lyrics.lines, cancelled, pendingType, refinedLrc };
       });
+      assert.match(result.refinedLrc, /<00:00.10>Hello <00:00.50>world/);
       assert.equal(result.cancelled, true);
       assert.equal(result.pendingType, 'plain');
       assert.equal(result.calls, 1);
       assert.equal(result.original, 'Hello world\nGood morning');
       assert.deepEqual(result.lines, [{ t: 0, text: 'Hello world' }, { t: 1, text: 'Good morning' }]);
+    });
+    await check('enhanced LRC export preserves refined word timestamps', async ctx => {
+      const page = await ctx.newPage();
+      await page.goto(base + '/__fixture');
+      const result = await page.evaluate(async () => {
+        const { rawLyrics } = await import('/web/js/lyrics-auto.js');
+        const { parseLrc } = await import('/web/js/lrc.js');
+        const lines = [{ t: 1.25, text: 'Hello world', words: [{ t: 1.25, text: 'Hello' }, { t: 2.5, text: 'world' }] }, { t: 4, text: 'Good morning' }];
+        return parseLrc(rawLyrics({ lyrics: { type: 'synced', lines } })).lines;
+      });
+      assert.deepEqual(result, [{ t: 1.25, text: 'Hello world', words: [{ t: 1.25, text: 'Hello' }, { t: 2.5, text: 'world' }] }, { t: 4, text: 'Good morning' }]);
     });
     await check('SoundCloud transport retries connection and stream failures without partial audio', async ctx=>{
       const p=await ctx.newPage();await p.goto(base+'/__fixture');
