@@ -1,3 +1,4 @@
+import { desktopConnected, desktopConnecting } from './lyrics-connection.js';
 import { canAlignLocally, localAlignmentEnabled } from './lyrics-align.js';
 import { derived, getTrack, likedTracks, playlistTracks, smartTracks, state } from './state.js';
 import { icon } from './icons.js';
@@ -564,6 +565,7 @@ export function settingsView() {
         ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.', sw('autoCovers', s.autoCovers !== false))}
         ${srow('Убирать приписки сайтов', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.', sw('stripSource', s.stripSource !== false))}
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текст не найден».', sw('autoLyrics', s.autoLyrics))}
+        ${!window.PuroDesktop && !isNative ? srow('Синхронизация через Windows', desktopConnected() ? 'Подключено. Аудио обрабатывается на этом компьютере. Не закрывайте Windows-приложение.' : 'Бесплатно, без сервера: откройте Puro Cielo для Windows 1.15.0 или новее на этом компьютере и подключитесь. Разрешите доступ к локальной сети, если браузер спросит. После перезапуска приложения подключитесь заново.', `<button class="btn btn-soft sm" data-action="connect-desktop" ${desktopConnecting() ? 'disabled' : ''}>${desktopConnecting() ? 'Подключение…' : desktopConnected() ? 'Отключиться' : 'Подключить Windows'}</button>`) : ''}
         ${canAlignLocally() ? srow('Автосинхронизация Genius', 'Отделение вокала и уточнение слов на CPU для песен до 15 минут. Модели загружаются один раз и занимают несколько ГБ. Обработка может занять несколько минут.', `<button class="btn btn-soft sm" data-action="toggle-local-alignment">${localAlignmentEnabled() ? 'Отключить и остановить' : 'Включить'}</button>`) : ''}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текст не найден».', `<button class="btn btn-soft sm" data-action="find-lyrics">${icon('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}

@@ -200,7 +200,7 @@ function renderLyrics(t) {
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? (localAlignmentBusy() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `${canAlignLocally() ? (localAlignmentBusy() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${esc(l.text).trim().split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];

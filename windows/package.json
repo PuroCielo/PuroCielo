@@ -21,7 +21,7 @@
     "productName": "PuroCielo",
     "artifactName": "PuroCielo-Setup.exe",
     "directories": { "output": "dist" },
-    "files": ["main.cjs", "preload.cjs", "lyrics-fetch.cjs", "lyrics-engine.cjs", "lyrics-advanced.cjs", "lyrics-process.cjs", "lyrics-alignment.cjs", "renderer/**/*", "package.json"],
+    "files": ["main.cjs", "preload.cjs", "lyrics-fetch.cjs", "lyrics-bridge.cjs", "lyrics-request.cjs", "lyrics-engine.cjs", "lyrics-advanced.cjs", "lyrics-process.cjs", "lyrics-alignment.cjs", "renderer/**/*", "package.json"],
     "extraResources": [{ "from": "python", "to": "python" }, { "from": "lyrics-worker", "to": "lyrics-worker" }, { "from": "whisper", "to": "whisper" }],
     "win": { "icon": "../icons/icon-512.png" },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true,

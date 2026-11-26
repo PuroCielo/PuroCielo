@@ -30,6 +30,62 @@ const server = http.createServer((req, res) => {
     finally { await context.close(); }
   }
   try {
+    await check('browser connects to real local bridge, refines, cancels and detects app closure', async ctx => {
+      const { startBridge } = require('../../windows/lyrics-bridge.cjs');
+      let cancelled = false;
+      const bridge = startBridge({ run: async (refine, payload, signal) => {
+        assert.equal(payload.wav.length, 44);
+        if (payload.text === 'wait') {
+          await new Promise(resolve => signal.addEventListener('abort', () => { cancelled = true; resolve(); }, { once: true }));
+        }
+        return refine ? payload.lines : [{ t: 0, text: payload.text }];
+      } });
+      await bridge.ready;
+      try {
+        await ctx.grantPermissions(['local-network-access'], { origin: 'https://purocielo.github.io' });
+        await ctx.route('https://purocielo.github.io/**', async route => {
+          const response = await route.fetch({ url: base + new URL(route.request().url()).pathname });
+          await route.fulfill({ response });
+        });
+        const p = await ctx.newPage(); await p.goto('https://purocielo.github.io/__fixture');
+        const result = await p.evaluate(async () => {
+          const c = await import('/web/js/lyrics-connection.js');
+          const l = await import('/web/js/lyrics-align.js');
+          const before = l.canAlignLocally();
+          await c.connectDesktop();
+          const after = l.canAlignLocally();
+          const aligned = await c.alignmentAPI().alignLyrics({ wav: new Uint8Array(44), text: 'Hello', duration: 2 });
+          const refined = await c.alignmentAPI().forceAlign({ wav: new Uint8Array(44), lines: aligned.lines, duration: 2 });
+          window.connection = c;
+          return { before, after, aligned, refined };
+        });
+        assert.equal(result.before, false); assert.equal(result.after, true);
+        assert.deepEqual(result.aligned, result.refined);
+        await p.evaluate(() => { window.pending = connection.alignmentAPI().alignLyrics({ wav: new Uint8Array(44), text: 'wait', duration: 2 }).catch(e => e.message); });
+        await p.waitForTimeout(100);
+        await p.evaluate(() => connection.alignmentAPI().cancelAlignment());
+        await p.waitForFunction(async () => (await window.pending).includes('отменена'));
+        for (let i = 0; i < 50 && !cancelled; i++) await new Promise(r => setTimeout(r, 20));
+        assert.equal(cancelled, true);
+        await ctx.route('https://www.gstatic.com/firebasejs/**', route => route.abort());
+        const ui = await ctx.newPage();
+        await ui.goto('https://purocielo.github.io/app/#/settings');
+        const connect = ui.locator('[data-action="connect-desktop"]');
+        assert.equal(await connect.textContent(), 'Подключить Windows');
+        await connect.click();
+        await ui.waitForFunction(() => document.querySelector('[data-action="connect-desktop"]')?.textContent === 'Отключиться');
+        assert.equal(await ui.locator('[data-action="toggle-local-alignment"]').count(), 1);
+        await connect.click();
+        assert.equal(await ui.locator('[data-action="toggle-local-alignment"]').count(), 0);
+        await ui.close();
+        bridge.close();
+        const disconnected = await p.evaluate(async () => {
+          try { await connection.alignmentAPI().alignLyrics({ wav: new Uint8Array(44), text: 'Hello', duration: 2 }); } catch {}
+          return !connection.desktopConnected();
+        });
+        assert.equal(disconnected, true);
+      } finally { bridge.close(); }
+    });
     await check('local Genius alignment preserves text and reuses cached timestamps', async ctx => {
       const p = await ctx.newPage();
       await p.goto(base + '/__fixture');

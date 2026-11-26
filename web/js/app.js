@@ -1,3 +1,4 @@
+import { connectDesktop, disconnectDesktop, desktopConnected } from './lyrics-connection.js';
 import { toggleLocalAlignment } from './lyrics-align.js';
 import { DEFAULT_SETTINGS, addToPlaylist, createPlaylist, deletePlaylist, deleteSmart, derived, emit, flushSave, getTrack, hasAlbumCover, likedTracks, load, on, playlistTracks, renamePlaylist, save, saveSmart, setAlbumCover, setCovers, setSetting, setTagEdit, smartTracks, state, toggleLike, touchLibrary } from './state.js';
 import { P, addNext, addToQueue, audio, current, cycleRepeat, next, normInfo, playList, prev, seekBy, setSleep, setSpeed, setVolume, stop, toggle, toggleMute, toggleShuffle } from './player.js';
@@ -421,6 +422,10 @@ function doAction(el, e) {
             setSetting('homeHidden', [...hid]);
             break;
         }
+        case 'connect-desktop':
+            if (desktopConnected()) disconnectDesktop();
+            else connectDesktop().catch(error => toast(error.message, 'warn', 10000));
+            break;
         case 'toggle-local-alignment':
             toggleLocalAlignment();
             render({ keepScroll: true });
@@ -1263,3 +1268,5 @@ if (isNative) {
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !isNative)
     navigator.serviceWorker.register('sw.js').catch(() => { });
 window.__puro = { state: state, P: P, audio: audio, importFiles: importFiles, derived: derived, normInfo: normInfo };
+
+on('alignment-connection', () => render({ keepScroll: true }));

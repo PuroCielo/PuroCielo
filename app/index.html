@@ -1246,6 +1246,7 @@ function trackMenu(anchor, id, { pid, np, extra = [] } = {}) {
 };
 defs["app.js"]=function(module,exports,require){"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+const lyrics_connection_js_1 = require("./lyrics-connection.js");
 const lyrics_align_js_1 = require("./lyrics-align.js");
 const state_js_1 = require("./state.js");
 const player_js_1 = require("./player.js");
@@ -1688,6 +1689,12 @@ function doAction(el, e) {
             (0, state_js_1.setSetting)('homeHidden', [...hid]);
             break;
         }
+        case 'connect-desktop':
+            if ((0, lyrics_connection_js_1.desktopConnected)())
+                (0, lyrics_connection_js_1.disconnectDesktop)();
+            else
+                (0, lyrics_connection_js_1.connectDesktop)().catch(error => (0, ui_js_1.toast)(error.message, 'warn', 10000));
+            break;
         case 'toggle-local-alignment':
             (0, lyrics_align_js_1.toggleLocalAlignment)();
             render({ keepScroll: true });
@@ -2592,6 +2599,7 @@ if (native_js_1.isNative) {
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !native_js_1.isNative)
     navigator.serviceWorker.register('sw.js').catch(() => { });
 window.__puro = { state: state_js_1.state, P: player_js_1.P, audio: player_js_1.audio, importFiles: importer_js_1.importFiles, derived: state_js_1.derived, normInfo: player_js_1.normInfo };
+(0, state_js_1.on)('alignment-connection', () => render({ keepScroll: true }));
 
 };
 defs["artists.js"]=function(module,exports,require){"use strict";
@@ -4968,6 +4976,7 @@ exports.localAlignmentEnabled = exports.localAlignmentBusy = exports.canAlignLoc
 exports.cancelLocalAlignment = cancelLocalAlignment;
 exports.toggleLocalAlignment = toggleLocalAlignment;
 exports.refineCurrentLyrics = refineCurrentLyrics;
+const lyrics_connection_js_1 = require("./lyrics-connection.js");
 const lyrics_auto_js_1 = require("./lyrics-auto.js");
 const player_js_1 = require("./player.js");
 const state_js_1 = require("./state.js");
@@ -4976,13 +4985,13 @@ const ui_js_1 = require("./ui.js");
 let enabled = localStorage.getItem('puro-local-alignment') === '1';
 let busy = false, generation = 0;
 const attempted = new WeakMap();
-const canAlignLocally = () => !!window.PuroDesktop?.alignLyrics;
+const canAlignLocally = () => !!(0, lyrics_connection_js_1.alignmentAPI)()?.alignLyrics;
 exports.canAlignLocally = canAlignLocally;
 const localAlignmentBusy = () => busy;
 exports.localAlignmentBusy = localAlignmentBusy;
 function cancelLocalAlignment() {
     generation++;
-    window.PuroDesktop?.cancelAlignment();
+    (0, lyrics_connection_js_1.alignmentAPI)()?.cancelAlignment();
 }
 const localAlignmentEnabled = () => enabled;
 exports.localAlignmentEnabled = localAlignmentEnabled;
@@ -4991,7 +5000,7 @@ function toggleLocalAlignment() {
     localStorage.setItem('puro-local-alignment', enabled ? '1' : '0');
     if (!enabled) {
         generation++;
-        window.PuroDesktop?.cancelAlignment();
+        (0, lyrics_connection_js_1.alignmentAPI)()?.cancelAlignment();
     }
     else {
         attempted.delete((0, player_js_1.current)());
@@ -5061,7 +5070,7 @@ async function processCurrent() {
             const audio = await wavFor(track, valid);
             if (!audio || !valid())
                 return;
-            const result = await window.PuroDesktop.alignLyrics({ ...audio, text: lyrics.text });
+            const result = await (0, lyrics_connection_js_1.alignmentAPI)().alignLyrics({ ...audio, text: lyrics.text });
             if (!valid())
                 return;
             if (result.error)
@@ -5087,13 +5096,21 @@ async function processCurrent() {
         processCurrent();
     }
 }
-if ((0, exports.canAlignLocally)()) {
-    (0, state_js_1.on)('lyrics', processCurrent);
-    (0, state_js_1.on)('track', processCurrent);
-}
+(0, state_js_1.on)('lyrics', processCurrent);
+(0, state_js_1.on)('track', processCurrent);
+(0, state_js_1.on)('alignment-connection', () => {
+    if (!(0, exports.canAlignLocally)())
+        generation++;
+    else {
+        attempted.delete((0, player_js_1.current)());
+        processCurrent();
+    }
+    if ((0, player_js_1.current)())
+        (0, state_js_1.emit)('lyrics', (0, player_js_1.current)());
+});
 async function refineCurrentLyrics() {
     const track = (0, player_js_1.current)(), lyrics = track?.lyrics;
-    if (!window.PuroDesktop?.forceAlign || busy || lyrics?.type !== 'synced')
+    if (!(0, lyrics_connection_js_1.alignmentAPI)()?.forceAlign || busy || lyrics?.type !== 'synced')
         return;
     busy = true;
     (0, state_js_1.emit)('alignment-state');
@@ -5104,7 +5121,7 @@ async function refineCurrentLyrics() {
         const audio = await wavFor(track, valid);
         if (!audio || !valid())
             return;
-        const result = await window.PuroDesktop.forceAlign({ ...audio, lines: lyrics.lines });
+        const result = await (0, lyrics_connection_js_1.alignmentAPI)().forceAlign({ ...audio, lines: lyrics.lines });
         if (!valid())
             return;
         if (result.error)
@@ -5760,6 +5777,93 @@ function initBackgroundLyrics() {
     });
     collect();
 }
+
+};
+defs["lyrics-connection.js"]=function(module,exports,require){"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.alignmentAPI = exports.desktopConnecting = exports.desktopConnected = void 0;
+exports.connectDesktop = connectDesktop;
+exports.disconnectDesktop = disconnectDesktop;
+const ui_js_1 = require("./ui.js");
+const state_js_1 = require("./state.js");
+const endpoint = 'http://127.0.0.1:43127';
+let token = '', connecting = false, active = null;
+const desktopConnected = () => !!token;
+exports.desktopConnected = desktopConnected;
+const desktopConnecting = () => connecting;
+exports.desktopConnecting = desktopConnecting;
+function changed() { (0, state_js_1.emit)('alignment-connection'); }
+async function connectDesktop() {
+    if (connecting)
+        return;
+    connecting = true;
+    changed();
+    try {
+        const response = await fetch(endpoint + '/session', { cache: 'no-store', signal: AbortSignal.timeout(15000), credentials: 'omit' });
+        if (!response.ok)
+            throw new Error();
+        const session = await response.json();
+        if (session.protocol !== 1 || !/^[a-f0-9]{64}$/.test(session.token))
+            throw new Error();
+        token = session.token;
+    }
+    catch {
+        token = '';
+        throw new Error('Откройте Puro Cielo для Windows версии 1.15.0 или новее и разрешите браузеру доступ к локальной сети. Затем подключитесь снова.');
+    }
+    finally {
+        connecting = false;
+        changed();
+    }
+}
+function cancel() {
+    const job = active;
+    if (!job)
+        return;
+    active = null;
+    fetch(endpoint + '/cancel', { method: 'POST', headers: { Authorization: 'Bearer ' + job.token, 'X-Puro-Job': job.id }, credentials: 'omit', signal: AbortSignal.timeout(5000) }).catch(() => { });
+    job.controller.abort();
+}
+function disconnectDesktop() { cancel(); token = ''; changed(); }
+async function request(route, payload) {
+    if (!token)
+        throw new Error('Подключитесь к Windows-приложению в настройках');
+    if (active)
+        throw new Error('Другая песня уже синхронизируется');
+    const job = { id: crypto.randomUUID(), token, controller: new AbortController() };
+    active = job;
+    try {
+        const { wav, ...metadata } = payload;
+        const json = new TextEncoder().encode(JSON.stringify(metadata));
+        const prefix = new Uint8Array(4);
+        new DataView(prefix.buffer).setUint32(0, json.length, true);
+        const response = await fetch(endpoint + route, { method: 'POST', credentials: 'omit', headers: { Authorization: 'Bearer ' + job.token, 'X-Puro-Job': job.id, 'Content-Type': 'application/octet-stream' }, body: new Blob([prefix, json, wav]), signal: job.controller.signal });
+        if (response.status === 401) {
+            token = '';
+            changed();
+            (0, ui_js_1.toast)('Подключитесь к Windows-приложению снова в настройках', 'warn', 7000);
+        }
+        const result = await response.json();
+        if (!response.ok && !result.error)
+            throw new Error();
+        return result;
+    }
+    catch (error) {
+        if (job.controller.signal.aborted)
+            throw new Error('Обработка отменена');
+        token = '';
+        changed();
+        (0, ui_js_1.toast)('Соединение с Windows-приложением потеряно. Подключитесь снова в настройках.', 'warn', 7000);
+        throw new Error('Соединение с Windows-приложением потеряно. Откройте приложение и подключитесь снова в настройках.');
+    }
+    finally {
+        if (active === job)
+            active = null;
+    }
+}
+const remote = { alignLyrics: payload => request('/align', payload), forceAlign: payload => request('/refine', payload), cancelAlignment: cancel };
+const alignmentAPI = () => window.PuroDesktop?.alignLyrics ? window.PuroDesktop : token ? remote : null;
+exports.alignmentAPI = alignmentAPI;
 
 };
 defs["lyrics-http.js"]=function(module,exports,require){"use strict";
@@ -6861,7 +6965,7 @@ function renderLyrics(t) {
         return;
     }
     lines = ly.lines;
-    lyBox.innerHTML = `${window.PuroDesktop?.forceAlign ? ((0, lyrics_align_js_1.localAlignmentBusy)() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
+    lyBox.innerHTML = `${(0, lyrics_align_js_1.canAlignLocally)() ? ((0, lyrics_align_js_1.localAlignmentBusy)() ? '<button class="btn btn-soft sm" data-ly="cancel-align">Отменить обработку</button>' : '<button class="btn btn-soft sm" data-ly="refine">Проверить и уточнить</button>') : ''}<div class="ly-pad"></div>${lines.map((l, i) => l.text
         ? `<p class="ly" data-i="${i}">${(0, util_js_1.esc)(l.text).trim().split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ')}${trLine(i)}</p>`
         : `<p class="ly gap" data-i="${i}"><span class="dots"><i></i><i></i><i></i></span></p>`).join('')}<div class="ly-pad"></div>`;
     lyEls = [...lyBox.querySelectorAll('.ly')];
@@ -10329,6 +10433,7 @@ exports.settingsView = settingsView;
 exports.duplicatesView = duplicatesView;
 exports.fixView = fixView;
 exports.sidebarPlaylists = sidebarPlaylists;
+const lyrics_connection_js_1 = require("./lyrics-connection.js");
 const lyrics_align_js_1 = require("./lyrics-align.js");
 const state_js_1 = require("./state.js");
 const icons_js_1 = require("./icons.js");
@@ -10909,6 +11014,7 @@ function settingsView() {
         ${srow('Искать обложки', 'Если у песни или альбома нет обложки, плеер найдёт её сам. Заодно найдёт фото артистов.', sw('autoCovers', s.autoCovers !== false))}
         ${srow('Убирать приписки сайтов', 'Например, «Династия (Sefon.Pro)» → «Династия». Файлы не меняются.', sw('stripSource', s.stripSource !== false))}
         ${srow('Тексты песен', 'Если в файле нет текста, плеер сам ищет его онлайн. Не нашёл — покажет «Текст не найден».', sw('autoLyrics', s.autoLyrics))}
+        ${!window.PuroDesktop && !native_js_1.isNative ? srow('Синхронизация через Windows', (0, lyrics_connection_js_1.desktopConnected)() ? 'Подключено. Аудио обрабатывается на этом компьютере. Не закрывайте Windows-приложение.' : 'Бесплатно, без сервера: откройте Puro Cielo для Windows 1.15.0 или новее на этом компьютере и подключитесь. Разрешите доступ к локальной сети, если браузер спросит. После перезапуска приложения подключитесь заново.', `<button class="btn btn-soft sm" data-action="connect-desktop" ${(0, lyrics_connection_js_1.desktopConnecting)() ? 'disabled' : ''}>${(0, lyrics_connection_js_1.desktopConnecting)() ? 'Подключение…' : (0, lyrics_connection_js_1.desktopConnected)() ? 'Отключиться' : 'Подключить Windows'}</button>`) : ''}
         ${(0, lyrics_align_js_1.canAlignLocally)() ? srow('Автосинхронизация Genius', 'Отделение вокала и уточнение слов на CPU для песен до 15 минут. Модели загружаются один раз и занимают несколько ГБ. Обработка может занять несколько минут.', `<button class="btn btn-soft sm" data-action="toggle-local-alignment">${(0, lyrics_align_js_1.localAlignmentEnabled)() ? 'Отключить и остановить' : 'Включить'}</button>`) : ''}
         ${srow('Найти тексты для всей библиотеки', 'Плеер сам проверит все песни без текста. Не нашёл — будет «Текст не найден».', `<button class="btn btn-soft sm" data-action="find-lyrics">${(0, icons_js_1.icon)('lyrics')}Найти</button>`)}
         ${srow('Показывать текст справа', 'Выключите, если хотите просто слушать: плеер плавно переедет в центр. Тот же переключатель есть в самом плеере.', sw('showLyrics', s.showLyrics !== false))}

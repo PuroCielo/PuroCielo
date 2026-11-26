@@ -8,10 +8,13 @@ const { alignLyrics } = require('./lyrics-alignment.cjs');
 const MODEL_HASH = '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe';
 let active;
 function cancelAlignment() { active?.abort(); }
-async function alignLocal({ wav, text, duration, lines: existingLines }, { userData, resources }) {
+async function alignLocal({ wav, text, duration, lines: existingLines }, { userData, resources, signal: externalSignal }) {
   if (active) throw new Error('Другая песня уже синхронизируется');
   if (!(wav instanceof Uint8Array) || wav.length > 60 * 1024 * 1024 || wav.length < 44 || typeof text !== 'string' || text.length > 40000 || !Number.isFinite(duration) || duration <= 0 || duration > 900) throw new Error('Неподдерживаемый размер песни или текста');
   const controller = new AbortController();
+  externalSignal?.throwIfAborted();
+  const abort = () => controller.abort();
+  externalSignal?.addEventListener('abort', abort, { once: true });
   active = controller;
   const { signal } = controller;
   let directory;
@@ -66,6 +69,7 @@ async function alignLocal({ wav, text, duration, lines: existingLines }, { userD
     catch (error) { signal.throwIfAborted(); console.warn('CTC refinement unavailable:', error.message); return lines; }
   } finally {
     if (directory) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    externalSignal?.removeEventListener('abort', abort);
     active = null;
   }
 }

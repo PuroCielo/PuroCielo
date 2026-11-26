@@ -2,7 +2,11 @@ const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { fetchText } = require('./lyrics-fetch.cjs');
-const { alignLocal, cancelAlignment } = require('./lyrics-engine.cjs');
+const { cancelAlignment } = require('./lyrics-engine.cjs');
+const { startBridge } = require('./lyrics-bridge.cjs');
+const { runAlignment } = require('./lyrics-request.cjs');
+let bridge;
+const alignmentOptions = () => ({ userData: app.getPath('userData'), resources: process.resourcesPath });
 // Сохраняем профиль старой версии 1.7.0 (name: puro-cielo).
 app.setName('puro-cielo');
 app.setPath('userData', path.join(app.getPath('appData'), 'puro-cielo'));
@@ -14,19 +18,15 @@ function external(raw) {
 }
 ipcMain.handle('fetch-text', (event, url) => win && event.sender === win.webContents ? fetchText(url) : '');
 const trustedAlignment = event => win && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
-ipcMain.handle('align-lyrics', async (event, payload) => {
-  if (!trustedAlignment(event)) throw new Error('Недоступно');
-  try { return { lines: await alignLocal({ wav: payload?.wav, text: payload?.text, duration: payload?.duration }, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
-  catch (error) { return { error: error.message }; }
-});
-ipcMain.handle('force-align', async (event, payload) => {
-  if (!trustedAlignment(event)) throw new Error('Недоступно');
-  if (!Array.isArray(payload?.lines) || payload.lines.length > 2000 || payload.lines.some((line, i) => !Number.isFinite(line.t) || line.t < 0 || line.t >= payload.duration || typeof line.text !== 'string' || line.text.length > 2000 || (i && line.t <= payload.lines[i - 1].t))) return { error: 'Некорректные строки текста' };
-  try { return { lines: await alignLocal({ ...payload, text: payload.lines.map(line => line.text).join('\n') }, { userData: app.getPath('userData'), resources: process.resourcesPath }) }; }
-  catch (error) { return { error: error.message }; }
-});
+for (const [channel, refine] of [['align-lyrics', false], ['force-align', true]]) {
+  ipcMain.handle(channel, async (event, payload) => {
+    if (!trustedAlignment(event)) throw new Error('Недоступно');
+    try { return { lines: await runAlignment(refine, payload, alignmentOptions()) }; }
+    catch (error) { return { error: error.message }; }
+  });
+}
 ipcMain.handle('cancel-alignment', event => { if (trustedAlignment(event)) cancelAlignment(); });
-app.on('before-quit', cancelAlignment);
+app.on('before-quit', () => { bridge?.close(); cancelAlignment(); });
 function create() {
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({ width: 1320, height: 860, minWidth: 420, minHeight: 600,
@@ -54,6 +54,10 @@ function create() {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-  app.whenReady().then(create);
+  app.whenReady().then(() => {
+    create();
+    bridge = startBridge({ run: (refine, payload, signal) => runAlignment(refine, payload, { ...alignmentOptions(), signal }) });
+    bridge.ready.catch(error => console.warn('Browser connection unavailable:', error.message));
+  });
   app.on('window-all-closed', () => app.quit());
 }

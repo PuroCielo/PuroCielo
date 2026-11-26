@@ -1,3 +1,4 @@
+import { alignmentAPI } from './lyrics-connection.js';
 import { rawLyrics, setManualLyrics } from './lyrics-auto.js';
 import { current } from './player.js';
 import { emit, on, state } from './state.js';
@@ -6,17 +7,17 @@ import { toast } from './ui.js';
 let enabled = localStorage.getItem('puro-local-alignment') === '1';
 let busy = false, generation = 0;
 const attempted = new WeakMap();
-export const canAlignLocally = () => !!window.PuroDesktop?.alignLyrics;
+export const canAlignLocally = () => !!alignmentAPI()?.alignLyrics;
 export const localAlignmentBusy = () => busy;
 export function cancelLocalAlignment() {
     generation++;
-    window.PuroDesktop?.cancelAlignment();
+    alignmentAPI()?.cancelAlignment();
 }
 export const localAlignmentEnabled = () => enabled;
 export function toggleLocalAlignment() {
     enabled = !enabled;
     localStorage.setItem('puro-local-alignment', enabled ? '1' : '0');
-    if (!enabled) { generation++; window.PuroDesktop?.cancelAlignment(); }
+    if (!enabled) { generation++; alignmentAPI()?.cancelAlignment(); }
     else { attempted.delete(current()); processCurrent(); }
     if (current()) emit('lyrics', current());
 }
@@ -61,7 +62,7 @@ async function processCurrent() {
             toast('Отделяю вокал и синхронизирую текст на CPU. Первичная загрузка моделей может занять несколько минут', 'info', 7000);
             const audio = await wavFor(track, valid);
             if (!audio || !valid()) return;
-            const result = await window.PuroDesktop.alignLyrics({ ...audio, text: lyrics.text });
+            const result = await alignmentAPI().alignLyrics({ ...audio, text: lyrics.text });
             if (!valid()) return;
             if (result.error) throw new Error(result.error);
             lines = result.lines;
@@ -75,14 +76,17 @@ async function processCurrent() {
     } catch (error) { if (valid()) toast(error.message || 'Не удалось синхронизировать текст', 'warn', 6000); }
     finally { busy = false; emit('alignment-state'); processCurrent(); }
 }
-if (canAlignLocally()) {
-    on('lyrics', processCurrent);
-    on('track', processCurrent);
-}
+on('lyrics', processCurrent);
+on('track', processCurrent);
+on('alignment-connection', () => {
+    if (!canAlignLocally()) generation++;
+    else { attempted.delete(current()); processCurrent(); }
+    if (current()) emit('lyrics', current());
+});
 
 export async function refineCurrentLyrics() {
     const track = current(), lyrics = track?.lyrics;
-    if (!window.PuroDesktop?.forceAlign || busy || lyrics?.type !== 'synced') return;
+    if (!alignmentAPI()?.forceAlign || busy || lyrics?.type !== 'synced') return;
     busy = true;
     emit('alignment-state');
     const token = generation, revision = track._lyRevision || 0;
@@ -91,7 +95,7 @@ export async function refineCurrentLyrics() {
         toast('Проверяю таймкоды по вокалу на CPU…', 'info', 7000);
         const audio = await wavFor(track, valid);
         if (!audio || !valid()) return;
-        const result = await window.PuroDesktop.forceAlign({ ...audio, lines: lyrics.lines });
+        const result = await alignmentAPI().forceAlign({ ...audio, lines: lyrics.lines });
         if (!valid()) return;
         if (result.error) throw new Error(result.error);
         if (!Array.isArray(result.lines) || result.lines.length !== lyrics.lines.length) throw new Error('Некорректный результат уточнения');
